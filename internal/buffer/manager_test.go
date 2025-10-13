@@ -1,4 +1,4 @@
-package buffermanager
+package buffer
 
 import (
 	"os"
@@ -6,26 +6,26 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yashagw/cranedb/internal/filemanager"
-	"github.com/yashagw/cranedb/internal/logmanager"
+	"github.com/yashagw/cranedb/internal/file"
+	"github.com/yashagw/cranedb/internal/log"
 )
 
-func TestBufferMgr_BasicOperations(t *testing.T) {
+func TestManager_BasicOperations(t *testing.T) {
 	dbDir := "testdata"
 	blockSize := 400
 
-	fm := filemanager.NewFileMgr(dbDir, blockSize)
+	fm := file.NewManager(dbDir, blockSize)
 	defer fm.Close()
 	defer os.RemoveAll(dbDir)
 
-	lm := logmanager.NewLogMgr(fm, "testlog")
+	lm := log.NewManager(fm, "testlog")
 	defer lm.Close()
 
-	bm := NewBufferMgr(fm, lm, 3)
+	bm := NewManager(fm, lm, 3)
 	assert.Equal(t, 3, bm.Available(), "Should have 3 available buffers initially")
 
-	blk1 := filemanager.NewBlockID("testfile", 0)
-	blk2 := filemanager.NewBlockID("testfile", 1)
+	blk1 := file.NewBlockID("testfile", 0)
+	blk2 := file.NewBlockID("testfile", 1)
 
 	// Pin first buffer
 	buff1, err := bm.Pin(blk1)

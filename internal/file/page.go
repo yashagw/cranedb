@@ -1,4 +1,4 @@
-package filemanager
+package file
 
 import (
 	"encoding/binary"

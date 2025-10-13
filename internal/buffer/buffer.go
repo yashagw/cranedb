@@ -1,26 +1,26 @@
-package buffermanager
+package buffer
 
 import (
-	"github.com/yashagw/cranedb/internal/filemanager"
-	"github.com/yashagw/cranedb/internal/logmanager"
+	"github.com/yashagw/cranedb/internal/file"
+	"github.com/yashagw/cranedb/internal/log"
 )
 
 // Buffer represents a buffer in the buffer pool.
 type Buffer struct {
-	fm       *filemanager.FileMgr
-	lm       *logmanager.LogMgr
-	contents *filemanager.Page
-	blk      *filemanager.BlockID
+	fm       *file.Manager
+	lm       *log.Manager
+	contents *file.Page
+	blk      *file.BlockID
 	pins     int
 	txnum    int
 	lsn      int
 }
 
-func NewBuffer(fm *filemanager.FileMgr, lm *logmanager.LogMgr) *Buffer {
+func NewBuffer(fm *file.Manager, lm *log.Manager) *Buffer {
 	return &Buffer{
 		fm:       fm,
 		lm:       lm,
-		contents: filemanager.NewPage(fm.BlockSize()),
+		contents: file.NewPage(fm.BlockSize()),
 		blk:      nil,
 		pins:     0,
 		txnum:    -1,
@@ -28,11 +28,11 @@ func NewBuffer(fm *filemanager.FileMgr, lm *logmanager.LogMgr) *Buffer {
 	}
 }
 
-func (b *Buffer) Contents() *filemanager.Page {
+func (b *Buffer) Contents() *file.Page {
 	return b.contents
 }
 
-func (b *Buffer) Block() *filemanager.BlockID {
+func (b *Buffer) Block() *file.BlockID {
 	return b.blk
 }
 
@@ -55,7 +55,7 @@ func (b *Buffer) ModifyingTx() int {
 }
 
 // assignToBlock assigns this buffer to the specified block.
-func (b *Buffer) assignToBlock(blk *filemanager.BlockID) {
+func (b *Buffer) assignToBlock(blk *file.BlockID) {
 	b.flush()
 	b.blk = blk
 

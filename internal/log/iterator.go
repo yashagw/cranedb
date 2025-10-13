@@ -1,8 +1,6 @@
-package logmanager
+package log
 
-import (
-	"github.com/yashagw/cranedb/internal/filemanager"
-)
+import "github.com/yashagw/cranedb/internal/file"
 
 // LogIterator provides a way to iterate over log records.
 // ITERATION STRATEGY:
@@ -10,19 +8,19 @@ import (
 // - Read records moving toward blockSize (newest to oldest within block)
 // - When block is exhausted, move to previous block and repeat
 type LogIterator struct {
-	fm         *filemanager.FileMgr
-	blk        *filemanager.BlockID
-	page       *filemanager.Page
+	fm         *file.Manager
+	blk        *file.BlockID
+	page       *file.Page
 	currentpos int
 	boundary   int
 }
 
 // NewLogIterator creates a new iterator for the log file, starting at the given block.
-func NewLogIterator(fm *filemanager.FileMgr, blk *filemanager.BlockID) *LogIterator {
+func NewLogIterator(fm *file.Manager, blk *file.BlockID) *LogIterator {
 	it := &LogIterator{
 		fm:   fm,
 		blk:  blk,
-		page: filemanager.NewPage(fm.BlockSize()),
+		page: file.NewPage(fm.BlockSize()),
 	}
 	it.moveToBlock(blk)
 	return it
@@ -40,7 +38,7 @@ func (it *LogIterator) Next() []byte {
 		if it.blk.Number() == 0 {
 			return nil
 		}
-		it.blk = filemanager.NewBlockID(it.blk.Filename(), it.blk.Number()-1)
+		it.blk = file.NewBlockID(it.blk.Filename(), it.blk.Number()-1)
 		it.moveToBlock(it.blk)
 	}
 
@@ -51,7 +49,7 @@ func (it *LogIterator) Next() []byte {
 }
 
 // moveToBlock moves the iterator to the specified block and reads its contents.
-func (it *LogIterator) moveToBlock(blk *filemanager.BlockID) {
+func (it *LogIterator) moveToBlock(blk *file.BlockID) {
 	it.fm.Read(blk, it.page)
 	it.boundary = it.page.GetInt(0)
 	// Start at the boundary (newest record)

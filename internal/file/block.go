@@ -1,4 +1,4 @@
-package filemanager
+package file
 
 // BlockID represents a block in a file
 type BlockID struct {

@@ -1,31 +1,31 @@
-package logmanager
+package log
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/yashagw/cranedb/internal/filemanager"
+	"github.com/yashagw/cranedb/internal/file"
 )
 
 func TestNewLogMgr(t *testing.T) {
 	dataDir := "testdata"
 	logFile := "testlogfile"
 
-	fileMgr := filemanager.NewFileMgr(dataDir, 32)
+	fileManager := file.NewManager(dataDir, 32)
 	t.Cleanup(func() {
-		fileMgr.Close()
+		fileManager.Close()
 		os.Remove(filepath.Join(dataDir, logFile))
 	})
 
-	logMgr := NewLogMgr(fileMgr, logFile)
+	logManager := NewManager(fileManager, logFile)
 
-	boundary := logMgr.logpage.GetInt(0)
+	boundary := logManager.logpage.GetInt(0)
 	if boundary != 32 {
 		t.Errorf("boundary = %d, want %d", boundary, 32)
 	}
 
-	logSize, err := fileMgr.GetNumBlocks(logFile)
+	logSize, err := fileManager.GetNumBlocks(logFile)
 	if err != nil {
 		t.Fatalf("GetNumBlocks failed: %v", err)
 	}
@@ -34,11 +34,11 @@ func TestNewLogMgr(t *testing.T) {
 	}
 
 	// Test when log file already exists
-	fileMgr.Write(filemanager.NewBlockID(logFile, 1), filemanager.NewPage(fileMgr.BlockSize()))
+	fileManager.Write(file.NewBlockID(logFile, 1), file.NewPage(fileManager.BlockSize()))
 
-	_ = NewLogMgr(fileMgr, logFile)
+	_ = NewManager(fileManager, logFile)
 
-	logSize, err = fileMgr.GetNumBlocks(logFile)
+	logSize, err = fileManager.GetNumBlocks(logFile)
 	if err != nil {
 		t.Fatalf("GetNumBlocks failed: %v", err)
 	}
@@ -51,13 +51,13 @@ func TestLog(t *testing.T) {
 	dataDir := "testdata"
 	logFile := "testlogfile1"
 
-	fileMgr := filemanager.NewFileMgr(dataDir, 32)
+	fileManager := file.NewManager(dataDir, 32)
 	t.Cleanup(func() {
-		fileMgr.Close()
+		fileManager.Close()
 		os.Remove(filepath.Join(dataDir, logFile))
 	})
 
-	logMgr := NewLogMgr(fileMgr, logFile)
+	logManager := NewManager(fileManager, logFile)
 
 	tests := []struct {
 		name             string
@@ -91,17 +91,17 @@ func TestLog(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			lsn := logMgr.Append(tt.data)
+			lsn := logManager.Append(tt.data)
 			if lsn != tt.expectedLSN {
 				t.Errorf("lsn = %d, want %d", lsn, tt.expectedLSN)
 			}
 
-			boundary := logMgr.logpage.GetInt(0)
+			boundary := logManager.logpage.GetInt(0)
 			if boundary != tt.expectedboundary {
 				t.Errorf("boundary = %d, want %d", boundary, tt.expectedboundary)
 			}
 
-			logSize, err := fileMgr.GetNumBlocks(logFile)
+			logSize, err := fileManager.GetNumBlocks(logFile)
 			if err != nil {
 				t.Fatalf("GetNumBlocks failed: %v", err)
 			}
@@ -116,13 +116,13 @@ func TestIterator(t *testing.T) {
 	dataDir := "testdata"
 	logFile := "testlogfile2"
 
-	fileMgr := filemanager.NewFileMgr(dataDir, 32)
+	fileManager := file.NewManager(dataDir, 32)
 	t.Cleanup(func() {
-		fileMgr.Close()
+		fileManager.Close()
 		os.Remove(filepath.Join(dataDir, logFile))
 	})
 
-	logMgr := NewLogMgr(fileMgr, logFile)
+	logManager := NewManager(fileManager, logFile)
 
 	records := [][]byte{
 		[]byte("record one"),
@@ -141,10 +141,10 @@ func TestIterator(t *testing.T) {
 	}
 
 	for _, record := range records {
-		logMgr.Append(record)
+		logManager.Append(record)
 	}
 
-	iter := logMgr.Iterator()
+	iter := logManager.Iterator()
 
 	for i := 12; i >= 0; i-- {
 		if !iter.HasNext() {

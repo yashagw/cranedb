@@ -1,24 +1,24 @@
-package logmanager
+package log
 
 import (
 	"sync"
 
-	"github.com/yashagw/cranedb/internal/filemanager"
+	"github.com/yashagw/cranedb/internal/file"
 )
 
-// LogMgr manages the log file for the database.
+// Manager manages the log file for the database.
 // It provides methods to append log records and iterate over them.
-type LogMgr struct {
-	fm           *filemanager.FileMgr
+type Manager struct {
+	fm           *file.Manager
 	logfile      string
-	logpage      *filemanager.Page
-	currentblk   *filemanager.BlockID
+	logpage      *file.Page
+	currentblk   *file.BlockID
 	latestLSN    int
 	lastSavedLSN int
 	mu           sync.Mutex
 }
 
-// NewLogMgr creates a new log manager for the specified file manager and log file.
+// NewManager creates a new log manager for the specified file manager and log file.
 //
 // The log manager maintains a single "current block" where new records are appended.
 // If the log file is empty, it creates and initializes the first block.
@@ -27,11 +27,11 @@ type LogMgr struct {
 // Block initialization:
 //   - New blocks have boundary set to blockSize (indicating completely empty)
 //   - Existing blocks are read to get their current state (boundary + existing records)
-func NewLogMgr(fm *filemanager.FileMgr, logfile string) *LogMgr {
+func NewManager(fm *file.Manager, logfile string) *Manager {
 	// Create a new page with the block size from file manager
-	logpage := filemanager.NewPage(fm.BlockSize())
+	logpage := file.NewPage(fm.BlockSize())
 
-	var currentblk *filemanager.BlockID
+	var currentblk *file.BlockID
 
 	numOfBlocks, err := fm.GetNumBlocks(logfile)
 	if err != nil {
@@ -46,11 +46,11 @@ func NewLogMgr(fm *filemanager.FileMgr, logfile string) *LogMgr {
 	} else {
 		// Use the last block
 		// (zero-based: if numOfBlocks=3, last block is index 2)
-		currentblk = filemanager.NewBlockID(logfile, numOfBlocks-1)
+		currentblk = file.NewBlockID(logfile, numOfBlocks-1)
 		fm.Read(currentblk, logpage)
 	}
 
-	return &LogMgr{
+	return &Manager{
 		fm:           fm,
 		logfile:      logfile,
 		logpage:      logpage,
@@ -87,7 +87,7 @@ func NewLogMgr(fm *filemanager.FileMgr, logfile string) *LogMgr {
 //	- Check: 48 - 4 >= 4? Yes (44 >= 4), so it fits
 //	- Write record at position 48-59
 //	- Update boundary to 48
-func (lm *LogMgr) Append(logrec []byte) int {
+func (lm *Manager) Append(logrec []byte) int {
 	lm.mu.Lock()
 	defer lm.mu.Unlock()
 
@@ -131,37 +131,37 @@ func (lm *LogMgr) Append(logrec []byte) int {
 }
 
 // Flush writes the current log page to disk if there are any unsaved changes.
-func (lm *LogMgr) Flush(lsn int) {
+func (lm *Manager) Flush(lsn int) {
 	if lsn >= lm.lastSavedLSN {
 		lm.flush()
 	}
 }
 
 // flush is an internal method that writes the current log page to disk.
-func (lm *LogMgr) flush() {
+func (lm *Manager) flush() {
 	lm.fm.Write(lm.currentblk, lm.logpage)
 	lm.lastSavedLSN = lm.latestLSN
 }
 
 // Iterator returns an iterator that can be used to iterate over the log records
 // from most recent to oldest.
-func (lm *LogMgr) Iterator() *LogIterator {
+func (lm *Manager) Iterator() *LogIterator {
 	lm.flush()
 	return NewLogIterator(lm.fm, lm.currentblk)
 }
 
 // LatestLSN returns the most recently assigned LSN.
-func (lm *LogMgr) LatestLSN() int {
+func (lm *Manager) LatestLSN() int {
 	return lm.latestLSN
 }
 
 // LastSavedLSN returns the most recently saved LSN.
-func (lm *LogMgr) LastSavedLSN() int {
+func (lm *Manager) LastSavedLSN() int {
 	return lm.lastSavedLSN
 }
 
 // Close flushes the log and closes any open resources.
-func (lm *LogMgr) Close() error {
+func (lm *Manager) Close() error {
 	lm.flush()
 	return nil
 }

@@ -1,18 +1,18 @@
-package buffermanager
+package buffer
 
 import (
 	"errors"
 	"sync"
 	"time"
 
-	"github.com/yashagw/cranedb/internal/filemanager"
-	"github.com/yashagw/cranedb/internal/logmanager"
+	"github.com/yashagw/cranedb/internal/file"
+	"github.com/yashagw/cranedb/internal/log"
 )
 
 var ErrBufferAbort = errors.New("buffer request aborted")
 
-// BufferMgr manages a pool of buffers.
-type BufferMgr struct {
+// Manager manages a pool of buffers.
+type Manager struct {
 	bufferpool   []*Buffer
 	numAvailable int
 	maxTime      time.Duration
@@ -20,13 +20,13 @@ type BufferMgr struct {
 	cond         *sync.Cond
 }
 
-func NewBufferMgr(fm *filemanager.FileMgr, lm *logmanager.LogMgr, numbuffs int) *BufferMgr {
+func NewManager(fm *file.Manager, lm *log.Manager, numbuffs int) *Manager {
 	bufferpool := make([]*Buffer, 0, numbuffs)
 	for range numbuffs {
 		bufferpool = append(bufferpool, NewBuffer(fm, lm))
 	}
 
-	bm := &BufferMgr{
+	bm := &Manager{
 		bufferpool:   bufferpool,
 		numAvailable: numbuffs,
 		maxTime:      10 * time.Second,
@@ -35,13 +35,13 @@ func NewBufferMgr(fm *filemanager.FileMgr, lm *logmanager.LogMgr, numbuffs int) 
 	return bm
 }
 
-func (bm *BufferMgr) Available() int {
+func (bm *Manager) Available() int {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 	return bm.numAvailable
 }
 
-func (bm *BufferMgr) FlushAll(txnum int) {
+func (bm *Manager) FlushAll(txnum int) {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
@@ -52,7 +52,7 @@ func (bm *BufferMgr) FlushAll(txnum int) {
 	}
 }
 
-func (bm *BufferMgr) Unpin(buff *Buffer) {
+func (bm *Manager) Unpin(buff *Buffer) {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
@@ -68,7 +68,7 @@ func (bm *BufferMgr) Unpin(buff *Buffer) {
 // If the block is already in a buffer, that buffer is returned.
 // Otherwise, an unpinned buffer is chosen and assigned to the block.
 // Returns an error if no buffer becomes available within the timeout period.
-func (bm *BufferMgr) Pin(blk *filemanager.BlockID) (*Buffer, error) {
+func (bm *Manager) Pin(blk *file.BlockID) (*Buffer, error) {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
@@ -96,7 +96,7 @@ func (bm *BufferMgr) Pin(blk *filemanager.BlockID) (*Buffer, error) {
 
 // tryToPin attempts to pin a buffer to the specified block.
 // Returns nil if no buffer is available.
-func (bm *BufferMgr) tryToPin(blk *filemanager.BlockID) *Buffer {
+func (bm *Manager) tryToPin(blk *file.BlockID) *Buffer {
 	var buff *Buffer
 
 	// 1. Check if the block is already in a buffer

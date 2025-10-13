@@ -25,7 +25,7 @@ The database is currently under development with the following components:
 ```
 internal/
 ├── filemanager/     # File and page management
-└── logmanager/      # Write-ahead logging system
+└── log/      # Write-ahead logging system
 ```
 
 ## Status

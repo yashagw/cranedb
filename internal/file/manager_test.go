@@ -1,11 +1,11 @@
-package filemanager
+package file
 
 import (
 	"os"
 	"testing"
 )
 
-func TestFileMgr(t *testing.T) {
+func TestManager(t *testing.T) {
 	// Create a temporary directory for our test database
 	tempDir, err := os.MkdirTemp("", "filemanager_test")
 	if err != nil {
@@ -13,9 +13,9 @@ func TestFileMgr(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir) // Clean up after test
 
-	// Initialize FileMgr with 400-byte blocks
+	// Initialize Manager with 400-byte blocks
 	blockSize := 400
-	fm := NewFileMgr(tempDir, blockSize)
+	fm := NewManager(tempDir, blockSize)
 	defer fm.Close()
 
 	// Test basic operations on a single file

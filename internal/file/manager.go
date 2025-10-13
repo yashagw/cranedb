@@ -1,4 +1,4 @@
-package filemanager
+package file
 
 import (
 	"errors"
@@ -14,20 +14,20 @@ var (
 	ErrNegativeBlock = errors.New("negative block number not allowed")
 )
 
-// FileMgr manages disk files as fixed-size blocks.
+// Manager manages disk files as fixed-size blocks.
 // Each block is the same size as a Page.
 // Think of Page as the in-memory version of a block
 // - we Read a block into a Page,
 // - Modify the Page in memory then Write it back to the block on disk.
-type FileMgr struct {
+type Manager struct {
 	blockSize   int
 	dbDir       string
 	openedFiles map[string]*os.File
 	mu          sync.Mutex
 }
 
-// NewFileMgr creates a new file manager for the specified directory
-func NewFileMgr(dbDir string, blockSize int) *FileMgr {
+// NewManager creates a new file manager for the specified directory
+func NewManager(dbDir string, blockSize int) *Manager {
 	_, err := os.Stat(dbDir)
 	if os.IsNotExist(err) {
 		err = os.MkdirAll(dbDir, 0755)
@@ -36,7 +36,7 @@ func NewFileMgr(dbDir string, blockSize int) *FileMgr {
 		}
 	}
 
-	return &FileMgr{
+	return &Manager{
 		blockSize:   blockSize,
 		dbDir:       dbDir,
 		openedFiles: make(map[string]*os.File),
@@ -45,7 +45,7 @@ func NewFileMgr(dbDir string, blockSize int) *FileMgr {
 
 // Read reads the contents of the specified block into the provided page.
 // Can only read blocks that exist (0 to numBlocks-1).
-func (fm *FileMgr) Read(blk *BlockID, p *Page) {
+func (fm *Manager) Read(blk *BlockID, p *Page) {
 	if blk.Number() < 0 {
 		panic(ErrNegativeBlock)
 	}
@@ -75,7 +75,7 @@ func (fm *FileMgr) Read(blk *BlockID, p *Page) {
 }
 
 // Write writes the contents of the provided page to the specified block.
-func (fm *FileMgr) Write(blk *BlockID, p *Page) {
+func (fm *Manager) Write(blk *BlockID, p *Page) {
 	if blk.Number() < 0 {
 		panic(ErrNegativeBlock)
 	}
@@ -96,7 +96,7 @@ func (fm *FileMgr) Write(blk *BlockID, p *Page) {
 
 // Append adds a new block to the end of the specified file and returns its BlockID.
 // The new block is initialized with zeros.
-func (fm *FileMgr) Append(filename string) *BlockID {
+func (fm *Manager) Append(filename string) *BlockID {
 	fm.mu.Lock()
 	defer fm.mu.Unlock()
 
@@ -125,12 +125,12 @@ func (fm *FileMgr) Append(filename string) *BlockID {
 }
 
 // BlockSize returns the block size used by this file manager
-func (fm *FileMgr) BlockSize() int {
+func (fm *Manager) BlockSize() int {
 	return fm.blockSize
 }
 
 // Close closes all opened files
-func (fm *FileMgr) Close() {
+func (fm *Manager) Close() {
 	fm.mu.Lock()
 	defer fm.mu.Unlock()
 
@@ -144,7 +144,7 @@ func (fm *FileMgr) Close() {
 }
 
 // GetNumBlocks returns the number of blocks in the specified file
-func (fm *FileMgr) GetNumBlocks(filename string) (int, error) {
+func (fm *Manager) GetNumBlocks(filename string) (int, error) {
 	f, err := fm.GetFile(filename)
 	if err != nil {
 		return 0, err
@@ -159,7 +159,7 @@ func (fm *FileMgr) GetNumBlocks(filename string) (int, error) {
 }
 
 // GetFile returns the file with the specified filename, creating it if it does not exist
-func (fm *FileMgr) GetFile(filename string) (*os.File, error) {
+func (fm *Manager) GetFile(filename string) (*os.File, error) {
 	f, ok := fm.openedFiles[filename]
 	if ok {
 		return f, nil
