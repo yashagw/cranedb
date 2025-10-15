@@ -71,17 +71,6 @@ func (p *Page) SetString(offset int, val string) {
 	p.SetBytes(offset, []byte(val))
 }
 
-// MaxStorageBytes returns the maximum number of bytes that can be stored at the given offset.
-// This accounts for:
-//   - The 4-byte length prefix that precedes the data
-//   - The remaining space from offset to end of page
-func (p *Page) MaxStorageBytes(offset int) int {
-	// Total space available = page size - offset
-	// Need to reserve 4 bytes for length prefix
-	// So maximum data length = total space - 4
-	return len(p.bytes) - offset - 4
-}
-
 // Bytes returns the underlying byte array
 func (p *Page) Bytes() []byte {
 	return p.bytes
