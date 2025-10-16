@@ -8,6 +8,9 @@ import (
 )
 
 // RecoveryManager implements the undo-only algorithm
+// Each Transaction has a RecoveryManager
+// All RecoveryManager shares a single log manager and buffer manager
+// DB Server Itself also has a RecoveryManager used for recovery after a crash
 type RecoveryManager struct {
 	txNum         int
 	transaction   *Transaction
