@@ -41,6 +41,12 @@ func (p *Page) GetBytes(offset int) []byte {
 	// First read the length (stored as a 4-byte integer)
 	length := p.GetInt(offset)
 
+	// Validate length to prevent slice bounds errors from garbage data
+	if length < 0 || offset+4+length > len(p.bytes) {
+		// Return empty byte array for invalid/uninitialized data
+		return []byte{}
+	}
+
 	// Then return a slice of the actual data
 	// Starting at: offset + 4 (skipping the length)
 	// Ending at: offset + 4 + length (including all data)
