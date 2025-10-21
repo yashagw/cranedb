@@ -133,3 +133,7 @@ func (t *Transaction) Append(filename string) (*file.BlockID, error) {
 	}
 	return t.fileManager.Append(filename), nil
 }
+
+func (t *Transaction) BlockSize() int {
+	return t.fileManager.BlockSize()
+}

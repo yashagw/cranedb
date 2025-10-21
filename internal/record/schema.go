@@ -48,3 +48,16 @@ func (s *Schema) CopyAll(other *Schema) {
 		s.AddField(field, info.fieldType, info.fieldLength)
 	}
 }
+
+// Fields returns a copy of the field names slice
+func (s *Schema) Fields() []string {
+	fields := make([]string, len(s.fields))
+	copy(fields, s.fields)
+	return fields
+}
+
+// GetFieldInfo returns the field information for a given field name
+func (s *Schema) GetFieldInfo(fieldName string) (FieldInfo, bool) {
+	info, exists := s.fieldInfo[fieldName]
+	return info, exists
+}
