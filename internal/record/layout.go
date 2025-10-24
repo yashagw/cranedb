@@ -40,6 +40,11 @@ func (l *Layout) GetSlotSize() int {
 	return l.slotSize
 }
 
+// GetSchema returns the schema associated with this layout
+func (l *Layout) GetSchema() *Schema {
+	return l.schema
+}
+
 func (l *Layout) lengthInBytes(fieldName string) int {
 	fieldInfo, ok := l.schema.fieldInfo[fieldName]
 	if !ok {

@@ -61,3 +61,19 @@ func (s *Schema) GetFieldInfo(fieldName string) (FieldInfo, bool) {
 	info, exists := s.fieldInfo[fieldName]
 	return info, exists
 }
+
+// Type returns the type of a field
+func (s *Schema) Type(fieldName string) string {
+	if info, exists := s.fieldInfo[fieldName]; exists {
+		return info.fieldType
+	}
+	return ""
+}
+
+// Length returns the length of a field
+func (s *Schema) Length(fieldName string) int {
+	if info, exists := s.fieldInfo[fieldName]; exists {
+		return info.fieldLength
+	}
+	return 0
+}
