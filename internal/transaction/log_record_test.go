@@ -11,7 +11,8 @@ import (
 
 func TestSetIntLogRecord_EncodeDecode(t *testing.T) {
 	tempDir := t.TempDir()
-	fileManager := file.NewManager(tempDir, 400)
+	fileManager, err := file.NewManager(tempDir, 400)
+	assert.NoError(t, err)
 	logManager := log.NewManager(fileManager, "log_test")
 
 	// Test data
@@ -52,7 +53,8 @@ func TestSetIntLogRecord_EncodeDecode(t *testing.T) {
 
 func TestSetStringLogRecord_EncodeDecode(t *testing.T) {
 	tempDir := t.TempDir()
-	fileManager := file.NewManager(tempDir, 400)
+	fileManager, err := file.NewManager(tempDir, 400)
+	assert.NoError(t, err)
 	logManager := log.NewManager(fileManager, "log_test")
 
 	// Test data
@@ -93,7 +95,8 @@ func TestSetStringLogRecord_EncodeDecode(t *testing.T) {
 
 func TestStartLogRecord_EncodeDecode(t *testing.T) {
 	tempDir := t.TempDir()
-	fileManager := file.NewManager(tempDir, 400)
+	fileManager, err := file.NewManager(tempDir, 400)
+	assert.NoError(t, err)
 	logManager := log.NewManager(fileManager, "log_test")
 
 	txNum := 42
@@ -123,7 +126,8 @@ func TestStartLogRecord_EncodeDecode(t *testing.T) {
 
 func TestCommitLogRecord_EncodeDecode(t *testing.T) {
 	tempDir := t.TempDir()
-	fileManager := file.NewManager(tempDir, 400)
+	fileManager, err := file.NewManager(tempDir, 400)
+	assert.NoError(t, err)
 	logManager := log.NewManager(fileManager, "log_test")
 
 	txNum := 42
@@ -153,7 +157,8 @@ func TestCommitLogRecord_EncodeDecode(t *testing.T) {
 
 func TestRollbackLogRecord_EncodeDecode(t *testing.T) {
 	tempDir := t.TempDir()
-	fileManager := file.NewManager(tempDir, 400)
+	fileManager, err := file.NewManager(tempDir, 400)
+	assert.NoError(t, err)
 	logManager := log.NewManager(fileManager, "log_test")
 
 	txNum := 42
@@ -183,7 +188,8 @@ func TestRollbackLogRecord_EncodeDecode(t *testing.T) {
 
 func TestCheckpointLogRecord_EncodeDecode(t *testing.T) {
 	tempDir := t.TempDir()
-	fileManager := file.NewManager(tempDir, 400)
+	fileManager, err := file.NewManager(tempDir, 400)
+	assert.NoError(t, err)
 	logManager := log.NewManager(fileManager, "log_test")
 
 	WriteCheckpointLogRecord(logManager)

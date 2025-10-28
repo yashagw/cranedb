@@ -122,7 +122,7 @@ func (t *Transaction) Size(filename string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return t.fileManager.GetNumBlocks(filename)
+	return t.fileManager.GetTotalBlocks(filename)
 }
 
 func (t *Transaction) Append(filename string) (*file.BlockID, error) {
@@ -131,7 +131,7 @@ func (t *Transaction) Append(filename string) (*file.BlockID, error) {
 	if err != nil {
 		return nil, err
 	}
-	return t.fileManager.Append(filename), nil
+	return t.fileManager.Append(filename)
 }
 
 func (t *Transaction) BlockSize() int {

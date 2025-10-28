@@ -3,63 +3,94 @@ package file
 import (
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestManager(t *testing.T) {
-	// Create a temporary directory for our test database
-	tempDir, err := os.MkdirTemp("", "filemanager_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp directory: %v", err)
-	}
-	defer os.RemoveAll(tempDir) // Clean up after test
+	tempDir := t.TempDir()
+	defer os.RemoveAll(tempDir)
 
-	// Initialize Manager with 400-byte blocks
 	blockSize := 400
-	fm := NewManager(tempDir, blockSize)
+	fm, err := NewManager(tempDir, blockSize)
+	assert.NoError(t, err)
 	defer fm.Close()
 
-	// Test basic operations on a single file
 	filename := "test.db"
 
-	// 1. Append a new block (should be block 0)
-	blk0 := fm.Append(filename)
-	if blk0.Number() != 0 {
-		t.Errorf("First block should be 0, got %d", blk0.Number())
-	}
+	// Test 1: Append a new block (should be block 0)
+	blk0, err := fm.Append(filename)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, blk0.Number(), "First block should be 0")
 
-	// 2. Write some data to block 0
 	page := NewPage(blockSize)
 	data := "Hello, World!"
 	page.SetString(0, data)
-	fm.Write(blk0, page)
+	err = fm.Write(blk0, page)
+	assert.NoError(t, err)
 
-	// 3. Read back the data from block 0
 	readPage := NewPage(blockSize)
-	fm.Read(blk0, readPage)
-	readData := readPage.GetString(0)
-	if readData != data {
-		t.Errorf("Expected to read %q, got %q", data, readData)
-	}
+	err = fm.Read(blk0, readPage)
+	assert.NoError(t, err)
+	assert.Equal(t, data, readPage.GetString(0), "Expected to read %q, got %q", data, readPage.GetString(0))
 
-	// 4. Append another block (should be block 1)
-	blk1 := fm.Append(filename)
-	if blk1.Number() != 1 {
-		t.Errorf("Second block should be 1, got %d", blk1.Number())
-	}
+	// Test 2: Append another block (should be block 1)
+	blk1, err := fm.Append(filename)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, blk1.Number(), "Second block should be 1")
 
-	// 5. Write different data to block 1
 	data2 := "Second block data"
 	page.SetString(0, data2)
-	fm.Write(blk1, page)
+	err = fm.Write(blk1, page)
+	assert.NoError(t, err)
 
-	// 6. Read back both blocks to verify they maintain separate data
-	fm.Read(blk0, readPage)
-	if readPage.GetString(0) != data {
-		t.Errorf("Block 0 data changed, expected %q, got %q", data, readPage.GetString(0))
+	// Test 3: Read back both blocks to verify they maintain separate data
+	err = fm.Read(blk0, readPage)
+	assert.NoError(t, err)
+	assert.Equal(t, data, readPage.GetString(0), "Block 0 data should be the same")
+
+	err = fm.Read(blk1, readPage)
+	assert.NoError(t, err)
+	assert.Equal(t, data2, readPage.GetString(0), "Block 1 data should be the same")
+}
+
+func TestTotalBlocks(t *testing.T) {
+	tempDir := t.TempDir()
+	defer os.RemoveAll(tempDir)
+
+	blockSize := 400
+	fm, err := NewManager(tempDir, blockSize)
+	assert.NoError(t, err)
+	defer fm.Close()
+
+	// Test 1: Append 5 blocks and check TotalBlocks
+	filename1 := "test1.db"
+	for i := 0; i < 5; i++ {
+		blk, err := fm.Append(filename1)
+		assert.NoError(t, err)
+		assert.Equal(t, i, blk.Number())
 	}
 
-	fm.Read(blk1, readPage)
-	if readPage.GetString(0) != data2 {
-		t.Errorf("Block 1 data wrong, expected %q, got %q", data2, readPage.GetString(0))
-	}
+	numBlocks, err := fm.GetTotalBlocks(filename1)
+	assert.NoError(t, err)
+	assert.Equal(t, 5, numBlocks, "File should have 5 blocks")
+
+	// Test 2: Write directly to 5th block of new file
+	filename2 := "test2.db"
+	page := NewPage(blockSize)
+	page.SetString(0, "Fifth block data")
+	blk4 := NewBlockID(filename2, 4)
+
+	err = fm.Write(blk4, page)
+	assert.NoError(t, err)
+
+	numBlocks, err = fm.GetTotalBlocks(filename2)
+	assert.NoError(t, err)
+	assert.Equal(t, 5, numBlocks, "Writing to block 4 should make file have 5 blocks")
+
+	// Test 3: For Empty/New File
+	filename3 := "test3.db"
+	numBlocks, err = fm.GetTotalBlocks(filename3)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, numBlocks, "New file should have 0 blocks")
 }

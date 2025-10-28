@@ -17,7 +17,8 @@ func TestStatsManager_BasicOperations(t *testing.T) {
 	dbDir := "testdata_stats"
 	blockSize := 400
 
-	fm := file.NewManager(dbDir, blockSize)
+	fm, err := file.NewManager(dbDir, blockSize)
+	assert.NoError(t, err)
 	defer fm.Close()
 	defer os.RemoveAll(dbDir)
 
@@ -66,7 +67,7 @@ func TestStatsManager_BasicOperations(t *testing.T) {
 
 	// Test 4: Create a table and get stats for empty table
 	tx5 := transaction.NewTransaction(fm, lm, bm, lockTable)
-	err := tm.CreateTable("test_table", schema, tx5)
+	err = tm.CreateTable("test_table", schema, tx5)
 	require.NoError(t, err, "Should create table successfully")
 	tx5.Commit()
 
@@ -101,7 +102,8 @@ func TestStatsManager_DistinctValues(t *testing.T) {
 	dbDir := "testdata_distinct"
 	blockSize := 400
 
-	fm := file.NewManager(dbDir, blockSize)
+	fm, err := file.NewManager(dbDir, blockSize)
+	assert.NoError(t, err)
 	defer fm.Close()
 	defer os.RemoveAll(dbDir)
 
@@ -122,7 +124,7 @@ func TestStatsManager_DistinctValues(t *testing.T) {
 	schema := record.NewSchema()
 	schema.AddIntField("id")
 	schema.AddStringField("name", 20)
-	err := tm.CreateTable("test_table", schema, tx2)
+	err = tm.CreateTable("test_table", schema, tx2)
 	require.NoError(t, err, "Should create table successfully")
 	tx2.Commit()
 

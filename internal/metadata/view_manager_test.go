@@ -17,7 +17,8 @@ func TestViewManager_BasicOperations(t *testing.T) {
 	dbDir := "testdata"
 	blockSize := 400
 
-	fm := file.NewManager(dbDir, blockSize)
+	fm, err := file.NewManager(dbDir, blockSize)
+	assert.NoError(t, err)
 	defer fm.Close()
 	defer os.RemoveAll(dbDir)
 
@@ -47,7 +48,7 @@ func TestViewManager_BasicOperations(t *testing.T) {
 	tx3 := transaction.NewTransaction(fm, lm, bm, lockTable)
 	viewName := "user_emails"
 	viewDef := "SELECT name, email FROM users WHERE active = 1"
-	err := vm.CreateView(viewName, viewDef, tx3)
+	err = vm.CreateView(viewName, viewDef, tx3)
 	require.NoError(t, err, "Should create view successfully")
 	tx3.Commit()
 

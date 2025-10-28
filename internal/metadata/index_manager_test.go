@@ -17,7 +17,8 @@ func TestIndexManager_BasicOperations(t *testing.T) {
 	dbDir := "testdata"
 	blockSize := 400
 
-	fm := file.NewManager(dbDir, blockSize)
+	fm, err := file.NewManager(dbDir, blockSize)
+	assert.NoError(t, err)
 	defer fm.Close()
 	defer os.RemoveAll(dbDir)
 
@@ -40,7 +41,7 @@ func TestIndexManager_BasicOperations(t *testing.T) {
 	schema := record.NewSchema()
 	schema.AddIntField("id")
 	schema.AddStringField("name", 20)
-	err := tm.CreateTable("users", schema, tx2)
+	err = tm.CreateTable("users", schema, tx2)
 	require.NoError(t, err)
 	tx2.Commit()
 

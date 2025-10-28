@@ -11,7 +11,8 @@ import (
 )
 
 func TestBufferList_PinAndUnpin(t *testing.T) {
-	fileManager := file.NewManager("/tmp/testdb", 400)
+	fileManager, err := file.NewManager("/tmp/testdb", 400)
+	assert.NoError(t, err)
 	logManager := log.NewManager(fileManager, "test.log")
 	bufferManager := buffer.NewManager(fileManager, logManager, 10) // 10 buffers
 	bufferList := NewBufferList(bufferManager)

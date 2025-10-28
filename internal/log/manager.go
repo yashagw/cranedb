@@ -12,14 +12,13 @@ type Manager struct {
 	fm           *file.Manager
 	logfile      string
 	logpage      *file.Page
-	currentblk   *file.BlockID
+	currentBlk   *file.BlockID
 	latestLSN    int
 	lastSavedLSN int
 	mu           sync.Mutex
 }
 
-// NewManager creates a new log manager for the specified file manager and log file.
-//
+// NewManager creates a new log manager
 // The log manager maintains a single "current block" where new records are appended.
 // If the log file is empty, it creates and initializes the first block.
 // If the log file exists, it uses the last block as the current block.
@@ -33,14 +32,17 @@ func NewManager(fm *file.Manager, logfile string) *Manager {
 
 	var currentblk *file.BlockID
 
-	numOfBlocks, err := fm.GetNumBlocks(logfile)
+	numOfBlocks, err := fm.GetTotalBlocks(logfile)
 	if err != nil {
 		panic("not able to determine blocks in log file")
 	}
 	if numOfBlocks == 0 {
 		// Create and initialize new block
 		// Set boundary to blockSize, this indicates the block is completely empty
-		currentblk = fm.Append(logfile)
+		currentblk, err = fm.Append(logfile)
+		if err != nil {
+			panic("not able to append block to log file")
+		}
 		logpage.SetInt(0, fm.BlockSize())
 		fm.Write(currentblk, logpage)
 	} else {
@@ -54,7 +56,7 @@ func NewManager(fm *file.Manager, logfile string) *Manager {
 		fm:           fm,
 		logfile:      logfile,
 		logpage:      logpage,
-		currentblk:   currentblk,
+		currentBlk:   currentblk,
 		latestLSN:    0,
 		lastSavedLSN: 0,
 	}
@@ -110,9 +112,13 @@ func (lm *Manager) Append(logrec []byte) int {
 
 		// Create and initialize new block
 		// Set boundary to blockSize, this indicates the block is completely empty
-		lm.currentblk = lm.fm.Append(lm.logfile)
+		var err error
+		lm.currentBlk, err = lm.fm.Append(lm.logfile)
+		if err != nil {
+			panic("not able to append block to log file")
+		}
 		lm.logpage.SetInt(0, lm.fm.BlockSize())
-		lm.fm.Write(lm.currentblk, lm.logpage)
+		lm.fm.Write(lm.currentBlk, lm.logpage)
 
 		boundary = lm.logpage.GetInt(0)
 	}
@@ -120,7 +126,7 @@ func (lm *Manager) Append(logrec []byte) int {
 	// Calculate position where record will be written
 	// Records grow downward from the boundary
 	recpos := boundary - bytesneeded
-	lm.logpage.SetBytes(recpos, logrec)
+	lm.logpage.SetBytesArray(recpos, logrec)
 
 	// Write the boundary to mark the start of used space
 	lm.logpage.SetInt(0, recpos)
@@ -139,7 +145,7 @@ func (lm *Manager) Flush(lsn int) {
 
 // flush is an internal method that writes the current log page to disk.
 func (lm *Manager) flush() {
-	lm.fm.Write(lm.currentblk, lm.logpage)
+	lm.fm.Write(lm.currentBlk, lm.logpage)
 	lm.lastSavedLSN = lm.latestLSN
 }
 
@@ -147,7 +153,7 @@ func (lm *Manager) flush() {
 // from most recent to oldest.
 func (lm *Manager) Iterator() *LogIterator {
 	lm.flush()
-	return NewLogIterator(lm.fm, lm.currentblk)
+	return NewLogIterator(lm.fm, lm.currentBlk)
 }
 
 // LatestLSN returns the most recently assigned LSN.

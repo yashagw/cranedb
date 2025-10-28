@@ -59,7 +59,7 @@ func (b *Buffer) assignToBlock(blk *file.BlockID) {
 	b.flush()
 	b.blk = blk
 
-	numBlocks, err := b.fm.GetNumBlocks(blk.Filename())
+	numBlocks, err := b.fm.GetTotalBlocks(blk.Filename())
 	if err != nil {
 		panic(err)
 	}

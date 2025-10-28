@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/yashagw/cranedb/internal/file"
 )
 
@@ -12,7 +13,8 @@ func TestNewLogMgr(t *testing.T) {
 	dataDir := "testdata"
 	logFile := "testlogfile"
 
-	fileManager := file.NewManager(dataDir, 32)
+	fileManager, err := file.NewManager(dataDir, 32)
+	assert.NoError(t, err)
 	t.Cleanup(func() {
 		fileManager.Close()
 		os.Remove(filepath.Join(dataDir, logFile))
@@ -25,7 +27,7 @@ func TestNewLogMgr(t *testing.T) {
 		t.Errorf("boundary = %d, want %d", boundary, 32)
 	}
 
-	logSize, err := fileManager.GetNumBlocks(logFile)
+	logSize, err := fileManager.GetTotalBlocks(logFile)
 	if err != nil {
 		t.Fatalf("GetNumBlocks failed: %v", err)
 	}
@@ -38,7 +40,7 @@ func TestNewLogMgr(t *testing.T) {
 
 	_ = NewManager(fileManager, logFile)
 
-	logSize, err = fileManager.GetNumBlocks(logFile)
+	logSize, err = fileManager.GetTotalBlocks(logFile)
 	if err != nil {
 		t.Fatalf("GetNumBlocks failed: %v", err)
 	}
@@ -51,7 +53,8 @@ func TestLog(t *testing.T) {
 	dataDir := "testdata"
 	logFile := "testlogfile1"
 
-	fileManager := file.NewManager(dataDir, 32)
+	fileManager, err := file.NewManager(dataDir, 32)
+	assert.NoError(t, err)
 	t.Cleanup(func() {
 		fileManager.Close()
 		os.Remove(filepath.Join(dataDir, logFile))
@@ -101,7 +104,7 @@ func TestLog(t *testing.T) {
 				t.Errorf("boundary = %d, want %d", boundary, tt.expectedboundary)
 			}
 
-			logSize, err := fileManager.GetNumBlocks(logFile)
+			logSize, err := fileManager.GetTotalBlocks(logFile)
 			if err != nil {
 				t.Fatalf("GetNumBlocks failed: %v", err)
 			}
@@ -116,7 +119,8 @@ func TestIterator(t *testing.T) {
 	dataDir := "testdata"
 	logFile := "testlogfile2"
 
-	fileManager := file.NewManager(dataDir, 32)
+	fileManager, err := file.NewManager(dataDir, 32)
+	assert.NoError(t, err)
 	t.Cleanup(func() {
 		fileManager.Close()
 		os.Remove(filepath.Join(dataDir, logFile))

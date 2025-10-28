@@ -17,7 +17,8 @@ func TestTableManager_BasicOperations(t *testing.T) {
 	dbDir := "testdata"
 	blockSize := 400
 
-	fm := file.NewManager(dbDir, blockSize)
+	fm, err := file.NewManager(dbDir, blockSize)
+	assert.NoError(t, err)
 	defer fm.Close()
 	defer os.RemoveAll(dbDir)
 
@@ -49,7 +50,7 @@ func TestTableManager_BasicOperations(t *testing.T) {
 	schema.AddIntField("id")
 	schema.AddStringField("name", 50)
 	schema.AddStringField("email", 100)
-	err := tm.CreateTable("users", schema, tx3)
+	err = tm.CreateTable("users", schema, tx3)
 	require.NoError(t, err, "Should create table successfully")
 	tx3.Commit()
 

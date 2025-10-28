@@ -23,6 +23,11 @@ func NewPageFromBytes(b []byte) *Page {
 	}
 }
 
+// Bytes returns the underlying byte array
+func (p *Page) Bytes() []byte {
+	return p.bytes
+}
+
 // GetInt reads an integer from the specified offset
 func (p *Page) GetInt(offset int) int {
 	return int(binary.BigEndian.Uint32(p.bytes[offset : offset+4]))
@@ -33,51 +38,36 @@ func (p *Page) SetInt(offset int, val int) {
 	binary.BigEndian.PutUint32(p.bytes[offset:offset+4], uint32(val))
 }
 
-// GetBytes reads a byte array from the specified offset.
+// GetBytesArray reads a byte array from the specified offset.
 // The format is:
-//   - First 4 bytes: length of the array (N)
+//   - First 4 bytes: length of the array
 //   - Next N bytes: the actual array data
-func (p *Page) GetBytes(offset int) []byte {
-	// First read the length (stored as a 4-byte integer)
+func (p *Page) GetBytesArray(offset int) []byte {
 	length := p.GetInt(offset)
 
 	// Validate length to prevent slice bounds errors from garbage data
 	if length < 0 || offset+4+length > len(p.bytes) {
-		// Return empty byte array for invalid/uninitialized data
 		return []byte{}
 	}
 
-	// Then return a slice of the actual data
-	// Starting at: offset + 4 (skipping the length)
-	// Ending at: offset + 4 + length (including all data)
 	return p.bytes[offset+4 : offset+4+length]
 }
 
-// SetBytes writes a byte array at the specified offset.
+// SetBytesArray writes a byte array at the specified offset.
 // The format is:
 //   - First 4 bytes: length of the array
 //   - Next N bytes: the actual array data
-func (p *Page) SetBytes(offset int, val []byte) {
-	// First write the length
+func (p *Page) SetBytesArray(offset int, val []byte) {
 	p.SetInt(offset, len(val))
-
-	// Copy the actual data starting after the length
 	copy(p.bytes[offset+4:], val)
 }
 
 // GetString reads a string from the specified offset
-// Strings are stored as byte arrays
 func (p *Page) GetString(offset int) string {
-	return string(p.GetBytes(offset))
+	return string(p.GetBytesArray(offset))
 }
 
 // SetString writes a string at the specified offset
-// Strings are stored as byte arrays
 func (p *Page) SetString(offset int, val string) {
-	p.SetBytes(offset, []byte(val))
-}
-
-// Bytes returns the underlying byte array
-func (p *Page) Bytes() []byte {
-	return p.bytes
+	p.SetBytesArray(offset, []byte(val))
 }

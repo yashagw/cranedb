@@ -1,5 +1,7 @@
 package file
 
+import "fmt"
+
 // BlockID represents a block in a file
 type BlockID struct {
 	filename string
@@ -22,4 +24,9 @@ func (b *BlockID) Filename() string {
 // Number returns the block number
 func (b *BlockID) Number() int {
 	return b.blkNum
+}
+
+// String returns the string representation of the BlockID
+func (b *BlockID) String() string {
+	return fmt.Sprintf("%s:%d", b.filename, b.blkNum)
 }

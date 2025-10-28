@@ -6,19 +6,16 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
-)
-
-var (
-	// ErrNegativeBlock is returned when trying to access a negative block number
-	ErrNegativeBlock = errors.New("negative block number not allowed")
 )
 
 // Manager manages disk files as fixed-size blocks.
 // Each block is the same size as a Page.
-// Think of Page as the in-memory version of a block
-// - we Read a block into a Page,
-// - Modify the Page in memory then Write it back to the block on disk.
+// Page is the in-memory representation of a block
+// - Read: BlockID → load block from disk → store in Page
+// - Modify: change data in Page
+// - Write: Page → write back to disk at BlockID location
 type Manager struct {
 	blockSize   int
 	dbDir       string
@@ -27,12 +24,12 @@ type Manager struct {
 }
 
 // NewManager creates a new file manager for the specified directory
-func NewManager(dbDir string, blockSize int) *Manager {
+func NewManager(dbDir string, blockSize int) (*Manager, error) {
 	_, err := os.Stat(dbDir)
 	if os.IsNotExist(err) {
 		err = os.MkdirAll(dbDir, 0755)
 		if err != nil {
-			panic(fmt.Errorf("failed to create database directory: %w", err))
+			return nil, errors.New("failed to create database directory: " + err.Error())
 		}
 	}
 
@@ -40,70 +37,79 @@ func NewManager(dbDir string, blockSize int) *Manager {
 		blockSize:   blockSize,
 		dbDir:       dbDir,
 		openedFiles: make(map[string]*os.File),
-	}
+	}, nil
+}
+
+// BlockSize returns the block size
+func (fm *Manager) BlockSize() int {
+	return fm.blockSize
 }
 
 // Read reads the contents of the specified block into the provided page.
 // Can only read blocks that exist (0 to numBlocks-1).
-func (fm *Manager) Read(blk *BlockID, p *Page) {
-	if blk.Number() < 0 {
-		panic(ErrNegativeBlock)
-	}
-
+func (fm *Manager) Read(blk *BlockID, p *Page) error {
 	fm.mu.Lock()
 	defer fm.mu.Unlock()
 
-	f, err := fm.GetFile(blk.Filename())
-	if err != nil {
-		panic(fmt.Errorf("failed to get file: %w", err))
+	if blk.Number() < 0 {
+		return errors.New("negative block number not allowed")
 	}
 
-	numBlocks, err := fm.GetNumBlocks(blk.Filename())
+	f, err := fm.getFile(blk.Filename())
 	if err != nil {
-		panic(fmt.Errorf("failed to get number of blocks: %w", err))
+		return errors.New("failed to get file: " + err.Error())
+	}
+
+	numBlocks, err := fm.GetTotalBlocks(blk.Filename())
+	if err != nil {
+		return errors.New("failed to get number of blocks: " + err.Error())
 	}
 
 	// Can only read blocks that actually exist in the file
 	if blk.Number() >= numBlocks {
-		panic(fmt.Errorf("cannot read block %d: file only has %d blocks", blk.Number(), numBlocks))
+		return errors.New("cannot read block: file only has " + strconv.Itoa(numBlocks) + " blocks")
 	}
 
 	_, err = f.ReadAt(p.Bytes(), int64(blk.Number()*fm.blockSize))
 	if err != nil && !errors.Is(err, io.EOF) {
-		panic(fmt.Errorf("failed to read file: %w", err))
+		return errors.New("failed to read file: " + err.Error())
 	}
+
+	return nil
 }
 
 // Write writes the contents of the provided page to the specified block.
-func (fm *Manager) Write(blk *BlockID, p *Page) {
-	if blk.Number() < 0 {
-		panic(ErrNegativeBlock)
-	}
-
+func (fm *Manager) Write(blk *BlockID, p *Page) error {
 	fm.mu.Lock()
 	defer fm.mu.Unlock()
 
-	f, err := fm.GetFile(blk.Filename())
+	if blk.Number() < 0 {
+		return errors.New("negative block number not allowed")
+	}
+
+	f, err := fm.getFile(blk.Filename())
 	if err != nil {
-		panic(fmt.Errorf("failed to get file: %w", err))
+		return errors.New("failed to get file: " + err.Error())
 	}
 
 	_, err = f.WriteAt(p.Bytes(), int64(blk.Number()*fm.blockSize))
 	if err != nil {
-		panic(fmt.Errorf("failed to write file: %w", err))
+		return errors.New("failed to write file: " + err.Error())
 	}
+
+	return nil
 }
 
 // Append adds a new block to the end of the specified file and returns its BlockID.
 // The new block is initialized with zeros.
-func (fm *Manager) Append(filename string) *BlockID {
+func (fm *Manager) Append(filename string) (*BlockID, error) {
 	fm.mu.Lock()
 	defer fm.mu.Unlock()
 
 	// Get the next block number
-	numBlocks, err := fm.GetNumBlocks(filename)
+	numBlocks, err := fm.GetTotalBlocks(filename)
 	if err != nil {
-		panic(fmt.Errorf("failed to get number of blocks: %w", err))
+		return nil, errors.New("failed to get number of blocks: " + err.Error())
 	}
 
 	// Create the new block ID
@@ -111,22 +117,17 @@ func (fm *Manager) Append(filename string) *BlockID {
 
 	emptyBytes := make([]byte, fm.blockSize)
 
-	f, err := fm.GetFile(filename)
+	f, err := fm.getFile(filename)
 	if err != nil {
-		panic(fmt.Errorf("failed to get file: %w", err))
+		return nil, errors.New("failed to get file: " + err.Error())
 	}
 
 	_, err = f.WriteAt(emptyBytes, int64(blk.Number()*fm.blockSize))
 	if err != nil {
-		panic(fmt.Errorf("cannot append block %v: %w", blk, err))
+		return nil, errors.New("cannot append block: " + blk.String() + ": " + err.Error())
 	}
 
-	return blk
-}
-
-// BlockSize returns the block size used by this file manager
-func (fm *Manager) BlockSize() int {
-	return fm.blockSize
+	return blk, nil
 }
 
 // Close closes all opened files
@@ -143,9 +144,10 @@ func (fm *Manager) Close() {
 	}
 }
 
-// GetNumBlocks returns the number of blocks in the specified file
-func (fm *Manager) GetNumBlocks(filename string) (int, error) {
-	f, err := fm.GetFile(filename)
+// GetTotalBlocks returns the number of blocks in the specified file
+// Blocks are 0-indexed, so a file with blocks 0,1,2,3,4 has count 5.
+func (fm *Manager) GetTotalBlocks(filename string) (int, error) {
+	f, err := fm.getFile(filename)
 	if err != nil {
 		return 0, err
 	}
@@ -158,8 +160,8 @@ func (fm *Manager) GetNumBlocks(filename string) (int, error) {
 	return int(fi.Size() / int64(fm.blockSize)), nil
 }
 
-// GetFile returns the file with the specified filename, creating it if it does not exist
-func (fm *Manager) GetFile(filename string) (*os.File, error) {
+// getFile returns the file with the specified filename, creating it if it does not exist
+func (fm *Manager) getFile(filename string) (*os.File, error) {
 	f, ok := fm.openedFiles[filename]
 	if ok {
 		return f, nil

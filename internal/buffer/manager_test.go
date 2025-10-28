@@ -14,7 +14,8 @@ func TestManager_BasicOperations(t *testing.T) {
 	dbDir := "testdata"
 	blockSize := 400
 
-	fm := file.NewManager(dbDir, blockSize)
+	fm, err := file.NewManager(dbDir, blockSize)
+	assert.NoError(t, err)
 	defer fm.Close()
 	defer os.RemoveAll(dbDir)
 

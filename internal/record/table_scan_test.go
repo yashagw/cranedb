@@ -16,7 +16,8 @@ func TestTableScan(t *testing.T) {
 	testDir := "/tmp/testdb_tablescan"
 	defer os.RemoveAll(testDir)
 
-	fileManager := file.NewManager(testDir, 400)
+	fileManager, err := file.NewManager(testDir, 400)
+	assert.NoError(t, err)
 	logManager := log.NewManager(fileManager, "test.log")
 	bufferManager := buffer.NewManager(fileManager, logManager, 10)
 	lockTable := transaction.NewLockTable()

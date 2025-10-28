@@ -43,7 +43,7 @@ func (it *LogIterator) Next() []byte {
 	}
 
 	// Read current record and advance position
-	rec := it.page.GetBytes(it.currentpos)
+	rec := it.page.GetBytesArray(it.currentpos)
 	it.currentpos += 4 + len(rec) // Move past this record (4 bytes length + data)
 	return rec
 }

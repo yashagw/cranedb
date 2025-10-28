@@ -17,7 +17,8 @@ func TestMetadataManager_BasicOperations(t *testing.T) {
 	dbDir := "testdata_metadata"
 	blockSize := 400
 
-	fm := file.NewManager(dbDir, blockSize)
+	fm, err := file.NewManager(dbDir, blockSize)
+	assert.NoError(t, err)
 	defer fm.Close()
 	defer os.RemoveAll(dbDir)
 
@@ -53,7 +54,7 @@ func TestMetadataManager_BasicOperations(t *testing.T) {
 	schema.AddIntField("id")
 	schema.AddStringField("name", 50)
 	schema.AddStringField("email", 100)
-	err := mm.CreateTable("users", schema, tx3)
+	err = mm.CreateTable("users", schema, tx3)
 	require.NoError(t, err, "Should create table successfully")
 	tx3.Commit()
 
