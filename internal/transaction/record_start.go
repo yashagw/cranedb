@@ -38,7 +38,7 @@ func (s *StartLogRecord) Undo(tx *Transaction) {
 }
 
 // WriteStartLogRecord writes a StartLogRecord to the log manager
-func WriteStartLogRecord(lm *log.Manager, txNum int) int {
+func WriteStartLogRecord(lm *log.Manager, txNum int) (int, error) {
 	opPos := 0
 	txNumPos := opPos + LogRecordTypeSize()
 	finalLen := txNumPos + 4

@@ -38,7 +38,7 @@ func (s *RollbackLogRecord) Undo(tx *Transaction) {
 }
 
 // WriteRollbackLogRecord writes a RollbackLogRecord to the log manager
-func WriteRollbackLogRecord(lm *log.Manager, txNum int) int {
+func WriteRollbackLogRecord(lm *log.Manager, txNum int) (int, error) {
 	opPos := 0
 	txNumPos := opPos + LogRecordTypeSize()
 	finalLen := txNumPos + 4

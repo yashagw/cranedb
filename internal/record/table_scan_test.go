@@ -18,7 +18,8 @@ func TestTableScan(t *testing.T) {
 
 	fileManager, err := file.NewManager(testDir, 400)
 	assert.NoError(t, err)
-	logManager := log.NewManager(fileManager, "test.log")
+	logManager, err := log.NewManager(fileManager, "test.log")
+	assert.NoError(t, err)
 	bufferManager := buffer.NewManager(fileManager, logManager, 10)
 	lockTable := transaction.NewLockTable()
 

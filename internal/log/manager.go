@@ -1,6 +1,7 @@
 package log
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/yashagw/cranedb/internal/file"
@@ -9,9 +10,9 @@ import (
 // Manager manages the log file for the database.
 // It provides methods to append log records and iterate over them.
 type Manager struct {
-	fm           *file.Manager
-	logfile      string
-	logpage      *file.Page
+	fileManager  *file.Manager
+	logFilename  string
+	logPage      *file.Page
 	currentBlk   *file.BlockID
 	latestLSN    int
 	lastSavedLSN int
@@ -26,40 +27,89 @@ type Manager struct {
 // Block initialization:
 //   - New blocks have boundary set to blockSize (indicating completely empty)
 //   - Existing blocks are read to get their current state (boundary + existing records)
-func NewManager(fm *file.Manager, logfile string) *Manager {
-	// Create a new page with the block size from file manager
-	logpage := file.NewPage(fm.BlockSize())
+func NewManager(fm *file.Manager, logFilename string) (*Manager, error) {
+	logPage := file.NewPage(fm.BlockSize())
 
-	var currentblk *file.BlockID
-
-	numOfBlocks, err := fm.GetTotalBlocks(logfile)
+	totalBlocks, err := fm.GetTotalBlocks(logFilename)
 	if err != nil {
-		panic("not able to determine blocks in log file")
+		return nil, errors.New("not able to get total blocks in log file: " + err.Error())
 	}
-	if numOfBlocks == 0 {
+
+	var currentBlk *file.BlockID
+
+	if totalBlocks == 0 {
 		// Create and initialize new block
 		// Set boundary to blockSize, this indicates the block is completely empty
-		currentblk, err = fm.Append(logfile)
+		currentBlk, err = fm.Append(logFilename)
 		if err != nil {
-			panic("not able to append block to log file")
+			return nil, errors.New("not able to append first block to log file: " + err.Error())
 		}
-		logpage.SetInt(0, fm.BlockSize())
-		fm.Write(currentblk, logpage)
+		logPage.SetInt(0, fm.BlockSize())
+		err = fm.Write(currentBlk, logPage)
+		if err != nil {
+			return nil, errors.New("not able to write first block to log file: " + err.Error())
+		}
 	} else {
-		// Use the last block
-		// (zero-based: if numOfBlocks=3, last block is index 2)
-		currentblk = file.NewBlockID(logfile, numOfBlocks-1)
-		fm.Read(currentblk, logpage)
+		// Use the last block (blocks are zero-indexed, so the last block is totalBlocks - 1)
+		// This makes the last existing block the current log block for appending new records.
+		currentBlk = file.NewBlockID(logFilename, totalBlocks-1)
+		err = fm.Read(currentBlk, logPage)
+		if err != nil {
+			return nil, errors.New("not able to read last block from log file: " + err.Error())
+		}
 	}
 
 	return &Manager{
-		fm:           fm,
-		logfile:      logfile,
-		logpage:      logpage,
-		currentBlk:   currentblk,
+		fileManager:  fm,
+		logFilename:  logFilename,
+		logPage:      logPage,
+		currentBlk:   currentBlk,
 		latestLSN:    0,
 		lastSavedLSN: 0,
+	}, nil
+}
+
+// Close flushes the log and closes any open resources.
+func (lm *Manager) Close() error {
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
+
+	return lm.flush()
+}
+
+// Flush writes the current log page to disk if there are any unsaved changes.
+func (lm *Manager) Flush(lsn int) error {
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
+
+	if lsn > lm.lastSavedLSN {
+		return lm.flush()
 	}
+	return nil
+}
+
+// Iterator returns an iterator that can be used to iterate over the log records
+// from most recent to oldest.
+func (lm *Manager) Iterator() (*LogIterator, error) {
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
+
+	err := lm.flush()
+	if err != nil {
+		return nil, errors.New("not able to flush log page to disk: " + err.Error())
+	}
+	return NewLogIterator(lm.fileManager, lm.currentBlk), nil
+}
+
+// flush is an internal method that writes the current log page to disk.
+// It assumes that the mutex is already locked.
+func (lm *Manager) flush() error {
+	err := lm.fileManager.Write(lm.currentBlk, lm.logPage)
+	if err != nil {
+		return errors.New("not able to write log page to disk: " + err.Error())
+	}
+	lm.lastSavedLSN = lm.latestLSN
+	return nil
 }
 
 // Append adds a new log record to the log file.
@@ -89,11 +139,11 @@ func NewManager(fm *file.Manager, logfile string) *Manager {
 //	- Check: 48 - 4 >= 4? Yes (44 >= 4), so it fits
 //	- Write record at position 48-59
 //	- Update boundary to 48
-func (lm *Manager) Append(logrec []byte) int {
+func (lm *Manager) Append(logrec []byte) (int, error) {
 	lm.mu.Lock()
 	defer lm.mu.Unlock()
 
-	boundary := lm.logpage.GetInt(0)
+	boundary := lm.logPage.GetInt(0)
 	bytesneeded := len(logrec) + 4
 
 	// The record should fit entirely within [4, boundary] in the current block.
@@ -107,67 +157,37 @@ func (lm *Manager) Append(logrec []byte) int {
 	// - If boundary=60: availableSpace = 60-4 = 56 bytes
 	availableSpace := boundary - 4 // Space between position 4 and boundary
 	if bytesneeded > availableSpace {
+		var err error
+
 		// Record doesn't fit, need to move to a new block
-		lm.flush()
+		err = lm.flush()
+		if err != nil {
+			return 0, err
+		}
 
 		// Create and initialize new block
 		// Set boundary to blockSize, this indicates the block is completely empty
-		var err error
-		lm.currentBlk, err = lm.fm.Append(lm.logfile)
+		lm.currentBlk, err = lm.fileManager.Append(lm.logFilename)
 		if err != nil {
-			panic("not able to append block to log file")
+			return 0, errors.New("not able to append block to log file: " + err.Error())
 		}
-		lm.logpage.SetInt(0, lm.fm.BlockSize())
-		lm.fm.Write(lm.currentBlk, lm.logpage)
+		lm.logPage.SetInt(0, lm.fileManager.BlockSize())
+		err = lm.fileManager.Write(lm.currentBlk, lm.logPage)
+		if err != nil {
+			return 0, errors.New("not able to write block to log file: " + err.Error())
+		}
 
-		boundary = lm.logpage.GetInt(0)
+		boundary = lm.logPage.GetInt(0)
 	}
 
 	// Calculate position where record will be written
 	// Records grow downward from the boundary
 	recpos := boundary - bytesneeded
-	lm.logpage.SetBytesArray(recpos, logrec)
+	lm.logPage.SetBytesArray(recpos, logrec)
 
 	// Write the boundary to mark the start of used space
-	lm.logpage.SetInt(0, recpos)
-
+	lm.logPage.SetInt(0, recpos)
 	lm.latestLSN++
 
-	return lm.latestLSN
-}
-
-// Flush writes the current log page to disk if there are any unsaved changes.
-func (lm *Manager) Flush(lsn int) {
-	if lsn >= lm.lastSavedLSN {
-		lm.flush()
-	}
-}
-
-// flush is an internal method that writes the current log page to disk.
-func (lm *Manager) flush() {
-	lm.fm.Write(lm.currentBlk, lm.logpage)
-	lm.lastSavedLSN = lm.latestLSN
-}
-
-// Iterator returns an iterator that can be used to iterate over the log records
-// from most recent to oldest.
-func (lm *Manager) Iterator() *LogIterator {
-	lm.flush()
-	return NewLogIterator(lm.fm, lm.currentBlk)
-}
-
-// LatestLSN returns the most recently assigned LSN.
-func (lm *Manager) LatestLSN() int {
-	return lm.latestLSN
-}
-
-// LastSavedLSN returns the most recently saved LSN.
-func (lm *Manager) LastSavedLSN() int {
-	return lm.lastSavedLSN
-}
-
-// Close flushes the log and closes any open resources.
-func (lm *Manager) Close() error {
-	lm.flush()
-	return nil
+	return lm.latestLSN, nil
 }

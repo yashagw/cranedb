@@ -2,65 +2,51 @@ package log
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/yashagw/cranedb/internal/file"
 )
 
-func TestNewLogMgr(t *testing.T) {
-	dataDir := "testdata"
-	logFile := "testlogfile"
+func TestManager(t *testing.T) {
+	tempDir := t.TempDir()
+	defer os.RemoveAll(tempDir)
 
-	fileManager, err := file.NewManager(dataDir, 32)
+	fm, err := file.NewManager(tempDir, 32)
 	assert.NoError(t, err)
-	t.Cleanup(func() {
-		fileManager.Close()
-		os.Remove(filepath.Join(dataDir, logFile))
-	})
 
-	logManager := NewManager(fileManager, logFile)
+	logFile := "test.log"
+	lm, err := NewManager(fm, logFile)
+	assert.NoError(t, err)
 
-	boundary := logManager.logpage.GetInt(0)
-	if boundary != 32 {
-		t.Errorf("boundary = %d, want %d", boundary, 32)
-	}
+	boundary := lm.logPage.GetInt(0)
+	assert.Equal(t, boundary, 32)
 
-	logSize, err := fileManager.GetTotalBlocks(logFile)
-	if err != nil {
-		t.Fatalf("GetNumBlocks failed: %v", err)
-	}
-	if logSize != 1 {
-		t.Errorf("logSize = %d, want %d", logSize, 1)
-	}
+	logSize, err := fm.GetTotalBlocks(logFile)
+	assert.NoError(t, err)
+	assert.Equal(t, logSize, 1)
 
 	// Test when log file already exists
-	fileManager.Write(file.NewBlockID(logFile, 1), file.NewPage(fileManager.BlockSize()))
+	fm.Write(file.NewBlockID(logFile, 1), file.NewPage(fm.BlockSize()))
 
-	_ = NewManager(fileManager, logFile)
+	_, err = NewManager(fm, logFile)
+	assert.NoError(t, err)
 
-	logSize, err = fileManager.GetTotalBlocks(logFile)
-	if err != nil {
-		t.Fatalf("GetNumBlocks failed: %v", err)
-	}
-	if logSize != 2 {
-		t.Errorf("logSize = %d, want %d", logSize, 2)
-	}
+	logSize, err = fm.GetTotalBlocks(logFile)
+	assert.NoError(t, err)
+	assert.Equal(t, logSize, 2)
 }
 
 func TestLog(t *testing.T) {
-	dataDir := "testdata"
-	logFile := "testlogfile1"
+	tempDir := t.TempDir()
+	defer os.RemoveAll(tempDir)
 
-	fileManager, err := file.NewManager(dataDir, 32)
+	fm, err := file.NewManager(tempDir, 32)
 	assert.NoError(t, err)
-	t.Cleanup(func() {
-		fileManager.Close()
-		os.Remove(filepath.Join(dataDir, logFile))
-	})
 
-	logManager := NewManager(fileManager, logFile)
+	logFile := "test.log"
+	lm, err := NewManager(fm, logFile)
+	assert.NoError(t, err)
 
 	tests := []struct {
 		name             string
@@ -94,39 +80,30 @@ func TestLog(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			lsn := logManager.Append(tt.data)
-			if lsn != tt.expectedLSN {
-				t.Errorf("lsn = %d, want %d", lsn, tt.expectedLSN)
-			}
+			lsn, err := lm.Append(tt.data)
+			assert.NoError(t, err)
+			assert.Equal(t, lsn, tt.expectedLSN)
 
-			boundary := logManager.logpage.GetInt(0)
-			if boundary != tt.expectedboundary {
-				t.Errorf("boundary = %d, want %d", boundary, tt.expectedboundary)
-			}
+			boundary := lm.logPage.GetInt(0)
+			assert.Equal(t, boundary, tt.expectedboundary)
 
-			logSize, err := fileManager.GetTotalBlocks(logFile)
-			if err != nil {
-				t.Fatalf("GetNumBlocks failed: %v", err)
-			}
-			if logSize != tt.expectedLogSize {
-				t.Errorf("logSize = %d, want %d", logSize, tt.expectedLogSize)
-			}
+			logSize, err := fm.GetTotalBlocks(logFile)
+			assert.NoError(t, err)
+			assert.Equal(t, logSize, tt.expectedLogSize)
 		})
 	}
 }
 
 func TestIterator(t *testing.T) {
-	dataDir := "testdata"
-	logFile := "testlogfile2"
+	tempDir := t.TempDir()
+	defer os.RemoveAll(tempDir)
 
-	fileManager, err := file.NewManager(dataDir, 32)
+	fm, err := file.NewManager(tempDir, 32)
 	assert.NoError(t, err)
-	t.Cleanup(func() {
-		fileManager.Close()
-		os.Remove(filepath.Join(dataDir, logFile))
-	})
 
-	logManager := NewManager(fileManager, logFile)
+	logFile := "test.log"
+	lm, err := NewManager(fm, logFile)
+	assert.NoError(t, err)
 
 	records := [][]byte{
 		[]byte("record one"),
@@ -143,26 +120,17 @@ func TestIterator(t *testing.T) {
 		[]byte("record twelve"),
 		[]byte("record thirteen"),
 	}
-
 	for _, record := range records {
-		logManager.Append(record)
+		lm.Append(record)
 	}
 
-	iter := logManager.Iterator()
+	iter, err := lm.Iterator()
+	assert.NoError(t, err)
 
 	for i := 12; i >= 0; i-- {
-		if !iter.HasNext() {
-			t.Fatalf("HasNext returned false, want true")
-		}
-
+		assert.True(t, iter.HasNext())
 		rec := iter.Next()
-		if string(rec) != string(records[i]) {
-			t.Errorf("record data, got = %s, want %s", rec, records[i])
-		}
+		assert.Equal(t, string(rec), string(records[i]))
 	}
-
-	// After reading all records, HasNext should return false
-	if iter.HasNext() {
-		t.Errorf("HasNext returned true after reading all records, want false")
-	}
+	assert.False(t, iter.HasNext())
 }

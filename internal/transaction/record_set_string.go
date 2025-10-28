@@ -58,7 +58,7 @@ func (s *SetStringLogRecord) Undo(tx *Transaction) {
 }
 
 // WriteSetStringLogRecord writes a SetStringLogRecord to the log manager
-func WriteSetStringLogRecord(lm *log.Manager, txNum int, blk *file.BlockID, offset int, oldValue string) int {
+func WriteSetStringLogRecord(lm *log.Manager, txNum int, blk *file.BlockID, offset int, oldValue string) (int, error) {
 	opPos := 0
 	txNumPos := opPos + LogRecordTypeSize()
 	fileNamePos := txNumPos + 4

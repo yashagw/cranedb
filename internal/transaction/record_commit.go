@@ -38,7 +38,7 @@ func (s *CommitLogRecord) Undo(tx *Transaction) {
 }
 
 // WriteCommitLogRecord writes a CommitLogRecord to the log manager
-func WriteCommitLogRecord(lm *log.Manager, txNum int) int {
+func WriteCommitLogRecord(lm *log.Manager, txNum int) (int, error) {
 	opPos := 0
 	txNumPos := opPos + LogRecordTypeSize()
 	finalLen := txNumPos + 4

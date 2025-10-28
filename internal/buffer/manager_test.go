@@ -19,7 +19,8 @@ func TestManager_BasicOperations(t *testing.T) {
 	defer fm.Close()
 	defer os.RemoveAll(dbDir)
 
-	lm := log.NewManager(fm, "testlog")
+	lm, err := log.NewManager(fm, "testlog")
+	assert.NoError(t, err)
 	defer lm.Close()
 
 	bm := NewManager(fm, lm, 3)

@@ -13,7 +13,8 @@ func TestSetIntLogRecord_EncodeDecode(t *testing.T) {
 	tempDir := t.TempDir()
 	fileManager, err := file.NewManager(tempDir, 400)
 	assert.NoError(t, err)
-	logManager := log.NewManager(fileManager, "log_test")
+	logManager, err := log.NewManager(fileManager, "log_test")
+	assert.NoError(t, err)
 
 	// Test data
 	fileName := "test_file"
@@ -24,10 +25,12 @@ func TestSetIntLogRecord_EncodeDecode(t *testing.T) {
 	offset := 100
 	oldValue := 12345
 
-	WriteSetIntLogRecord(logManager, txNum, blockID, offset, oldValue)
+	_, err = WriteSetIntLogRecord(logManager, txNum, blockID, offset, oldValue)
+	assert.NoError(t, err)
 
 	// Get the last log record
-	iterator := logManager.Iterator()
+	iterator, err := logManager.Iterator()
+	assert.NoError(t, err)
 	var lastRecord []byte
 	for iterator.HasNext() {
 		lastRecord = iterator.Next()
@@ -55,7 +58,8 @@ func TestSetStringLogRecord_EncodeDecode(t *testing.T) {
 	tempDir := t.TempDir()
 	fileManager, err := file.NewManager(tempDir, 400)
 	assert.NoError(t, err)
-	logManager := log.NewManager(fileManager, "log_test")
+	logManager, err := log.NewManager(fileManager, "log_test")
+	assert.NoError(t, err)
 
 	// Test data
 	fileName := "test_file"
@@ -66,10 +70,12 @@ func TestSetStringLogRecord_EncodeDecode(t *testing.T) {
 	offset := 100
 	oldValue := "old_test_value"
 
-	WriteSetStringLogRecord(logManager, txNum, blockID, offset, oldValue)
+	_, err = WriteSetStringLogRecord(logManager, txNum, blockID, offset, oldValue)
+	assert.NoError(t, err)
 
 	// Get the last log record
-	iterator := logManager.Iterator()
+	iterator, err := logManager.Iterator()
+	assert.NoError(t, err)
 	var lastRecord []byte
 	for iterator.HasNext() {
 		lastRecord = iterator.Next()
@@ -97,14 +103,17 @@ func TestStartLogRecord_EncodeDecode(t *testing.T) {
 	tempDir := t.TempDir()
 	fileManager, err := file.NewManager(tempDir, 400)
 	assert.NoError(t, err)
-	logManager := log.NewManager(fileManager, "log_test")
+	logManager, err := log.NewManager(fileManager, "log_test")
+	assert.NoError(t, err)
 
 	txNum := 42
 
-	WriteStartLogRecord(logManager, txNum)
+	_, err = WriteStartLogRecord(logManager, txNum)
+	assert.NoError(t, err)
 
 	// Get the last log record
-	iterator := logManager.Iterator()
+	iterator, err := logManager.Iterator()
+	assert.NoError(t, err)
 	var lastRecord []byte
 	for iterator.HasNext() {
 		lastRecord = iterator.Next()
@@ -128,14 +137,17 @@ func TestCommitLogRecord_EncodeDecode(t *testing.T) {
 	tempDir := t.TempDir()
 	fileManager, err := file.NewManager(tempDir, 400)
 	assert.NoError(t, err)
-	logManager := log.NewManager(fileManager, "log_test")
+	logManager, err := log.NewManager(fileManager, "log_test")
+	assert.NoError(t, err)
 
 	txNum := 42
 
-	WriteCommitLogRecord(logManager, txNum)
+	_, err = WriteCommitLogRecord(logManager, txNum)
+	assert.NoError(t, err)
 
 	// Get the last log record
-	iterator := logManager.Iterator()
+	iterator, err := logManager.Iterator()
+	assert.NoError(t, err)
 	var lastRecord []byte
 	for iterator.HasNext() {
 		lastRecord = iterator.Next()
@@ -159,14 +171,17 @@ func TestRollbackLogRecord_EncodeDecode(t *testing.T) {
 	tempDir := t.TempDir()
 	fileManager, err := file.NewManager(tempDir, 400)
 	assert.NoError(t, err)
-	logManager := log.NewManager(fileManager, "log_test")
+	logManager, err := log.NewManager(fileManager, "log_test")
+	assert.NoError(t, err)
 
 	txNum := 42
 
-	WriteRollbackLogRecord(logManager, txNum)
+	_, err = WriteRollbackLogRecord(logManager, txNum)
+	assert.NoError(t, err)
 
 	// Get the last log record
-	iterator := logManager.Iterator()
+	iterator, err := logManager.Iterator()
+	assert.NoError(t, err)
 	var lastRecord []byte
 	for iterator.HasNext() {
 		lastRecord = iterator.Next()
@@ -190,12 +205,15 @@ func TestCheckpointLogRecord_EncodeDecode(t *testing.T) {
 	tempDir := t.TempDir()
 	fileManager, err := file.NewManager(tempDir, 400)
 	assert.NoError(t, err)
-	logManager := log.NewManager(fileManager, "log_test")
+	logManager, err := log.NewManager(fileManager, "log_test")
+	assert.NoError(t, err)
 
-	WriteCheckpointLogRecord(logManager)
+	_, err = WriteCheckpointLogRecord(logManager)
+	assert.NoError(t, err)
 
 	// Get the last log record
-	iterator := logManager.Iterator()
+	iterator, err := logManager.Iterator()
+	assert.NoError(t, err)
 	var lastRecord []byte
 	for iterator.HasNext() {
 		lastRecord = iterator.Next()

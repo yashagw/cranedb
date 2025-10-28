@@ -27,31 +27,46 @@ func NewRecoveryManager(txNum int, transaction *Transaction, logManager *log.Man
 	}
 }
 
-func (rm *RecoveryManager) Commit() {
+func (rm *RecoveryManager) Commit() error {
 	rm.bufferManager.FlushAll(rm.txNum)
-	lsn := WriteCommitLogRecord(rm.logManager, rm.txNum)
-	rm.logManager.Flush(lsn)
+	lsn, err := WriteCommitLogRecord(rm.logManager, rm.txNum)
+	if err != nil {
+		return err
+	}
+	return rm.logManager.Flush(lsn)
 }
 
-func (rm *RecoveryManager) Rollback() {
-	rm.doRollback()
+func (rm *RecoveryManager) Rollback() error {
+	err := rm.doRollback()
+	if err != nil {
+		return err
+	}
 	rm.bufferManager.FlushAll(rm.txNum)
-	lsn := WriteCommitLogRecord(rm.logManager, rm.txNum)
-	rm.logManager.Flush(lsn)
+	lsn, err := WriteCommitLogRecord(rm.logManager, rm.txNum)
+	if err != nil {
+		return err
+	}
+	return rm.logManager.Flush(lsn)
 }
 
-func (rm *RecoveryManager) Recover() {
-	rm.doRecovery()
+func (rm *RecoveryManager) Recover() error {
+	err := rm.doRecovery()
+	if err != nil {
+		return err
+	}
 	rm.bufferManager.FlushAll(rm.txNum)
-	lsn := WriteCheckpointLogRecord(rm.logManager)
-	rm.logManager.Flush(lsn)
+	lsn, err := WriteCheckpointLogRecord(rm.logManager)
+	if err != nil {
+		return err
+	}
+	return rm.logManager.Flush(lsn)
 }
 
 // SetInt logs an integer modification operation before it occurs.
 // It reads the current value from the buffer at the specified offset,
 // writes a SetInt log record with the old value for potential rollback,
 // and returns the LSN of the log record.
-func (rm *RecoveryManager) SetInt(buf *buffer.Buffer, offset int) int {
+func (rm *RecoveryManager) SetInt(buf *buffer.Buffer, offset int) (int, error) {
 	oldVal := buf.Contents().GetInt(offset)
 	return WriteSetIntLogRecord(rm.logManager, rm.txNum, buf.Block(), offset, oldVal)
 }
@@ -60,7 +75,7 @@ func (rm *RecoveryManager) SetInt(buf *buffer.Buffer, offset int) int {
 // It reads the current value from the buffer at the specified offset,
 // writes a SetString log record with the old value for potential rollback,
 // and returns the LSN of the log record.
-func (rm *RecoveryManager) SetString(buf *buffer.Buffer, offset int) int {
+func (rm *RecoveryManager) SetString(buf *buffer.Buffer, offset int) (int, error) {
 	oldVal := buf.Contents().GetString(offset)
 	return WriteSetStringLogRecord(rm.logManager, rm.txNum, buf.Block(), offset, oldVal)
 }
@@ -68,8 +83,11 @@ func (rm *RecoveryManager) SetString(buf *buffer.Buffer, offset int) int {
 // doRollback undoes all operations for the current transaction by scanning the log records
 // backwards. For each log record belonging to this transaction, it performs the corresponding
 // undo operation, stopping when it reaches the transaction's Start record.
-func (rm *RecoveryManager) doRollback() {
-	lmIterator := rm.logManager.Iterator()
+func (rm *RecoveryManager) doRollback() error {
+	lmIterator, err := rm.logManager.Iterator()
+	if err != nil {
+		return err
+	}
 
 	for lmIterator.HasNext() {
 		logBytes := lmIterator.Next()
@@ -83,14 +101,18 @@ func (rm *RecoveryManager) doRollback() {
 			record.Undo(rm.transaction)
 		}
 	}
+	return nil
 }
 
 // doRecovery performs database recovery by reading the log records backward
 // and undoes any uncompleted transactions.
 // Recovery stops if it reaches the start of the log or a checkpoint record.
-func (rm *RecoveryManager) doRecovery() {
+func (rm *RecoveryManager) doRecovery() error {
 	finishedTXs := []int{}
-	lmIterator := rm.logManager.Iterator()
+	lmIterator, err := rm.logManager.Iterator()
+	if err != nil {
+		return err
+	}
 
 	for lmIterator.HasNext() {
 		logBytes := lmIterator.Next()
@@ -99,7 +121,7 @@ func (rm *RecoveryManager) doRecovery() {
 		// If reached Checkpoint then it means
 		// above this logs everything is committed and we can stop
 		if record.Op() == LogRecordCheckpoint {
-			return
+			return nil
 		}
 
 		if record.Op() == LogRecordCommit || record.Op() == LogRecordRollback {
@@ -110,4 +132,5 @@ func (rm *RecoveryManager) doRecovery() {
 			record.Undo(rm.transaction)
 		}
 	}
+	return nil
 }

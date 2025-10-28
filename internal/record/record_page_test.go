@@ -15,7 +15,8 @@ func TestRecordPage_Format(t *testing.T) {
 	// Setup test environment
 	fileManager, err := file.NewManager("/tmp/testdb", 400)
 	assert.NoError(t, err)
-	logManager := log.NewManager(fileManager, "test.log")
+	logManager, err := log.NewManager(fileManager, "test.log")
+	assert.NoError(t, err)
 	bufferManager := buffer.NewManager(fileManager, logManager, 10)
 	lockTable := transaction.NewLockTable()
 

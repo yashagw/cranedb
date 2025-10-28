@@ -22,7 +22,8 @@ func TestStatsManager_BasicOperations(t *testing.T) {
 	defer fm.Close()
 	defer os.RemoveAll(dbDir)
 
-	lm := log.NewManager(fm, "testlog")
+	lm, err := log.NewManager(fm, "testlog")
+	assert.NoError(t, err)
 	defer lm.Close()
 
 	bm := buffer.NewManager(fm, lm, 10)
@@ -107,7 +108,8 @@ func TestStatsManager_DistinctValues(t *testing.T) {
 	defer fm.Close()
 	defer os.RemoveAll(dbDir)
 
-	lm := log.NewManager(fm, "testlog")
+	lm, err := log.NewManager(fm, "testlog")
+	assert.NoError(t, err)
 	defer lm.Close()
 
 	bm := buffer.NewManager(fm, lm, 10)

@@ -15,7 +15,8 @@ import (
 func TestTransaction_BasicOperations(t *testing.T) {
 	fileManager, err := file.NewManager("/tmp/testdb", 400)
 	assert.NoError(t, err)
-	logManager := log.NewManager(fileManager, "test.log")
+	logManager, err := log.NewManager(fileManager, "test.log")
+	assert.NoError(t, err)
 	bufferManager := buffer.NewManager(fileManager, logManager, 10)
 	lockTable := NewLockTable()
 
@@ -66,7 +67,8 @@ func TestTransaction_BasicOperations(t *testing.T) {
 func TestTransaction_DataOperation(t *testing.T) {
 	fileManager, err := file.NewManager("/tmp/testdb", 400)
 	assert.NoError(t, err)
-	logManager := log.NewManager(fileManager, "test.log")
+	logManager, err := log.NewManager(fileManager, "test.log")
+	assert.NoError(t, err)
 	bufferManager := buffer.NewManager(fileManager, logManager, 10)
 	lockTable := NewLockTable()
 
@@ -101,7 +103,8 @@ func TestTransaction_DataOperation(t *testing.T) {
 func TestTransaction_ConcurrencyOperations(t *testing.T) {
 	fileManager, err := file.NewManager("/tmp/testdb", 400)
 	assert.NoError(t, err)
-	logManager := log.NewManager(fileManager, "test.log")
+	logManager, err := log.NewManager(fileManager, "test.log")
+	assert.NoError(t, err)
 	bufferManager := buffer.NewManager(fileManager, logManager, 10)
 	lockTable := NewLockTable()
 
@@ -146,7 +149,8 @@ func TestTransaction_ConcurrencyOperations(t *testing.T) {
 func TestTransaction_ReadWriteConcurrency(t *testing.T) {
 	fileManager, err := file.NewManager("/tmp/testdb", 400)
 	assert.NoError(t, err)
-	logManager := log.NewManager(fileManager, "test.log")
+	logManager, err := log.NewManager(fileManager, "test.log")
+	assert.NoError(t, err)
 	bufferManager := buffer.NewManager(fileManager, logManager, 10)
 	lockTable := NewLockTable()
 

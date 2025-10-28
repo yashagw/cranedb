@@ -32,12 +32,12 @@ func (s *CheckpointLogRecord) Undo(tx *Transaction) {
 }
 
 // WriteCheckpointLogRecord writes a CheckpointLogRecord to the log manager
-func WriteCheckpointLogRecord(lm *log.Manager) int {
+func WriteCheckpointLogRecord(lm *log.Manager) (int, error) {
 	opPos := 0
 	finalLen := opPos + LogRecordTypeSize()
 
 	page := file.NewPage(finalLen)
-	page.SetInt(opPos, int(LogRecordStart))
+	page.SetInt(opPos, int(LogRecordCheckpoint))
 
 	return lm.Append(page.Bytes())
 }

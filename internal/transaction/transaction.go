@@ -58,16 +58,24 @@ func NewTransaction(fileManager *file.Manager, logManager *log.Manager, bufferMa
 	return transaction
 }
 
-func (t *Transaction) Commit() {
-	t.recoveryManager.Commit()
+func (t *Transaction) Commit() error {
+	err := t.recoveryManager.Commit()
+	if err != nil {
+		return err
+	}
 	t.concurrencyManager.release()
 	t.bufferList.UnpinAll()
+	return nil
 }
 
-func (t *Transaction) Rollback() {
-	t.recoveryManager.Rollback()
+func (t *Transaction) Rollback() error {
+	err := t.recoveryManager.Rollback()
+	if err != nil {
+		return err
+	}
 	t.concurrencyManager.release()
 	t.bufferList.UnpinAll()
+	return nil
 }
 
 func (t *Transaction) Pin(blk *file.BlockID) *buffer.Buffer {
@@ -92,28 +100,38 @@ func (t *Transaction) GetString(blk *file.BlockID, offset int) string {
 	return val
 }
 
-func (t *Transaction) SetInt(blk *file.BlockID, offset int, val int, log bool) {
+func (t *Transaction) SetInt(blk *file.BlockID, offset int, val int, log bool) error {
 	t.concurrencyManager.xLock(blk)
 	buff := t.bufferList.GetBuffer(blk)
 	lsn := -1
+	var err error
 	if log {
-		lsn = t.recoveryManager.SetInt(buff, offset)
+		lsn, err = t.recoveryManager.SetInt(buff, offset)
+		if err != nil {
+			return err
+		}
 	}
 	page := buff.Contents()
 	page.SetInt(offset, val)
 	buff.SetModified(t.txNum, lsn)
+	return nil
 }
 
-func (t *Transaction) SetString(blk *file.BlockID, offset int, val string, log bool) {
+func (t *Transaction) SetString(blk *file.BlockID, offset int, val string, log bool) error {
 	t.concurrencyManager.xLock(blk)
 	buff := t.bufferList.GetBuffer(blk)
 	lsn := -1
+	var err error
 	if log {
-		lsn = t.recoveryManager.SetString(buff, offset)
+		lsn, err = t.recoveryManager.SetString(buff, offset)
+		if err != nil {
+			return err
+		}
 	}
 	page := buff.Contents()
 	page.SetString(offset, val)
 	buff.SetModified(t.txNum, lsn)
+	return nil
 }
 
 func (t *Transaction) Size(filename string) (int, error) {
