@@ -23,7 +23,8 @@ func TestManager_BasicOperations(t *testing.T) {
 	assert.NoError(t, err)
 	defer lm.Close()
 
-	bm := NewManager(fm, lm, 3)
+	bm, err := NewManager(fm, lm, 3)
+	require.NoError(t, err)
 	assert.Equal(t, 3, bm.Available(), "Should have 3 available buffers initially")
 
 	blk1 := file.NewBlockID("testfile", 0)
@@ -60,7 +61,8 @@ func TestManager_BasicOperations(t *testing.T) {
 	assert.Equal(t, 123, buff1.ModifyingTx(), "Should track modifying transaction")
 
 	// Test flush all
-	bm.FlushAll(123)
+	err = bm.FlushAll(123)
+	require.NoError(t, err, "FlushAll should succeed")
 
 	// Clean up
 	bm.Unpin(buff2)

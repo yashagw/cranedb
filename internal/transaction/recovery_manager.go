@@ -28,7 +28,10 @@ func NewRecoveryManager(txNum int, transaction *Transaction, logManager *log.Man
 }
 
 func (rm *RecoveryManager) Commit() error {
-	rm.bufferManager.FlushAll(rm.txNum)
+	err := rm.bufferManager.FlushAll(rm.txNum)
+	if err != nil {
+		return err
+	}
 	lsn, err := WriteCommitLogRecord(rm.logManager, rm.txNum)
 	if err != nil {
 		return err
@@ -41,7 +44,10 @@ func (rm *RecoveryManager) Rollback() error {
 	if err != nil {
 		return err
 	}
-	rm.bufferManager.FlushAll(rm.txNum)
+	err = rm.bufferManager.FlushAll(rm.txNum)
+	if err != nil {
+		return err
+	}
 	lsn, err := WriteCommitLogRecord(rm.logManager, rm.txNum)
 	if err != nil {
 		return err
@@ -54,7 +60,10 @@ func (rm *RecoveryManager) Recover() error {
 	if err != nil {
 		return err
 	}
-	rm.bufferManager.FlushAll(rm.txNum)
+	err = rm.bufferManager.FlushAll(rm.txNum)
+	if err != nil {
+		return err
+	}
 	lsn, err := WriteCheckpointLogRecord(rm.logManager)
 	if err != nil {
 		return err

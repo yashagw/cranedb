@@ -9,8 +9,6 @@ import (
 	"github.com/yashagw/cranedb/internal/log"
 )
 
-var ErrBufferAbort = errors.New("buffer request aborted")
-
 // Manager manages a pool of buffers.
 type Manager struct {
 	bufferpool   []*Buffer
@@ -20,19 +18,23 @@ type Manager struct {
 	cond         *sync.Cond
 }
 
-func NewManager(fm *file.Manager, lm *log.Manager, numbuffs int) *Manager {
-	bufferpool := make([]*Buffer, 0, numbuffs)
-	for range numbuffs {
-		bufferpool = append(bufferpool, NewBuffer(fm, lm))
+func NewManager(fileManager *file.Manager, logManager *log.Manager, numOfBuffer int) (*Manager, error) {
+	if numOfBuffer <= 0 {
+		return nil, errors.New("number of buffers must be positive")
+	}
+
+	bufferpool := make([]*Buffer, 0, numOfBuffer)
+	for range numOfBuffer {
+		bufferpool = append(bufferpool, NewBuffer(fileManager, logManager))
 	}
 
 	bm := &Manager{
 		bufferpool:   bufferpool,
-		numAvailable: numbuffs,
+		numAvailable: numOfBuffer,
 		maxTime:      10 * time.Second,
 	}
 	bm.cond = sync.NewCond(&bm.mu)
-	return bm
+	return bm, nil
 }
 
 func (bm *Manager) Available() int {
@@ -41,15 +43,19 @@ func (bm *Manager) Available() int {
 	return bm.numAvailable
 }
 
-func (bm *Manager) FlushAll(txnum int) {
+func (bm *Manager) FlushAll(txnum int) error {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
 	for _, buff := range bm.bufferpool {
 		if buff.ModifyingTx() == txnum {
-			buff.flush()
+			err := buff.flush()
+			if err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 func (bm *Manager) Unpin(buff *Buffer) {
@@ -73,7 +79,10 @@ func (bm *Manager) Pin(blk *file.BlockID) (*Buffer, error) {
 	defer bm.mu.Unlock()
 
 	startTime := time.Now()
-	buff := bm.tryToPin(blk)
+	buff, err := bm.tryToPin(blk)
+	if err != nil {
+		return nil, err
+	}
 
 	// If no buffer available, wait with timeout
 	for buff == nil && time.Since(startTime) < bm.maxTime {
@@ -85,18 +94,21 @@ func (bm *Manager) Pin(blk *file.BlockID) (*Buffer, error) {
 
 		// Sleep until someone calls Broadcast()
 		bm.cond.Wait()
-		buff = bm.tryToPin(blk)
+		buff, err = bm.tryToPin(blk)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if buff == nil {
-		return nil, ErrBufferAbort
+		return nil, errors.New("empty buffer not found")
 	}
 	return buff, nil
 }
 
 // tryToPin attempts to pin a buffer to the specified block.
 // Returns nil if no buffer is available.
-func (bm *Manager) tryToPin(blk *file.BlockID) *Buffer {
+func (bm *Manager) tryToPin(blk *file.BlockID) (*Buffer, error) {
 	var buff *Buffer
 
 	// 1. Check if the block is already in a buffer
@@ -119,11 +131,14 @@ func (bm *Manager) tryToPin(blk *file.BlockID) *Buffer {
 
 		// 3. If no unpinned buffer is available, return nil
 		if buff == nil {
-			return nil
+			return nil, nil
 		}
 
 		// 4. Assign the buffer to the block
-		buff.assignToBlock(blk)
+		err := buff.loadBlock(blk)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// 5. If the buffer wasn't already pinned, decrease available count
@@ -133,5 +148,5 @@ func (bm *Manager) tryToPin(blk *file.BlockID) *Buffer {
 
 	buff.pin()
 
-	return buff
+	return buff, nil
 }

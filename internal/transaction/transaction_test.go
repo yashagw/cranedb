@@ -17,7 +17,8 @@ func TestTransaction_BasicOperations(t *testing.T) {
 	assert.NoError(t, err)
 	logManager, err := log.NewManager(fileManager, "test.log")
 	assert.NoError(t, err)
-	bufferManager := buffer.NewManager(fileManager, logManager, 10)
+	bufferManager, err := buffer.NewManager(fileManager, logManager, 10)
+	require.NoError(t, err)
 	lockTable := NewLockTable()
 
 	// Test 1: Create transaction
@@ -69,7 +70,8 @@ func TestTransaction_DataOperation(t *testing.T) {
 	assert.NoError(t, err)
 	logManager, err := log.NewManager(fileManager, "test.log")
 	assert.NoError(t, err)
-	bufferManager := buffer.NewManager(fileManager, logManager, 10)
+	bufferManager, err := buffer.NewManager(fileManager, logManager, 10)
+	require.NoError(t, err)
 	lockTable := NewLockTable()
 
 	tx := NewTransaction(fileManager, logManager, bufferManager, lockTable)
@@ -105,7 +107,8 @@ func TestTransaction_ConcurrencyOperations(t *testing.T) {
 	assert.NoError(t, err)
 	logManager, err := log.NewManager(fileManager, "test.log")
 	assert.NoError(t, err)
-	bufferManager := buffer.NewManager(fileManager, logManager, 10)
+	bufferManager, err := buffer.NewManager(fileManager, logManager, 10)
+	require.NoError(t, err)
 	lockTable := NewLockTable()
 
 	block := file.NewBlockID("testfile", 1)
@@ -151,7 +154,8 @@ func TestTransaction_ReadWriteConcurrency(t *testing.T) {
 	assert.NoError(t, err)
 	logManager, err := log.NewManager(fileManager, "test.log")
 	assert.NoError(t, err)
-	bufferManager := buffer.NewManager(fileManager, logManager, 10)
+	bufferManager, err := buffer.NewManager(fileManager, logManager, 10)
+	require.NoError(t, err)
 	lockTable := NewLockTable()
 
 	block := file.NewBlockID("testfile", 1)

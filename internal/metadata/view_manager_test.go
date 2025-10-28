@@ -18,15 +18,16 @@ func TestViewManager_BasicOperations(t *testing.T) {
 	blockSize := 400
 
 	fm, err := file.NewManager(dbDir, blockSize)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer fm.Close()
 	defer os.RemoveAll(dbDir)
 
 	lm, err := log.NewManager(fm, "testlog")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer lm.Close()
 
-	bm := buffer.NewManager(fm, lm, 10)
+	bm, err := buffer.NewManager(fm, lm, 10)
+	require.NoError(t, err)
 	lockTable := transaction.NewLockTable()
 
 	// Test 1: Create new ViewManager with new database
