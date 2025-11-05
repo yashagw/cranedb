@@ -42,6 +42,11 @@ func (ts *TableScan) Close() {
 	}
 }
 
+// HasField checks if the table scan has the specified field.
+func (ts *TableScan) HasField(fieldName string) bool {
+	return ts.layout.schema.HasField(fieldName)
+}
+
 // BeforeFirst positions the scanner before the first record
 func (ts *TableScan) BeforeFirst() {
 	ts.MoveToBlock(0)
@@ -128,6 +133,15 @@ func (ts *TableScan) GetInt(fieldName string) int {
 // GetString retrieves a string value from the current record
 func (ts *TableScan) GetString(fieldName string) string {
 	return ts.currentRecordPage.GetString(ts.currentSlot, fieldName)
+}
+
+// GetValue retrieves a value from the current record as an interface{}
+func (ts *TableScan) GetValue(fieldName string) any {
+	fieldType := ts.layout.schema.Type(fieldName)
+	if fieldType == "int" {
+		return ts.GetInt(fieldName)
+	}
+	return ts.GetString(fieldName)
 }
 
 // SetInt sets an integer value in the current record

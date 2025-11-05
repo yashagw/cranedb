@@ -77,3 +77,9 @@ func (s *Schema) Length(fieldName string) int {
 	}
 	return 0
 }
+
+// HasField checks if the schema contains the specified field.
+func (s *Schema) HasField(fieldName string) bool {
+	_, exists := s.fieldInfo[fieldName]
+	return exists
+}
