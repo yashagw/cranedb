@@ -1,17 +1,20 @@
-package scan
+package query
 
-import "github.com/yashagw/cranedb/internal/record"
+import (
+	"github.com/yashagw/cranedb/internal/record"
+	"github.com/yashagw/cranedb/internal/scan"
+)
 
 var (
-	_ UpdateScan = (*SelectScan)(nil)
+	_ scan.UpdateScan = (*SelectScan)(nil)
 )
 
 type SelectScan struct {
-	input     Scan
+	input     scan.Scan
 	predicate Predicate
 }
 
-func NewSelectScan(input Scan, predicate Predicate) *SelectScan {
+func NewSelectScan(input scan.Scan, predicate Predicate) *SelectScan {
 	return &SelectScan{
 		input:     input,
 		predicate: predicate,
@@ -39,6 +42,10 @@ func (s *SelectScan) GetString(fldname string) string {
 	return s.input.GetString(fldname)
 }
 
+func (s *SelectScan) GetValue(fldname string) any {
+	return s.input.GetValue(fldname)
+}
+
 func (s *SelectScan) HasField(fldname string) bool {
 	return s.input.HasField(fldname)
 }
@@ -48,7 +55,7 @@ func (s *SelectScan) Close() {
 }
 
 func (s *SelectScan) SetInt(fldname string, val int) {
-	updateScan, ok := s.input.(UpdateScan)
+	updateScan, ok := s.input.(scan.UpdateScan)
 	if !ok {
 		panic("input is not an UpdateScan")
 	}
@@ -56,7 +63,7 @@ func (s *SelectScan) SetInt(fldname string, val int) {
 }
 
 func (s *SelectScan) SetString(fldname string, val string) {
-	updateScan, ok := s.input.(UpdateScan)
+	updateScan, ok := s.input.(scan.UpdateScan)
 	if !ok {
 		panic("input is not an UpdateScan")
 	}
@@ -64,7 +71,7 @@ func (s *SelectScan) SetString(fldname string, val string) {
 }
 
 func (s *SelectScan) Insert() {
-	updateScan, ok := s.input.(UpdateScan)
+	updateScan, ok := s.input.(scan.UpdateScan)
 	if !ok {
 		panic("input is not an UpdateScan")
 	}
@@ -72,7 +79,7 @@ func (s *SelectScan) Insert() {
 }
 
 func (s *SelectScan) Delete() {
-	updateScan, ok := s.input.(UpdateScan)
+	updateScan, ok := s.input.(scan.UpdateScan)
 	if !ok {
 		panic("input is not an UpdateScan")
 	}
@@ -80,7 +87,7 @@ func (s *SelectScan) Delete() {
 }
 
 func (s *SelectScan) GetRid() *record.RID {
-	updateScan, ok := s.input.(UpdateScan)
+	updateScan, ok := s.input.(scan.UpdateScan)
 	if !ok {
 		panic("input is not an UpdateScan")
 	}
@@ -88,7 +95,7 @@ func (s *SelectScan) GetRid() *record.RID {
 }
 
 func (s *SelectScan) MoveToRid(rid *record.RID) {
-	updateScan, ok := s.input.(UpdateScan)
+	updateScan, ok := s.input.(scan.UpdateScan)
 	if !ok {
 		panic("input is not an UpdateScan")
 	}

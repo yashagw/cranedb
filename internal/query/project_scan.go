@@ -1,17 +1,21 @@
-package scan
+package query
 
-import "slices"
+import (
+	"slices"
+
+	"github.com/yashagw/cranedb/internal/scan"
+)
 
 var (
-	_ Scan = (*ProjectScan)(nil)
+	_ scan.Scan = (*ProjectScan)(nil)
 )
 
 type ProjectScan struct {
-	input     Scan
+	input     scan.Scan
 	fieldList []string
 }
 
-func NewProjectScan(input Scan, fieldList []string) *ProjectScan {
+func NewProjectScan(input scan.Scan, fieldList []string) *ProjectScan {
 	return &ProjectScan{
 		input:     input,
 		fieldList: fieldList,
@@ -38,6 +42,13 @@ func (s *ProjectScan) GetString(fldname string) string {
 		panic("field not found")
 	}
 	return s.input.GetString(fldname)
+}
+
+func (s *ProjectScan) GetValue(fldname string) any {
+	if !s.HasField(fldname) {
+		panic("field not found")
+	}
+	return s.input.GetValue(fldname)
 }
 
 func (s *ProjectScan) HasField(fldname string) bool {

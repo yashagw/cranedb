@@ -1,15 +1,19 @@
-package scan
+package query
+
+import (
+	"github.com/yashagw/cranedb/internal/scan"
+)
 
 var (
-	_ Scan = (*ProductScan)(nil)
+	_ scan.Scan = (*ProductScan)(nil)
 )
 
 type ProductScan struct {
-	scan1 Scan
-	scan2 Scan
+	scan1 scan.Scan
+	scan2 scan.Scan
 }
 
-func NewProductScan(scan1 Scan, scan2 Scan) *ProductScan {
+func NewProductScan(scan1 scan.Scan, scan2 scan.Scan) *ProductScan {
 	return &ProductScan{
 		scan1: scan1,
 		scan2: scan2,
@@ -52,6 +56,13 @@ func (s *ProductScan) GetString(fldname string) string {
 		return s.scan1.GetString(fldname)
 	}
 	return s.scan2.GetString(fldname)
+}
+
+func (s *ProductScan) GetValue(fldname string) any {
+	if s.scan1.HasField(fldname) {
+		return s.scan1.GetValue(fldname)
+	}
+	return s.scan2.GetValue(fldname)
 }
 
 func (s *ProductScan) HasField(fldname string) bool {

@@ -1,6 +1,8 @@
 package scan
 
-import "github.com/yashagw/cranedb/internal/record"
+import (
+	"github.com/yashagw/cranedb/internal/record"
+)
 
 // Scan is the fundamental interface for iterating over records in a scan operation.
 // It provides basic methods to position, navigate, retrieve field values, and check fields.
@@ -13,6 +15,8 @@ type Scan interface {
 	GetInt(fldname string) int
 	// GetString returns the value of the specified string field from the current record.
 	GetString(fldname string) string
+	// GetValue returns the value of the specified field from the current record.
+	GetValue(fldname string) any
 	// HasField checks if the scan contains the specified field.
 	HasField(fldname string) bool
 	// Close releases the resources held by the scan.
