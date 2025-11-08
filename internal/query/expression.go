@@ -51,7 +51,18 @@ func (e *Expression) String() string {
 // evaluate returns the value of the expression for the current record in the scan.
 func (e *Expression) Evaluate(s scan.Scan) Constant {
 	if e.IsFieldName() {
-		return s.GetValue(e.AsFieldName()).(Constant)
+		val := s.GetValue(e.AsFieldName())
+		// Convert primitive values to Constant
+		switch v := val.(type) {
+		case int:
+			return *NewIntConstant(v)
+		case string:
+			return *NewStringConstant(v)
+		case Constant:
+			return v
+		default:
+			panic("unsupported value type")
+		}
 	}
 	return e.val
 }

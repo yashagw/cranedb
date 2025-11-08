@@ -43,7 +43,16 @@ func (s *SelectScan) GetString(fldname string) string {
 }
 
 func (s *SelectScan) GetValue(fldname string) any {
-	return s.input.GetValue(fldname)
+	val := s.input.GetValue(fldname)
+	// If the underlying scan returns primitives, wrap them in Constants
+	switch v := val.(type) {
+	case int:
+		return *NewIntConstant(v)
+	case string:
+		return *NewStringConstant(v)
+	default:
+		return val
+	}
 }
 
 func (s *SelectScan) HasField(fldname string) bool {
@@ -86,18 +95,18 @@ func (s *SelectScan) Delete() {
 	updateScan.Delete()
 }
 
-func (s *SelectScan) GetRid() *record.RID {
+func (s *SelectScan) GetRID() *record.RID {
 	updateScan, ok := s.input.(scan.UpdateScan)
 	if !ok {
 		panic("input is not an UpdateScan")
 	}
-	return updateScan.GetRid()
+	return updateScan.GetRID()
 }
 
-func (s *SelectScan) MoveToRid(rid *record.RID) {
+func (s *SelectScan) MoveToRID(rid *record.RID) {
 	updateScan, ok := s.input.(scan.UpdateScan)
 	if !ok {
 		panic("input is not an UpdateScan")
 	}
-	updateScan.MoveToRid(rid)
+	updateScan.MoveToRID(rid)
 }

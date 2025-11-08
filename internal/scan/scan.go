@@ -37,8 +37,8 @@ type UpdateScan interface {
 	Insert()
 	// Delete removes the current record from the scan.
 	Delete()
-	// GetRid returns the record identifier (RID) of the current record.
-	GetRid() *record.RID
-	// MoveToRid moves the scan to the record specified by the given RID.
-	MoveToRid(rid *record.RID)
+	// GetRID returns the record identifier (RID) of the current record.
+	GetRID() *record.RID
+	// MoveToRID moves the scan to the record specified by the given RID.
+	MoveToRID(rid *record.RID)
 }

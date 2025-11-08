@@ -43,10 +43,10 @@ func (c *Constant) AsString() string {
 // equals checks if the constant is equal to another constant.
 func (c *Constant) Equals(other *Constant) bool {
 	if c.intVal != nil && other.intVal != nil {
-		return c.intVal == other.intVal
+		return *c.intVal == *other.intVal
 	}
 	if c.strVal != nil && other.strVal != nil {
-		return c.strVal == other.strVal
+		return *c.strVal == *other.strVal
 	}
 	return false
 }
