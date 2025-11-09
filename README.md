@@ -31,21 +31,6 @@ The database has implemented the following core components:
 - **Update Planner**: Executes INSERT, UPDATE, DELETE, CREATE TABLE, and CREATE VIEW statements
 - **Query Execution**: Iterator-based query execution with product scans (joins), select scans (filtering), and project scans (field selection)
 
-## Project Structure
-
-```
-internal/
-├── buffer/         # Buffer pool management
-├── file/           # File and page management
-├── log/            # Write-ahead logging system
-├── metadata/       # Database metadata management
-├── parse/          # SQL parser and lexer
-├── plan/           # Query planning and execution plan generation
-├── query/          # Query execution (scans, expressions, predicates)
-├── record/         # Record storage and schema management
-└── transaction/    # Transaction management and concurrency control
-```
-
 ## Features
 
 ### Core Storage Engine
@@ -78,23 +63,17 @@ internal/
 - **Statistics**: Table statistics collection for cost estimation
 
 ### Query Processing
-- **SQL Parser**: Lexical analysis and parsing of SQL statements (SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, CREATE VIEW)
-- **Query Planning**: Execution plan generation with cost estimation for table scans, joins, selections, and projections
+- **SQL Parser**: Lexical analysis and parsing of SQL statements
+- **Query Planning**: Execution plan generation with cost estimation
 - **Relational Algebra**: Support for product (join), select (filter), and project (field selection) operations
 - **Query Execution**: Iterator-based query execution with lazy evaluation
 - **Expression Evaluation**: Support for field references and constant values in expressions
 - **Predicate Evaluation**: WHERE clause filtering with support for equality comparisons and AND conditions
 - **Update Operations**: Execution of INSERT, UPDATE, and DELETE statements with predicate support
 
-### Testing
-- **Comprehensive Test Suite**: Unit tests for all major components
-- **Concurrency Testing**: Multi-threaded tests for lock management and buffer pool
-- **Integration Testing**: End-to-end tests for transaction and recovery scenarios
-
 ## Status
 
-✅ **Core Components Complete** - The fundamental database components are implemented and tested:
-
+✅ **Core Components Complete**
 - ✅ File and page management
 - ✅ Buffer pool with concurrency control
 - ✅ Write-ahead logging and recovery
@@ -105,12 +84,14 @@ internal/
 - ✅ SQL parsing and lexing
 - ✅ Query planning and execution
 - ✅ Relational algebra operations (product, select, project)
+- ✅ Client-server architecture
 
-🚧 **Future Development** - Major components remaining to be implemented:
-
+🚧 **Future Development**
 - **Indexing**: B-tree indexes, hash indexes, and index-aware query operations
 - **Materialization & Sorting**: Temporary tables, external sorting, grouping, and merge joins
 - **Buffer Optimization**: Multibuffer algorithms for sorting and joins
 - **Query Optimization**: Equivalent query trees, cost-based optimization, and advanced plan selection
+- **Additional SQL Features**: OR conditions, comparison operators, aggregation, GROUP BY, ORDER BY
+---
 
 **Note**: This project is not intended for production use and serves as an educational implementation of database internals.

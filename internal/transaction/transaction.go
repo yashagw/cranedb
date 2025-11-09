@@ -78,6 +78,10 @@ func (t *Transaction) Rollback() error {
 	return nil
 }
 
+func (t *Transaction) DoRecovery() error {
+	return t.recoveryManager.Recover()
+}
+
 func (t *Transaction) Pin(blk *file.BlockID) *buffer.Buffer {
 	return t.bufferList.Pin(blk)
 }
