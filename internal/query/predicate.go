@@ -97,6 +97,17 @@ func (p *Predicate) EquatesWithField(fldname string) *string {
 	return nil
 }
 
+// ReductionFactor estimates how much the predicate will reduce the result set.
+// It multiplies the reduction factors of all individual terms.
+// Each term's reduction factor is calculated based on the distinct values of the field it operates on.
+func (p *Predicate) ReductionFactor(plan interface{ DistinctValues(string) int }) int {
+	factor := 1
+	for _, t := range p.terms {
+		factor *= t.ReductionFactor(plan)
+	}
+	return factor
+}
+
 // String returns a string representation of the predicate.
 func (p *Predicate) String() string {
 	if len(p.terms) == 0 {

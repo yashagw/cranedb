@@ -65,3 +65,40 @@ func (t *Term) EquatesWithField(fldName string) *string {
 		return nil
 	}
 }
+
+// ReductionFactor estimates the reduction factor for this term.
+// For "field = constant", it returns the number of distinct values for the field.
+// For "field = field", it returns the maximum of the two fields' distinct values.
+// This represents an estimate of how many records will remain after applying the filter.
+func (t *Term) ReductionFactor(plan interface{ DistinctValues(string) int }) int {
+	var lhsName, rhsName string
+
+	if t.left.IsFieldName() {
+		lhsName = t.left.AsFieldName()
+	}
+
+	if t.right.IsFieldName() {
+		rhsName = t.right.AsFieldName()
+	}
+
+	// If both sides are field names (field = field), return max of distinct values
+	if lhsName != "" && rhsName != "" {
+		lhsDistinct := plan.DistinctValues(lhsName)
+		rhsDistinct := plan.DistinctValues(rhsName)
+		if lhsDistinct > rhsDistinct {
+			return lhsDistinct
+		}
+		return rhsDistinct
+	}
+
+	// If one side is a field name (field = constant), return distinct values for that field
+	if lhsName != "" {
+		return plan.DistinctValues(lhsName)
+	}
+	if rhsName != "" {
+		return plan.DistinctValues(rhsName)
+	}
+
+	// If neither side is a field (constant = constant), return 1
+	return 1
+}
