@@ -40,7 +40,8 @@ func (s *ProductScan) Next() bool {
 	} else {
 		// Reset scan2 to before the first so we can reuse for the next scan1 record
 		s.scan2.BeforeFirst()
-		return s.scan2.Next() && s.scan1.Next()
+		// Must advance scan1 first (left side) to ensure it moves forward before scan2 resets
+		return s.scan1.Next() && s.scan2.Next()
 	}
 }
 

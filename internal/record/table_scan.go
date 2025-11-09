@@ -1,6 +1,8 @@
 package record
 
 import (
+	"fmt"
+
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
@@ -55,7 +57,7 @@ func (ts *TableScan) BeforeFirst() {
 // Next moves to the next record and returns true if successful
 func (ts *TableScan) Next() bool {
 	ts.currentSlot = ts.currentRecordPage.NextUsedSlot(ts.currentSlot)
-	if ts.currentSlot == -1 {
+	for ts.currentSlot == -1 {
 		if ts.AtLastBlock() {
 			return false
 		}
@@ -127,11 +129,17 @@ func (ts *TableScan) GetRID() *RID {
 
 // GetInt retrieves an integer value from the current record
 func (ts *TableScan) GetInt(fieldName string) int {
+	if ts.currentSlot < 0 {
+		panic(fmt.Sprintf("attempted to GetInt on invalid slot %d", ts.currentSlot))
+	}
 	return ts.currentRecordPage.GetInt(ts.currentSlot, fieldName)
 }
 
 // GetString retrieves a string value from the current record
 func (ts *TableScan) GetString(fieldName string) string {
+	if ts.currentSlot < 0 {
+		panic(fmt.Sprintf("attempted to GetString on invalid slot %d", ts.currentSlot))
+	}
 	return ts.currentRecordPage.GetString(ts.currentSlot, fieldName)
 }
 
