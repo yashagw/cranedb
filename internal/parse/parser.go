@@ -18,6 +18,12 @@ func NewParser(lexer *Lexer) *Parser {
 	}
 }
 
+// NewParserFromString creates a new Parser from a string.
+func NewParserFromString(sql string) *Parser {
+	lexer := NewLexer(sql)
+	return NewParser(lexer)
+}
+
 func (p *Parser) field() (string, error) {
 	id, err := p.lexer.EatId()
 	if err != nil {
@@ -153,7 +159,7 @@ func (p *Parser) UpdateCmd() (interface{}, error) {
 	if p.lexer.MatchKeyword("delete") {
 		return p.delete()
 	}
-	return nil, ErrBadSyntax
+	return p.CreateCmd()
 }
 
 func (p *Parser) CreateCmd() (interface{}, error) {

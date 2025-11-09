@@ -74,3 +74,13 @@ func (c *Constant) CompareTo(other *Constant) int {
 	}
 	return -1 // types don't match
 }
+
+// IsInt returns true if the constant holds an integer value.
+func (c *Constant) IsInt() bool {
+	return c.intVal != nil
+}
+
+// IsString returns true if the constant holds a string value.
+func (c *Constant) IsString() bool {
+	return c.strVal != nil
+}
