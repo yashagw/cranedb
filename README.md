@@ -11,7 +11,7 @@ This project is an educational implementation of a relational database managemen
 - Buffer management
 - Transaction management
 - Metadata management
-- Query processing (planned)
+- Query processing
 - Indexing and optimization (planned)
 
 ## Current Implementation
@@ -26,6 +26,10 @@ The database has implemented the following core components:
 - **Concurrency Manager**: Manages shared and exclusive locks with deadlock prevention
 - **Record Manager**: Handles record storage, schema management, and table scanning
 - **Metadata Manager**: Manages database metadata including tables, views, indexes, and statistics
+- **Parser**: SQL parser and lexer for parsing SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, and CREATE VIEW statements
+- **Query Planner**: Generates execution plans for SELECT queries with support for joins, predicates, and projections
+- **Update Planner**: Executes INSERT, UPDATE, DELETE, CREATE TABLE, and CREATE VIEW statements
+- **Query Execution**: Iterator-based query execution with product scans (joins), select scans (filtering), and project scans (field selection)
 
 ## Project Structure
 
@@ -35,6 +39,9 @@ internal/
 ├── file/           # File and page management
 ├── log/            # Write-ahead logging system
 ├── metadata/       # Database metadata management
+├── parse/          # SQL parser and lexer
+├── plan/           # Query planning and execution plan generation
+├── query/          # Query execution (scans, expressions, predicates)
 ├── record/         # Record storage and schema management
 └── transaction/    # Transaction management and concurrency control
 ```
@@ -70,6 +77,15 @@ internal/
 - **Index Management**: Index metadata tracking (no actual index data structures implemented)
 - **Statistics**: Table statistics collection for cost estimation
 
+### Query Processing
+- **SQL Parser**: Lexical analysis and parsing of SQL statements (SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, CREATE VIEW)
+- **Query Planning**: Execution plan generation with cost estimation for table scans, joins, selections, and projections
+- **Relational Algebra**: Support for product (join), select (filter), and project (field selection) operations
+- **Query Execution**: Iterator-based query execution with lazy evaluation
+- **Expression Evaluation**: Support for field references and constant values in expressions
+- **Predicate Evaluation**: WHERE clause filtering with support for equality comparisons and AND conditions
+- **Update Operations**: Execution of INSERT, UPDATE, and DELETE statements with predicate support
+
 ### Testing
 - **Comprehensive Test Suite**: Unit tests for all major components
 - **Concurrency Testing**: Multi-threaded tests for lock management and buffer pool
@@ -86,13 +102,15 @@ internal/
 - ✅ Concurrency control with two-phase locking
 - ✅ Record storage and schema management
 - ✅ Metadata management for tables, views, and indexes
+- ✅ SQL parsing and lexing
+- ✅ Query planning and execution
+- ✅ Relational algebra operations (product, select, project)
 
 🚧 **Future Development** - Major components remaining to be implemented:
 
-- **Query Processing, Parsing & Planning**: SQL parser, relational algebra, cost estimation, and execution plan generation
 - **Indexing**: B-tree indexes, hash indexes, and index-aware query operations
 - **Materialization & Sorting**: Temporary tables, external sorting, grouping, and merge joins
 - **Buffer Optimization**: Multibuffer algorithms for sorting and joins
-- **Query Optimization**: Equivalent query trees, cost-based optimization, and plan selection
+- **Query Optimization**: Equivalent query trees, cost-based optimization, and advanced plan selection
 
 **Note**: This project is not intended for production use and serves as an educational implementation of database internals.
