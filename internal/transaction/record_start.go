@@ -33,8 +33,9 @@ func (s *StartLogRecord) TxNumber() int {
 }
 
 // Undo performs the undo operation for this log record
-func (s *StartLogRecord) Undo(tx *Transaction) {
+func (s *StartLogRecord) Undo(tx *Transaction) error {
 	// No need to undo anything for Start Record
+	return nil
 }
 
 // WriteStartLogRecord writes a StartLogRecord to the log manager

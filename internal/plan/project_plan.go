@@ -1,7 +1,6 @@
 package plan
 
 import (
-	"github.com/yashagw/cranedb/internal/query"
 	"github.com/yashagw/cranedb/internal/record"
 	"github.com/yashagw/cranedb/internal/scan"
 )
@@ -27,9 +26,12 @@ func NewProjectPlan(p Plan, fieldList []string) *ProjectPlan {
 	}
 }
 
-func (pp *ProjectPlan) Open() scan.Scan {
-	s := pp.p.Open()
-	return query.NewProjectScan(s, pp.schema.Fields())
+func (pp *ProjectPlan) Open() (scan.Scan, error) {
+	s, err := pp.p.Open()
+	if err != nil {
+		return nil, err
+	}
+	return scan.NewProjectScan(s, pp.schema.Fields()), nil
 }
 
 // BlocksAccessed returns the same as the underlying plan (projection doesn't change block access).
@@ -43,7 +45,7 @@ func (pp *ProjectPlan) RecordsOutput() int {
 }
 
 // DistinctValues delegates to the underlying plan.
-func (pp *ProjectPlan) DistinctValues(fldname string) int {
+func (pp *ProjectPlan) DistinctValues(fldname string) (int, error) {
 	return pp.p.DistinctValues(fldname)
 }
 

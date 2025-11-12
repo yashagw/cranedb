@@ -1,9 +1,11 @@
 package metadata
 
 import (
+	"log"
 	"sync"
 
 	"github.com/yashagw/cranedb/internal/record"
+	"github.com/yashagw/cranedb/internal/scan"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -26,76 +28,98 @@ func NewStatsManager(tblMgr *TableManager, tx *transaction.Transaction) *StatsMa
 
 // GetStatInfo returns statistical information for a given table
 func (sm *StatsManager) GetStatInfo(tblName string, layout *record.Layout, tx *transaction.Transaction) *StatInfo {
-	sm.mutex.Lock()
-	sm.numCalls++
-	if sm.numCalls > 100 {
-		sm.refreshStatistics(tx)
-	}
-	sm.mutex.Unlock()
+	log.Printf("[STATS] GetStatInfo: Starting for table %s", tblName)
 
+	// Check cache with read lock first
 	sm.mutex.RLock()
 	si, exists := sm.tableStats[tblName]
 	sm.mutex.RUnlock()
 
-	if !exists {
-		si = sm.calcTableStats(tblName, layout, tx)
+	// Increment call count and check if refresh is needed (but don't block on refresh)
+	sm.mutex.Lock()
+	sm.numCalls++
+	shouldRefresh := sm.numCalls > 100 && sm.numCalls%100 == 0 // Only refresh every 100 calls, not every call after 100
+	sm.mutex.Unlock()
+
+	// If refresh is needed, do it asynchronously to avoid blocking
+	if shouldRefresh {
+		log.Printf("[STATS] GetStatInfo: Scheduling async refresh (numCalls=%d)", sm.numCalls)
+		// Don't block - just clear the cache and let stats be recalculated on demand
+		// This is much better than scanning all tables synchronously
 		sm.mutex.Lock()
-		sm.tableStats[tblName] = si
+		sm.tableStats = make(map[string]*StatInfo)
+		sm.numCalls = 0
 		sm.mutex.Unlock()
+		log.Printf("[STATS] GetStatInfo: Cleared cache for lazy refresh")
+		exists = false // Force recalculation of this table's stats
+	}
+
+	if !exists {
+		// Need to calculate stats - acquire write lock to prevent concurrent calculations
+		log.Printf("[STATS] GetStatInfo: Stats not cached for %s, acquiring lock to calculate...", tblName)
+		sm.mutex.Lock()
+		// Double-check after acquiring lock (another goroutine might have calculated it)
+		si, exists = sm.tableStats[tblName]
+		if !exists {
+			log.Printf("[STATS] GetStatInfo: Calculating stats for %s (holding lock)", tblName)
+			si = sm.calcTableStats(tblName, layout, tx)
+			log.Printf("[STATS] GetStatInfo: Finished calculating stats for %s (blocks=%d, recs=%d)", tblName, si.numBlocks, si.numRecs)
+			sm.tableStats[tblName] = si
+		} else {
+			log.Printf("[STATS] GetStatInfo: Stats were calculated by another goroutine while waiting for lock")
+		}
+		sm.mutex.Unlock()
+	} else {
+		log.Printf("[STATS] GetStatInfo: Using cached stats for %s", tblName)
 	}
 
 	return si
 }
 
 // GetDistinctValues is a convenience method that gets distinct values for a field
-func (sm *StatsManager) GetDistinctValues(tblName string, fieldName string, layout *record.Layout, tx *transaction.Transaction) int {
+func (sm *StatsManager) GetDistinctValues(tblName string, fieldName string, layout *record.Layout, tx *transaction.Transaction) (int, error) {
 	si := sm.GetStatInfo(tblName, layout, tx)
 	return si.DistinctValues(fieldName, tx, tblName)
 }
 
-// refreshStatistics refreshes all table statistics by scanning the table catalog
-func (sm *StatsManager) refreshStatistics(tx *transaction.Transaction) {
-	sm.mutex.Lock()
-	defer sm.mutex.Unlock()
-
-	sm.tableStats = make(map[string]*StatInfo)
-	sm.numCalls = 0
-
-	layout, err := sm.tblMgr.GetLayout(TableCatalogName, tx)
-	if err != nil {
-		return
-	}
-
-	tcat := record.NewTableScan(tx, layout, TableCatalogName)
-	defer tcat.Close()
-
-	for tcat.Next() {
-		tblName := tcat.GetString("table_name")
-		tableLayout, err := sm.tblMgr.GetLayout(tblName, tx)
-		if err != nil {
-			continue
-		}
-
-		si := sm.calcTableStats(tblName, tableLayout, tx)
-		sm.tableStats[tblName] = si
-	}
-}
-
 // calcTableStats calculates statistics for a specific table by scanning all records
 func (sm *StatsManager) calcTableStats(tblName string, layout *record.Layout, tx *transaction.Transaction) *StatInfo {
+	log.Printf("[STATS] calcTableStats: Starting scan of table %s", tblName)
 	numRecs := 0
 	numBlocks := 0
 
-	ts := record.NewTableScan(tx, layout, tblName)
+	ts, err := scan.NewTableScan(tx, layout, tblName)
+	if err != nil {
+		log.Printf("[STATS] calcTableStats: NewTableScan failed for %s: %v", tblName, err)
+		return NewStatInfo(0, 0, layout)
+	}
 	defer ts.Close()
+	log.Printf("[STATS] calcTableStats: Opened scan for %s, starting iteration", tblName)
 
-	for ts.Next() {
+	iterations := 0
+	for {
+		iterations++
+		if iterations%10 == 0 {
+			log.Printf("[STATS] calcTableStats: Scanned %d records in %s", numRecs, tblName)
+		}
+		hasNext, err := ts.Next()
+		if err != nil {
+			log.Printf("[STATS] calcTableStats: Next() failed for %s: %v", tblName, err)
+			return NewStatInfo(numBlocks, numRecs, layout)
+		}
+		if !hasNext {
+			break
+		}
 		numRecs++
-		rid := ts.GetRID()
+		rid, err := ts.GetRID()
+		if err != nil {
+			continue
+		}
 		if rid.Block()+1 > numBlocks {
 			numBlocks = rid.Block() + 1
 		}
 	}
 
+	log.Printf("[STATS] calcTableStats: Completed scan of %s: %d records, %d blocks", tblName, numRecs, numBlocks)
 	return NewStatInfo(numBlocks, numRecs, layout)
 }

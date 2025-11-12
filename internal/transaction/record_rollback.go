@@ -33,8 +33,9 @@ func (s *RollbackLogRecord) TxNumber() int {
 }
 
 // Undo performs the undo operation for this log record
-func (s *RollbackLogRecord) Undo(tx *Transaction) {
-	// No need to undo anything for Commit Record
+func (s *RollbackLogRecord) Undo(tx *Transaction) error {
+	// No need to undo anything for Rollback Record
+	return nil
 }
 
 // WriteRollbackLogRecord writes a RollbackLogRecord to the log manager

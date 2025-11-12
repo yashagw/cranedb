@@ -97,7 +97,12 @@ func NewServer(dbDir string) (*Server, error) {
 }
 
 func (s *Server) handleConnection(conn net.Conn) {
-	defer conn.Close()
+	remoteAddr := conn.RemoteAddr().String()
+	log.Printf("New connection from %s", remoteAddr)
+	defer func() {
+		conn.Close()
+		log.Printf("Connection closed from %s", remoteAddr)
+	}()
 
 	scanner := bufio.NewScanner(conn)
 	writer := bufio.NewWriter(conn)
@@ -105,7 +110,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 	for {
 		if !scanner.Scan() {
 			if err := scanner.Err(); err != nil && err != io.EOF {
-				log.Printf("Error reading from client: %v", err)
+				log.Printf("Error reading from client %s: %v", remoteAddr, err)
 			}
 			break
 		}
@@ -139,6 +144,11 @@ func (s *Server) handleConnection(conn net.Conn) {
 }
 
 func (s *Server) executeQuery(sql string) QueryResponse {
+	queryPreview := sql
+	if len(queryPreview) > 100 {
+		queryPreview = queryPreview[:100] + "..."
+	}
+	log.Printf("Executing query: %s", queryPreview)
 	tx := transaction.NewTransaction(s.fileManager, s.logManager, s.bufferManager, s.lockTable)
 	committed := false
 	defer func() {
@@ -146,6 +156,9 @@ func (s *Server) executeQuery(sql string) QueryResponse {
 			if err := tx.Rollback(); err != nil {
 				log.Printf("Error rolling back transaction: %v", err)
 			}
+			log.Printf("Query rolled back: %s", queryPreview)
+		} else {
+			log.Printf("Query committed: %s", queryPreview)
 		}
 	}()
 
@@ -163,21 +176,60 @@ func (s *Server) executeQuery(sql string) QueryResponse {
 			}
 		}
 
-		queryScan := queryPlan.Open()
+		queryScan, err := queryPlan.Open()
+		if err != nil {
+			return QueryResponse{
+				Type:  "error",
+				Error: fmt.Sprintf("Failed to open query plan: %v", err),
+			}
+		}
 		defer queryScan.Close()
-		queryScan.BeforeFirst()
+		err = queryScan.BeforeFirst()
+		if err != nil {
+			return QueryResponse{
+				Type:  "error",
+				Error: fmt.Sprintf("Failed to position scan: %v", err),
+			}
+		}
 
 		schema := queryPlan.Schema()
 		columns := append([]string{}, schema.Fields()...)
 
 		rows := []map[string]interface{}{}
-		for queryScan.Next() {
+		for {
+			hasNext, err := queryScan.Next()
+			if err != nil {
+				queryScan.Close()
+				return QueryResponse{
+					Type:  "error",
+					Error: fmt.Sprintf("Failed to read next record: %v", err),
+				}
+			}
+			if !hasNext {
+				break
+			}
 			row := make(map[string]interface{})
 			for _, col := range columns {
 				if schema.Type(col) == "int" {
-					row[col] = queryScan.GetInt(col)
+					val, err := queryScan.GetInt(col)
+					if err != nil {
+						queryScan.Close()
+						return QueryResponse{
+							Type:  "error",
+							Error: fmt.Sprintf("Failed to get int value for column %s: %v", col, err),
+						}
+					}
+					row[col] = val
 				} else {
-					row[col] = queryScan.GetString(col)
+					val, err := queryScan.GetString(col)
+					if err != nil {
+						queryScan.Close()
+						return QueryResponse{
+							Type:  "error",
+							Error: fmt.Sprintf("Failed to get string value for column %s: %v", col, err),
+						}
+					}
+					row[col] = val
 				}
 			}
 			rows = append(rows, row)
@@ -200,6 +252,7 @@ func (s *Server) executeQuery(sql string) QueryResponse {
 
 	count, err := s.planner.ExecuteUpdate(sql, tx)
 	if err != nil {
+		log.Printf("Error executing update: %v", err)
 		return QueryResponse{
 			Type:  "error",
 			Error: err.Error(),

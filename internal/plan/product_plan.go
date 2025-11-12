@@ -1,7 +1,6 @@
 package plan
 
 import (
-	"github.com/yashagw/cranedb/internal/query"
 	"github.com/yashagw/cranedb/internal/record"
 	"github.com/yashagw/cranedb/internal/scan"
 )
@@ -28,10 +27,16 @@ func NewProductPlan(p1 Plan, p2 Plan) *ProductPlan {
 	}
 }
 
-func (pp *ProductPlan) Open() scan.Scan {
-	s1 := pp.p1.Open()
-	s2 := pp.p2.Open()
-	return query.NewProductScan(s1, s2)
+func (pp *ProductPlan) Open() (scan.Scan, error) {
+	s1, err := pp.p1.Open()
+	if err != nil {
+		return nil, err
+	}
+	s2, err := pp.p2.Open()
+	if err != nil {
+		return nil, err
+	}
+	return scan.NewProductScan(s1, s2), nil
 }
 
 // BlocksAccessed uses nested loop cost model: p1.blocks + (p1.records * p2.blocks).
@@ -45,7 +50,7 @@ func (pp *ProductPlan) RecordsOutput() int {
 }
 
 // DistinctValues delegates to whichever underlying plan contains the field.
-func (pp *ProductPlan) DistinctValues(fldname string) int {
+func (pp *ProductPlan) DistinctValues(fldname string) (int, error) {
 	if pp.p1.Schema().HasField(fldname) {
 		return pp.p1.DistinctValues(fldname)
 	}

@@ -28,10 +28,16 @@ func (t *Term) String() string {
 }
 
 // IsSatisfied checks if the term is true for the current record in the scan.
-func (t *Term) IsSatisfied(s scan.Scan) bool {
-	lhsVal := t.left.Evaluate(s)
-	rhsVal := t.right.Evaluate(s)
-	return (&rhsVal).Equals(&lhsVal)
+func (t *Term) IsSatisfied(s scan.Scan) (bool, error) {
+	lhsVal, err := t.left.Evaluate(s)
+	if err != nil {
+		return false, err
+	}
+	rhsVal, err := t.right.Evaluate(s)
+	if err != nil {
+		return false, err
+	}
+	return (&rhsVal).Equals(&lhsVal), nil
 }
 
 // appliesTo checks if both expressions of the term apply to the given schema.
@@ -70,7 +76,7 @@ func (t *Term) EquatesWithField(fldName string) *string {
 // For "field = constant", it returns the number of distinct values for the field.
 // For "field = field", it returns the maximum of the two fields' distinct values.
 // This represents an estimate of how many records will remain after applying the filter.
-func (t *Term) ReductionFactor(plan interface{ DistinctValues(string) int }) int {
+func (t *Term) ReductionFactor(plan interface{ DistinctValues(string) (int, error) }) (int, error) {
 	var lhsName, rhsName string
 
 	if t.left.IsFieldName() {
@@ -83,12 +89,18 @@ func (t *Term) ReductionFactor(plan interface{ DistinctValues(string) int }) int
 
 	// If both sides are field names (field = field), return max of distinct values
 	if lhsName != "" && rhsName != "" {
-		lhsDistinct := plan.DistinctValues(lhsName)
-		rhsDistinct := plan.DistinctValues(rhsName)
-		if lhsDistinct > rhsDistinct {
-			return lhsDistinct
+		lhsDistinct, err := plan.DistinctValues(lhsName)
+		if err != nil {
+			return 0, err
 		}
-		return rhsDistinct
+		rhsDistinct, err := plan.DistinctValues(rhsName)
+		if err != nil {
+			return 0, err
+		}
+		if lhsDistinct > rhsDistinct {
+			return lhsDistinct, nil
+		}
+		return rhsDistinct, nil
 	}
 
 	// If one side is a field name (field = constant), return distinct values for that field
@@ -100,5 +112,5 @@ func (t *Term) ReductionFactor(plan interface{ DistinctValues(string) int }) int
 	}
 
 	// If neither side is a field (constant = constant), return 1
-	return 1
+	return 1, nil
 }

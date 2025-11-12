@@ -27,8 +27,9 @@ func (s *CheckpointLogRecord) TxNumber() int {
 }
 
 // Undo performs the undo operation for this log record
-func (s *CheckpointLogRecord) Undo(tx *Transaction) {
-	// No need to undo anything for Start Record
+func (s *CheckpointLogRecord) Undo(tx *Transaction) error {
+	// No need to undo anything for Checkpoint Record
+	return nil
 }
 
 // WriteCheckpointLogRecord writes a CheckpointLogRecord to the log manager

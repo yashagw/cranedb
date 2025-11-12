@@ -10,6 +10,7 @@ import (
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
 	"github.com/yashagw/cranedb/internal/record"
+	"github.com/yashagw/cranedb/internal/scan"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -128,7 +129,8 @@ func TestTableManager_BasicOperations(t *testing.T) {
 	tx8 := transaction.NewTransaction(fm, lm, bm, lockTable)
 
 	// Verify table catalog contains correct data for both tables
-	tcat := record.NewTableScan(tx8, tm.tableCatelog, TableCatalogName)
+	tcat, err := scan.NewTableScan(tx8, tm.tableCatelog, TableCatalogName)
+	require.NoError(t, err)
 	defer tcat.Close()
 
 	usersTableFound := false
@@ -136,9 +138,16 @@ func TestTableManager_BasicOperations(t *testing.T) {
 	expectedUsersSlotSize := record.NewLayoutFromSchema(schema).GetSlotSize()
 	expectedProductsSlotSize := record.NewLayoutFromSchema(productSchema).GetSlotSize()
 
-	for tcat.Next() {
-		tableName := tcat.GetString("table_name")
-		slotSize := tcat.GetInt("slot_size")
+	for {
+		hasNext, err := tcat.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		tableName, err := tcat.GetString("table_name")
+		require.NoError(t, err)
+		slotSize, err := tcat.GetInt("slot_size")
+		require.NoError(t, err)
 
 		if tableName == "users" {
 			usersTableFound = true
@@ -152,18 +161,29 @@ func TestTableManager_BasicOperations(t *testing.T) {
 	assert.True(t, productsTableFound, "Products table should be found in table catalog")
 
 	// Verify field catalog contains correct data for both tables
-	fcat := record.NewTableScan(tx8, tm.fieldCatelog, FieldCatalogName)
+	fcat, err := scan.NewTableScan(tx8, tm.fieldCatelog, FieldCatalogName)
+	require.NoError(t, err)
 	defer fcat.Close()
 
 	usersFieldRecords := make(map[string]map[string]interface{})
 	productsFieldRecords := make(map[string]map[string]interface{})
 
-	for fcat.Next() {
-		tableName := fcat.GetString("table_name")
-		fieldName := fcat.GetString("field_name")
-		fieldType := fcat.GetString("type")
-		fieldLength := fcat.GetInt("length")
-		fieldOffset := fcat.GetInt("offset")
+	for {
+		hasNext, err := fcat.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		tableName, err := fcat.GetString("table_name")
+		require.NoError(t, err)
+		fieldName, err := fcat.GetString("field_name")
+		require.NoError(t, err)
+		fieldType, err := fcat.GetString("type")
+		require.NoError(t, err)
+		fieldLength, err := fcat.GetInt("length")
+		require.NoError(t, err)
+		fieldOffset, err := fcat.GetInt("offset")
+		require.NoError(t, err)
 
 		fieldData := map[string]interface{}{
 			"type":   fieldType,

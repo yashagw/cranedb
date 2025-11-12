@@ -1,6 +1,8 @@
 package plan
 
 import (
+	"log"
+
 	"github.com/yashagw/cranedb/internal/metadata"
 	"github.com/yashagw/cranedb/internal/parse/parserdata"
 	"github.com/yashagw/cranedb/internal/query"
@@ -24,10 +26,16 @@ func NewBasicUpdatePlanner(metadataManager *metadata.Manager) *BasicUpdatePlanne
 
 // ExecuteDelete executes a delete statement and returns the number of records deleted.
 func (p *BasicUpdatePlanner) ExecuteDelete(deleteData *parserdata.DeleteData, tx *transaction.Transaction) (int, error) {
-	tablePlan := NewTablePlan(deleteData.Table(), tx, p.metadataManager)
+	tablePlan, err := NewTablePlan(deleteData.Table(), tx, p.metadataManager)
+	if err != nil {
+		return 0, err
+	}
 	plan := NewSelectPlan(tablePlan, deleteData.Predicate())
 
-	s := plan.Open()
+	s, err := plan.Open()
+	if err != nil {
+		return 0, err
+	}
 	us, ok := s.(scan.UpdateScan)
 	if !ok {
 		s.Close()
@@ -36,8 +44,20 @@ func (p *BasicUpdatePlanner) ExecuteDelete(deleteData *parserdata.DeleteData, tx
 
 	// Delete all matching records
 	count := 0
-	for us.Next() {
-		us.Delete()
+	for {
+		hasNext, err := us.Next()
+		if err != nil {
+			us.Close()
+			return 0, err
+		}
+		if !hasNext {
+			break
+		}
+		err = us.Delete()
+		if err != nil {
+			us.Close()
+			return 0, err
+		}
 		count++
 	}
 	us.Close()
@@ -47,10 +67,16 @@ func (p *BasicUpdatePlanner) ExecuteDelete(deleteData *parserdata.DeleteData, tx
 
 // ExecuteModify executes an update statement and returns the number of records modified.
 func (p *BasicUpdatePlanner) ExecuteModify(modifyData *parserdata.ModifyData, tx *transaction.Transaction) (int, error) {
-	tablePlan := NewTablePlan(modifyData.Table(), tx, p.metadataManager)
+	tablePlan, err := NewTablePlan(modifyData.Table(), tx, p.metadataManager)
+	if err != nil {
+		return 0, err
+	}
 	plan := NewSelectPlan(tablePlan, modifyData.Predicate())
 
-	s := plan.Open()
+	s, err := plan.Open()
+	if err != nil {
+		return 0, err
+	}
 	us, ok := s.(scan.UpdateScan)
 	if !ok {
 		s.Close()
@@ -59,13 +85,33 @@ func (p *BasicUpdatePlanner) ExecuteModify(modifyData *parserdata.ModifyData, tx
 
 	// Update all matching records
 	count := 0
-	for us.Next() {
-		val := modifyData.NewValue().Evaluate(us)
+	for {
+		hasNext, err := us.Next()
+		if err != nil {
+			us.Close()
+			return 0, err
+		}
+		if !hasNext {
+			break
+		}
+		val, err := modifyData.NewValue().Evaluate(us)
+		if err != nil {
+			us.Close()
+			return 0, err
+		}
 
 		if val.IsInt() {
-			us.SetInt(modifyData.FieldName(), val.AsInt())
+			err = us.SetInt(modifyData.FieldName(), val.AsInt())
+			if err != nil {
+				us.Close()
+				return 0, err
+			}
 		} else {
-			us.SetString(modifyData.FieldName(), val.AsString())
+			err = us.SetString(modifyData.FieldName(), val.AsString())
+			if err != nil {
+				us.Close()
+				return 0, err
+			}
 		}
 
 		count++
@@ -77,16 +123,33 @@ func (p *BasicUpdatePlanner) ExecuteModify(modifyData *parserdata.ModifyData, tx
 
 // ExecuteInsert executes an insert statement and returns 1 (always inserts one record).
 func (p *BasicUpdatePlanner) ExecuteInsert(insertData *parserdata.InsertData, tx *transaction.Transaction) (int, error) {
-	plan := NewTablePlan(insertData.Table(), tx, p.metadataManager)
+	log.Printf("[UPDATE] ExecuteInsert: Starting insert into table %s", insertData.Table())
+	plan, err := NewTablePlan(insertData.Table(), tx, p.metadataManager)
+	if err != nil {
+		log.Printf("[UPDATE] ExecuteInsert: NewTablePlan failed for %s: %v", insertData.Table(), err)
+		return 0, err
+	}
+	log.Printf("[UPDATE] ExecuteInsert: Got plan for %s, opening scan", insertData.Table())
 
-	s := plan.Open()
+	s, err := plan.Open()
+	if err != nil {
+		log.Printf("[UPDATE] ExecuteInsert: plan.Open failed for %s: %v", insertData.Table(), err)
+		return 0, err
+	}
+	log.Printf("[UPDATE] ExecuteInsert: Got scan for %s, checking UpdateScan", insertData.Table())
 	us, ok := s.(scan.UpdateScan)
 	if !ok {
+		log.Printf("[UPDATE] ExecuteInsert: Scan is not UpdateScan for %s", insertData.Table())
 		s.Close()
 		return 0, nil
 	}
+	log.Printf("[UPDATE] ExecuteInsert: Calling Insert() for %s", insertData.Table())
 
-	us.Insert()
+	err = us.Insert()
+	if err != nil {
+		us.Close()
+		return 0, err
+	}
 
 	fields := insertData.Fields()
 	values := insertData.Values()
@@ -109,9 +172,17 @@ func (p *BasicUpdatePlanner) ExecuteInsert(insertData *parserdata.InsertData, tx
 
 		if constant != nil {
 			if constant.IsInt() {
-				us.SetInt(fieldName, constant.AsInt())
+				err = us.SetInt(fieldName, constant.AsInt())
+				if err != nil {
+					us.Close()
+					return 0, err
+				}
 			} else {
-				us.SetString(fieldName, constant.AsString())
+				err = us.SetString(fieldName, constant.AsString())
+				if err != nil {
+					us.Close()
+					return 0, err
+				}
 			}
 		}
 	}

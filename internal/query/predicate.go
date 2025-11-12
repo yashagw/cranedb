@@ -25,13 +25,17 @@ func (p *Predicate) ConjunctWith(other Predicate) {
 }
 
 // IsSatisfied checks if all terms in the predicate are true for the current record in the scan.
-func (p *Predicate) IsSatisfied(s scan.Scan) bool {
+func (p *Predicate) IsSatisfied(s scan.Scan) (bool, error) {
 	for _, t := range p.terms {
-		if !t.IsSatisfied(s) {
-			return false
+		satisfied, err := t.IsSatisfied(s)
+		if err != nil {
+			return false, err
+		}
+		if !satisfied {
+			return false, nil
 		}
 	}
-	return true
+	return true, nil
 }
 
 // SelectSubPred returns a new predicate containing only the terms whose fields exist in the given schema.
@@ -100,12 +104,16 @@ func (p *Predicate) EquatesWithField(fldname string) *string {
 // ReductionFactor estimates how much the predicate will reduce the result set.
 // It multiplies the reduction factors of all individual terms.
 // Each term's reduction factor is calculated based on the distinct values of the field it operates on.
-func (p *Predicate) ReductionFactor(plan interface{ DistinctValues(string) int }) int {
+func (p *Predicate) ReductionFactor(plan interface{ DistinctValues(string) (int, error) }) (int, error) {
 	factor := 1
 	for _, t := range p.terms {
-		factor *= t.ReductionFactor(plan)
+		termFactor, err := t.ReductionFactor(plan)
+		if err != nil {
+			return 0, err
+		}
+		factor *= termFactor
 	}
-	return factor
+	return factor, nil
 }
 
 // String returns a string representation of the predicate.

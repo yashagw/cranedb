@@ -1,4 +1,4 @@
-package query
+package scan
 
 import (
 	"os"
@@ -13,8 +13,73 @@ import (
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
+// testPredicate is a simple predicate implementation for testing
+// that avoids importing the query package to prevent import cycles
+type testPredicate struct {
+	isSatisfiedFunc func(Scan) (bool, error)
+}
+
+func (p *testPredicate) IsSatisfied(s Scan) (bool, error) {
+	return p.isSatisfiedFunc(s)
+}
+
+// newTestPredicate creates a test predicate that checks if a field equals a value
+func newTestPredicate(fieldName string, expectedValue interface{}) Predicate {
+	return &testPredicate{
+		isSatisfiedFunc: func(s Scan) (bool, error) {
+			val, err := s.GetValue(fieldName)
+			if err != nil {
+				return false, err
+			}
+			switch expected := expectedValue.(type) {
+			case int:
+				if actual, ok := val.(int); ok {
+					return actual == expected, nil
+				}
+			case string:
+				if actual, ok := val.(string); ok {
+					return actual == expected, nil
+				}
+			}
+			return false, nil
+		},
+	}
+}
+
+// newCompoundTestPredicate creates a test predicate that checks multiple conditions (AND)
+func newCompoundTestPredicate(conditions []struct {
+	fieldName string
+	value     interface{}
+}) Predicate {
+	return &testPredicate{
+		isSatisfiedFunc: func(s Scan) (bool, error) {
+			for _, cond := range conditions {
+				val, err := s.GetValue(cond.fieldName)
+				if err != nil {
+					return false, err
+				}
+				matched := false
+				switch expected := cond.value.(type) {
+				case int:
+					if actual, ok := val.(int); ok {
+						matched = actual == expected
+					}
+				case string:
+					if actual, ok := val.(string); ok {
+						matched = actual == expected
+					}
+				}
+				if !matched {
+					return false, nil
+				}
+			}
+			return true, nil
+		},
+	}
+}
+
 // setupTestDB creates a test database with sample data
-func setupTestDB(t *testing.T, testDir string) (*transaction.Transaction, *record.TableScan) {
+func setupTestDB(t *testing.T, testDir string) (*transaction.Transaction, *TableScan) {
 	// Setup database components
 	fileManager, err := file.NewManager(testDir, 400)
 	require.NoError(t, err)
@@ -37,7 +102,8 @@ func setupTestDB(t *testing.T, testDir string) (*transaction.Transaction, *recor
 	require.NotNil(t, layout)
 
 	// Create TableScan and insert test data
-	ts := record.NewTableScan(tx, layout, "TestTable")
+	ts, err := NewTableScan(tx, layout, "TestTable")
+	require.NoError(t, err)
 	require.NotNil(t, ts)
 
 	// Insert test records
@@ -56,12 +122,17 @@ func setupTestDB(t *testing.T, testDir string) (*transaction.Transaction, *recor
 		{8, 45, "Henry"},
 	}
 
-	ts.BeforeFirst()
+	err = ts.BeforeFirst()
+	require.NoError(t, err)
 	for _, data := range testData {
-		ts.Insert()
-		ts.SetInt("id", data.id)
-		ts.SetInt("age", data.age)
-		ts.SetString("name", data.name)
+		err = ts.Insert()
+		require.NoError(t, err)
+		err = ts.SetInt("id", data.id)
+		require.NoError(t, err)
+		err = ts.SetInt("age", data.age)
+		require.NoError(t, err)
+		err = ts.SetString("name", data.name)
+		require.NoError(t, err)
 		t.Logf("Inserted: id=%d, age=%d, name=%s", data.id, data.age, data.name)
 	}
 
@@ -80,11 +151,10 @@ func TestSelectScanFiltering(t *testing.T) {
 		ts.BeforeFirst()
 
 		// Create predicate: age = 25
-		term := NewTerm(*NewFieldNameExpression("age"), *NewConstantExpression(*NewIntConstant(25)))
-		predicate := NewPredicate(*term)
+		predicate := newTestPredicate("age", 25)
 
 		// Create SelectScan
-		selectScan := NewSelectScan(ts, *predicate)
+		selectScan := NewSelectScan(ts, predicate)
 		require.NotNil(t, selectScan)
 
 		// Collect results
@@ -95,10 +165,21 @@ func TestSelectScanFiltering(t *testing.T) {
 			name string
 		}
 
-		for selectScan.Next() {
-			id := selectScan.GetInt("id")
-			age := selectScan.GetInt("age")
-			name := selectScan.GetString("name")
+		for {
+			hasNext, err := selectScan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
+			id, err := selectScan.GetInt("id")
+
+			require.NoError(t, err)
+			age, err := selectScan.GetInt("age")
+
+			require.NoError(t, err)
+			name, err := selectScan.GetString("name")
+
+			require.NoError(t, err)
 			results = append(results, struct {
 				id   int
 				age  int
@@ -126,20 +207,30 @@ func TestSelectScanFiltering(t *testing.T) {
 		ts.BeforeFirst()
 
 		// Create predicate: name = "Bob"
-		term := NewTerm(*NewFieldNameExpression("name"), *NewConstantExpression(*NewStringConstant("Bob")))
-		predicate := NewPredicate(*term)
+		predicate := newTestPredicate("name", "Bob")
 
 		// Create SelectScan
-		selectScan := NewSelectScan(ts, *predicate)
+		selectScan := NewSelectScan(ts, predicate)
 		require.NotNil(t, selectScan)
 
 		// Collect results
 		selectScan.BeforeFirst()
 		count := 0
-		for selectScan.Next() {
-			id := selectScan.GetInt("id")
-			age := selectScan.GetInt("age")
-			name := selectScan.GetString("name")
+		for {
+			hasNext, err := selectScan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
+			id, err := selectScan.GetInt("id")
+
+			require.NoError(t, err)
+			age, err := selectScan.GetInt("age")
+
+			require.NoError(t, err)
+			name, err := selectScan.GetString("name")
+
+			require.NoError(t, err)
 
 			assert.Equal(t, 2, id)
 			assert.Equal(t, 30, age)
@@ -156,22 +247,36 @@ func TestSelectScanFiltering(t *testing.T) {
 		ts.BeforeFirst()
 
 		// Create compound predicate: age = 30 AND name = "Grace"
-		term1 := NewTerm(*NewFieldNameExpression("age"), *NewConstantExpression(*NewIntConstant(30)))
-		term2 := NewTerm(*NewFieldNameExpression("name"), *NewConstantExpression(*NewStringConstant("Grace")))
-		predicate := NewPredicate(*term1)
-		predicate.ConjunctWith(*NewPredicate(*term2))
+		predicate := newCompoundTestPredicate([]struct {
+			fieldName string
+			value     interface{}
+		}{
+			{"age", 30},
+			{"name", "Grace"},
+		})
 
 		// Create SelectScan
-		selectScan := NewSelectScan(ts, *predicate)
+		selectScan := NewSelectScan(ts, predicate)
 		require.NotNil(t, selectScan)
 
 		// Collect results
 		selectScan.BeforeFirst()
 		count := 0
-		for selectScan.Next() {
-			id := selectScan.GetInt("id")
-			age := selectScan.GetInt("age")
-			name := selectScan.GetString("name")
+		for {
+			hasNext, err := selectScan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
+			id, err := selectScan.GetInt("id")
+
+			require.NoError(t, err)
+			age, err := selectScan.GetInt("age")
+
+			require.NoError(t, err)
+			name, err := selectScan.GetString("name")
+
+			require.NoError(t, err)
 
 			assert.Equal(t, 7, id)
 			assert.Equal(t, 30, age)
@@ -188,17 +293,21 @@ func TestSelectScanFiltering(t *testing.T) {
 		ts.BeforeFirst()
 
 		// Create predicate: age = 100 (no records should match)
-		term := NewTerm(*NewFieldNameExpression("age"), *NewConstantExpression(*NewIntConstant(100)))
-		predicate := NewPredicate(*term)
+		predicate := newTestPredicate("age", 100)
 
 		// Create SelectScan
-		selectScan := NewSelectScan(ts, *predicate)
+		selectScan := NewSelectScan(ts, predicate)
 		require.NotNil(t, selectScan)
 
 		// Verify no results
 		selectScan.BeforeFirst()
 		count := 0
-		for selectScan.Next() {
+		for {
+			hasNext, err := selectScan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
 			count++
 		}
 
@@ -219,9 +328,8 @@ func TestSelectScanReadOperations(t *testing.T) {
 	t.Run("HasField", func(t *testing.T) {
 		ts.BeforeFirst()
 
-		term := NewTerm(*NewFieldNameExpression("age"), *NewConstantExpression(*NewIntConstant(25)))
-		predicate := NewPredicate(*term)
-		selectScan := NewSelectScan(ts, *predicate)
+		predicate := newTestPredicate("age", 25)
+		selectScan := NewSelectScan(ts, predicate)
 
 		assert.True(t, selectScan.HasField("id"))
 		assert.True(t, selectScan.HasField("age"))
@@ -234,27 +342,33 @@ func TestSelectScanReadOperations(t *testing.T) {
 	t.Run("GetValue", func(t *testing.T) {
 		ts.BeforeFirst()
 
-		term := NewTerm(*NewFieldNameExpression("age"), *NewConstantExpression(*NewIntConstant(25)))
-		predicate := NewPredicate(*term)
-		selectScan := NewSelectScan(ts, *predicate)
+		predicate := newTestPredicate("age", 25)
+		selectScan := NewSelectScan(ts, predicate)
 
-		selectScan.BeforeFirst()
-		if selectScan.Next() {
-			ageVal := selectScan.GetValue("age")
+		err := selectScan.BeforeFirst()
+		require.NoError(t, err)
+		hasNext, err := selectScan.Next()
+		require.NoError(t, err)
+		if hasNext {
+			ageVal, err := selectScan.GetValue("age")
+
+			require.NoError(t, err)
 			require.NotNil(t, ageVal)
 
-			// GetValue returns a Constant
-			constant, ok := ageVal.(Constant)
-			require.True(t, ok, "GetValue should return a Constant")
-			assert.Equal(t, 25, constant.AsInt())
-			t.Logf("GetValue for age returned Constant with value: %d", constant.AsInt())
+			// GetValue returns a value (int or string)
+			ageInt, ok := ageVal.(int)
+			require.True(t, ok, "GetValue should return int")
+			assert.Equal(t, 25, ageInt)
+			t.Logf("GetValue for age returned value: %d", ageInt)
 
-			nameVal := selectScan.GetValue("name")
+			nameVal, err := selectScan.GetValue("name")
+
+			require.NoError(t, err)
 			require.NotNil(t, nameVal)
-			nameConstant, ok := nameVal.(Constant)
-			require.True(t, ok, "GetValue should return a Constant")
-			assert.NotEmpty(t, nameConstant.AsString())
-			t.Logf("GetValue for name returned Constant with value: %s", nameConstant.AsString())
+			nameStr, ok := nameVal.(string)
+			require.True(t, ok, "GetValue should return string")
+			assert.NotEmpty(t, nameStr)
+			t.Logf("GetValue for name returned value: %s", nameStr)
 		}
 
 		selectScan.Close()
@@ -263,15 +377,23 @@ func TestSelectScanReadOperations(t *testing.T) {
 	t.Run("GetIntAndGetString", func(t *testing.T) {
 		ts.BeforeFirst()
 
-		term := NewTerm(*NewFieldNameExpression("id"), *NewConstantExpression(*NewIntConstant(2)))
-		predicate := NewPredicate(*term)
-		selectScan := NewSelectScan(ts, *predicate)
+		predicate := newTestPredicate("id", 2)
+		selectScan := NewSelectScan(ts, predicate)
 
-		selectScan.BeforeFirst()
-		if selectScan.Next() {
-			id := selectScan.GetInt("id")
-			age := selectScan.GetInt("age")
-			name := selectScan.GetString("name")
+		err := selectScan.BeforeFirst()
+		require.NoError(t, err)
+		hasNext, err := selectScan.Next()
+		require.NoError(t, err)
+		if hasNext {
+			id, err := selectScan.GetInt("id")
+
+			require.NoError(t, err)
+			age, err := selectScan.GetInt("age")
+
+			require.NoError(t, err)
+			name, err := selectScan.GetString("name")
+
+			require.NoError(t, err)
 
 			assert.Equal(t, 2, id)
 			assert.Equal(t, 30, age)
@@ -295,32 +417,43 @@ func TestSelectScanUpdateOperations(t *testing.T) {
 		ts.BeforeFirst()
 
 		// Find Bob and update his age
-		term := NewTerm(*NewFieldNameExpression("name"), *NewConstantExpression(*NewStringConstant("Bob")))
-		predicate := NewPredicate(*term)
-		selectScan := NewSelectScan(ts, *predicate)
+		predicate := newTestPredicate("name", "Bob")
+		selectScan := NewSelectScan(ts, predicate)
 
-		selectScan.BeforeFirst()
-		if selectScan.Next() {
-			originalAge := selectScan.GetInt("age")
+		err := selectScan.BeforeFirst()
+		require.NoError(t, err)
+		hasNext, err := selectScan.Next()
+		require.NoError(t, err)
+		if hasNext {
+			originalAge, err := selectScan.GetInt("age")
+
+			require.NoError(t, err)
 			t.Logf("Bob's original age: %d", originalAge)
 
 			// Update Bob's age
 			newAge := 31
-			selectScan.SetInt("age", newAge)
-			assert.Equal(t, newAge, selectScan.GetInt("age"))
+			err = selectScan.SetInt("age", newAge)
+			require.NoError(t, err)
+			checkAge, err := selectScan.GetInt("age")
+			require.NoError(t, err)
+			assert.Equal(t, newAge, checkAge)
 			t.Logf("Updated Bob's age to %d", newAge)
 		}
 		selectScan.Close()
 
 		// Verify the update persisted
 		ts.BeforeFirst()
-		term2 := NewTerm(*NewFieldNameExpression("name"), *NewConstantExpression(*NewStringConstant("Bob")))
-		predicate2 := NewPredicate(*term2)
-		selectScan2 := NewSelectScan(ts, *predicate2)
+		predicate2 := newTestPredicate("name", "Bob")
+		selectScan2 := NewSelectScan(ts, predicate2)
 
-		selectScan2.BeforeFirst()
-		if selectScan2.Next() {
-			assert.Equal(t, 31, selectScan2.GetInt("age"), "Bob's age should be updated to 31")
+		err = selectScan2.BeforeFirst()
+		require.NoError(t, err)
+		hasNext, err = selectScan2.Next()
+		require.NoError(t, err)
+		if hasNext {
+			checkAge, err := selectScan2.GetInt("age")
+			require.NoError(t, err)
+			assert.Equal(t, 31, checkAge, "Bob's age should be updated to 31")
 			t.Log("Verified: Bob's age was successfully updated")
 		}
 		selectScan2.Close()
@@ -330,32 +463,43 @@ func TestSelectScanUpdateOperations(t *testing.T) {
 		ts.BeforeFirst()
 
 		// Find Alice and update her name
-		term := NewTerm(*NewFieldNameExpression("id"), *NewConstantExpression(*NewIntConstant(1)))
-		predicate := NewPredicate(*term)
-		selectScan := NewSelectScan(ts, *predicate)
+		predicate := newTestPredicate("id", 1)
+		selectScan := NewSelectScan(ts, predicate)
 
-		selectScan.BeforeFirst()
-		if selectScan.Next() {
-			originalName := selectScan.GetString("name")
+		err := selectScan.BeforeFirst()
+		require.NoError(t, err)
+		hasNext, err := selectScan.Next()
+		require.NoError(t, err)
+		if hasNext {
+			originalName, err := selectScan.GetString("name")
+
+			require.NoError(t, err)
 			t.Logf("Original name: %s", originalName)
 
 			// Update name
 			newName := "Alicia"
-			selectScan.SetString("name", newName)
-			assert.Equal(t, newName, selectScan.GetString("name"))
+			err = selectScan.SetString("name", newName)
+			require.NoError(t, err)
+			checkName, err := selectScan.GetString("name")
+			require.NoError(t, err)
+			assert.Equal(t, newName, checkName)
 			t.Logf("Updated name to %s", newName)
 		}
 		selectScan.Close()
 
 		// Verify the update persisted
 		ts.BeforeFirst()
-		term2 := NewTerm(*NewFieldNameExpression("id"), *NewConstantExpression(*NewIntConstant(1)))
-		predicate2 := NewPredicate(*term2)
-		selectScan2 := NewSelectScan(ts, *predicate2)
+		predicate2 := newTestPredicate("id", 1)
+		selectScan2 := NewSelectScan(ts, predicate2)
 
-		selectScan2.BeforeFirst()
-		if selectScan2.Next() {
-			assert.Equal(t, "Alicia", selectScan2.GetString("name"))
+		err = selectScan2.BeforeFirst()
+		require.NoError(t, err)
+		hasNext, err = selectScan2.Next()
+		require.NoError(t, err)
+		if hasNext {
+			checkName, err := selectScan2.GetString("name")
+			require.NoError(t, err)
+			assert.Equal(t, "Alicia", checkName)
 			t.Log("Verified: Name was successfully updated")
 		}
 		selectScan2.Close()
@@ -386,19 +530,25 @@ func TestSelectScanInsertOperation(t *testing.T) {
 	schema.AddStringField("name", 20)
 
 	layout := record.NewLayoutFromSchema(schema)
-	ts := record.NewTableScan(tx, layout, "TestTable")
+	ts, err := NewTableScan(tx, layout, "TestTable")
+	require.NoError(t, err)
 
 	// Create SelectScan with a predicate
-	term := NewTerm(*NewFieldNameExpression("id"), *NewConstantExpression(*NewIntConstant(1)))
-	predicate := NewPredicate(*term)
-	selectScan := NewSelectScan(ts, *predicate)
+	predicate := newTestPredicate("id", 1)
+	selectScan := NewSelectScan(ts, predicate)
 
 	// Test Insert through SelectScan
 	t.Log("Inserting new record through SelectScan")
-	selectScan.BeforeFirst()
-	selectScan.Insert()
-	selectScan.SetInt("id", 1)
-	selectScan.SetString("name", "TestUser")
+	err = selectScan.BeforeFirst()
+	require.NoError(t, err)
+	err = selectScan.Insert()
+	require.NoError(t, err)
+	err = selectScan.SetInt("id", 1)
+
+	require.NoError(t, err)
+	err = selectScan.SetString("name", "TestUser")
+
+	require.NoError(t, err)
 	t.Log("Inserted: id=1, name=TestUser")
 
 	selectScan.Close()
@@ -406,9 +556,18 @@ func TestSelectScanInsertOperation(t *testing.T) {
 	// Verify the insert
 	ts.BeforeFirst()
 	count := 0
-	for ts.Next() {
-		id := ts.GetInt("id")
-		name := ts.GetString("name")
+	for {
+		hasNext, err := ts.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		id, err := ts.GetInt("id")
+
+		require.NoError(t, err)
+		name, err := ts.GetString("name")
+
+		require.NoError(t, err)
 		assert.Equal(t, 1, id)
 		assert.Equal(t, "TestUser", name)
 		t.Logf("Verified inserted record: id=%d, name=%s", id, name)
@@ -428,23 +587,35 @@ func TestSelectScanDeleteOperation(t *testing.T) {
 	// Count records before deletion
 	initialCount := 0
 	ts.BeforeFirst()
-	for ts.Next() {
+	for {
+		hasNext, err := ts.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
 		initialCount++
 	}
 	t.Logf("Initial record count: %d", initialCount)
 
 	// Delete all records with age = 25
 	ts.BeforeFirst()
-	term := NewTerm(*NewFieldNameExpression("age"), *NewConstantExpression(*NewIntConstant(25)))
-	predicate := NewPredicate(*term)
-	selectScan := NewSelectScan(ts, *predicate)
+	predicate := newTestPredicate("age", 25)
+	selectScan := NewSelectScan(ts, predicate)
 
 	deletedCount := 0
 	selectScan.BeforeFirst()
-	for selectScan.Next() {
-		name := selectScan.GetString("name")
+	for {
+		hasNext, err := selectScan.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		name, err := selectScan.GetString("name")
+
+		require.NoError(t, err)
 		t.Logf("Deleting: %s (age=25)", name)
-		selectScan.Delete()
+		err = selectScan.Delete()
+		require.NoError(t, err)
 		deletedCount++
 	}
 	assert.Equal(t, 3, deletedCount, "Should delete 3 records with age=25")
@@ -454,9 +625,18 @@ func TestSelectScanDeleteOperation(t *testing.T) {
 	// Verify deletion
 	ts.BeforeFirst()
 	remainingCount := 0
-	for ts.Next() {
-		age := ts.GetInt("age")
-		name := ts.GetString("name")
+	for {
+		hasNext, err := ts.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		age, err := ts.GetInt("age")
+
+		require.NoError(t, err)
+		name, err := ts.GetString("name")
+
+		require.NoError(t, err)
 		assert.NotEqual(t, 25, age, "No records with age=25 should remain")
 		t.Logf("Remaining record: %s (age=%d)", name, age)
 		remainingCount++
@@ -476,26 +656,35 @@ func TestSelectScanNavigationOperations(t *testing.T) {
 	t.Run("GetRIDAndMoveToRID", func(t *testing.T) {
 		ts.BeforeFirst()
 
-		term := NewTerm(*NewFieldNameExpression("age"), *NewConstantExpression(*NewIntConstant(30)))
-		predicate := NewPredicate(*term)
-		selectScan := NewSelectScan(ts, *predicate)
+		predicate := newTestPredicate("age", 30)
+		selectScan := NewSelectScan(ts, predicate)
 
-		selectScan.BeforeFirst()
-		if selectScan.Next() {
-			rid := selectScan.GetRID()
+		err := selectScan.BeforeFirst()
+		require.NoError(t, err)
+		hasNext, err := selectScan.Next()
+		require.NoError(t, err)
+		if hasNext {
+			rid, err := selectScan.GetRID()
+			require.NoError(t, err)
 			require.NotNil(t, rid)
-			originalName := selectScan.GetString("name")
+			originalName, err := selectScan.GetString("name")
+			require.NoError(t, err)
 			t.Logf("Got RID for %s: block=%d, slot=%d", originalName, rid.Block(), rid.Slot())
 
 			// Move to next record
-			if selectScan.Next() {
-				differentName := selectScan.GetString("name")
+			hasNext, err = selectScan.Next()
+			require.NoError(t, err)
+			if hasNext {
+				differentName, err := selectScan.GetString("name")
+				require.NoError(t, err)
 				assert.NotEqual(t, originalName, differentName)
 				t.Logf("Moved to next record: %s", differentName)
 
 				// Move back to original RID
-				selectScan.MoveToRID(rid)
-				movedBackName := selectScan.GetString("name")
+				err = selectScan.MoveToRID(rid)
+				require.NoError(t, err)
+				movedBackName, err := selectScan.GetString("name")
+				require.NoError(t, err)
 				assert.Equal(t, originalName, movedBackName, "Should move back to original record")
 				t.Logf("Moved back to original record: %s", movedBackName)
 			}
@@ -507,14 +696,18 @@ func TestSelectScanNavigationOperations(t *testing.T) {
 	t.Run("BeforeFirstAndNext", func(t *testing.T) {
 		ts.BeforeFirst()
 
-		term := NewTerm(*NewFieldNameExpression("age"), *NewConstantExpression(*NewIntConstant(25)))
-		predicate := NewPredicate(*term)
-		selectScan := NewSelectScan(ts, *predicate)
+		predicate := newTestPredicate("age", 25)
+		selectScan := NewSelectScan(ts, predicate)
 
 		// First iteration
 		selectScan.BeforeFirst()
 		count1 := 0
-		for selectScan.Next() {
+		for {
+			hasNext, err := selectScan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
 			count1++
 		}
 		t.Logf("First iteration found %d records", count1)
@@ -522,7 +715,12 @@ func TestSelectScanNavigationOperations(t *testing.T) {
 		// Second iteration - should work again
 		selectScan.BeforeFirst()
 		count2 := 0
-		for selectScan.Next() {
+		for {
+			hasNext, err := selectScan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
 			count2++
 		}
 		t.Logf("Second iteration found %d records", count2)

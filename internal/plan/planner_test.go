@@ -43,23 +43,37 @@ func TestPlanner_E2E(t *testing.T) {
 	plan, err := planner.CreatePlan(querySQL, tx)
 	require.NoError(t, err)
 
-	scan := plan.Open()
+	scan, err := plan.Open()
+	require.NoError(t, err)
 	defer scan.Close()
+	err = scan.BeforeFirst()
+	require.NoError(t, err)
 
 	records := []struct {
 		id   int
 		name string
 		age  int
 	}{}
-	for scan.Next() {
+	for {
+		hasNext, err := scan.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		id, err := scan.GetInt("id")
+		require.NoError(t, err)
+		name, err := scan.GetString("name")
+		require.NoError(t, err)
+		age, err := scan.GetInt("age")
+		require.NoError(t, err)
 		records = append(records, struct {
 			id   int
 			name string
 			age  int
 		}{
-			id:   scan.GetInt("id"),
-			name: scan.GetString("name"),
-			age:  scan.GetInt("age"),
+			id:   id,
+			name: name,
+			age:  age,
 		})
 	}
 	assert.Equal(t, 3, len(records))
@@ -78,13 +92,23 @@ func TestPlanner_E2E(t *testing.T) {
 	plan, err = planner.CreatePlan(querySQL2, tx)
 	require.NoError(t, err)
 
-	scan = plan.Open()
+	scan, err = plan.Open()
+	require.NoError(t, err)
 	defer scan.Close()
+	err = scan.BeforeFirst()
+	require.NoError(t, err)
 
 	found := false
-	for scan.Next() {
+	for {
+		hasNext, err := scan.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
 		found = true
-		assert.Equal(t, "Bob", scan.GetString("name"))
+		name, err := scan.GetString("name")
+		require.NoError(t, err)
+		assert.Equal(t, "Bob", name)
 	}
 	assert.True(t, found)
 
@@ -95,12 +119,23 @@ func TestPlanner_E2E(t *testing.T) {
 	assert.Equal(t, 1, count)
 
 	// Verify the update
-	plan, _ = planner.CreatePlan("SELECT age FROM students WHERE name = 'Bob'", tx)
-	scan = plan.Open()
+	plan, err = planner.CreatePlan("SELECT age FROM students WHERE name = 'Bob'", tx)
+	require.NoError(t, err)
+	scan, err = plan.Open()
+	require.NoError(t, err)
 	defer scan.Close()
+	err = scan.BeforeFirst()
+	require.NoError(t, err)
 
-	for scan.Next() {
-		assert.Equal(t, 23, scan.GetInt("age"))
+	for {
+		hasNext, err := scan.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		age, err := scan.GetInt("age")
+		require.NoError(t, err)
+		assert.Equal(t, 23, age)
 	}
 
 	// 6. DELETE a record
@@ -110,14 +145,24 @@ func TestPlanner_E2E(t *testing.T) {
 	assert.Equal(t, 1, count)
 
 	// Verify deletion - should have 2 records left
-	plan, _ = planner.CreatePlan("SELECT id FROM students", tx)
-	scan = plan.Open()
+	plan, err = planner.CreatePlan("SELECT id FROM students", tx)
+	require.NoError(t, err)
+	scan, err = plan.Open()
+	require.NoError(t, err)
 	defer scan.Close()
+	err = scan.BeforeFirst()
+	require.NoError(t, err)
 
 	remaining := 0
-	for scan.Next() {
+	for {
+		hasNext, err := scan.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
 		remaining++
-		id := scan.GetInt("id")
+		id, err := scan.GetInt("id")
+		require.NoError(t, err)
 		assert.True(t, id == 1 || id == 2, "Only Alice and Bob should remain")
 	}
 	assert.Equal(t, 2, remaining)
@@ -175,14 +220,25 @@ func TestPlanner_ComplexJoinQuery(t *testing.T) {
 	plan, err := planner.CreatePlan(querySQL, tx)
 	require.NoError(t, err)
 
-	scan := plan.Open()
+	scan, err := plan.Open()
+	require.NoError(t, err)
 	defer scan.Close()
-	scan.BeforeFirst()
+	err = scan.BeforeFirst()
+	require.NoError(t, err)
 
 	courses := []string{}
-	for scan.Next() {
-		assert.Equal(t, "Alice", scan.GetString("name"))
-		courses = append(courses, scan.GetString("course"))
+	for {
+		hasNext, err := scan.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		name, err := scan.GetString("name")
+		require.NoError(t, err)
+		assert.Equal(t, "Alice", name)
+		course, err := scan.GetString("course")
+		require.NoError(t, err)
+		courses = append(courses, course)
 	}
 
 	assert.Equal(t, 2, len(courses))

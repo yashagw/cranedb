@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"github.com/yashagw/cranedb/internal/record"
+	"github.com/yashagw/cranedb/internal/scan"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -37,12 +38,24 @@ func (v *ViewManager) CreateView(viewName string, viewDef string, tx *transactio
 		return err
 	}
 
-	ts := record.NewTableScan(tx, layout, ViewCatalogName)
+	ts, err := scan.NewTableScan(tx, layout, ViewCatalogName)
+	if err != nil {
+		return err
+	}
 	defer ts.Close()
 
-	ts.Insert()
-	ts.SetString("viewname", viewName)
-	ts.SetString("viewdef", viewDef)
+	err = ts.Insert()
+	if err != nil {
+		return err
+	}
+	err = ts.SetString("viewname", viewName)
+	if err != nil {
+		return err
+	}
+	err = ts.SetString("viewdef", viewDef)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -54,12 +67,30 @@ func (v *ViewManager) GetViewDef(viewName string, tx *transaction.Transaction) (
 		return "", err
 	}
 
-	ts := record.NewTableScan(tx, layout, ViewCatalogName)
+	ts, err := scan.NewTableScan(tx, layout, ViewCatalogName)
+	if err != nil {
+		return "", err
+	}
 	defer ts.Close()
 
-	for ts.Next() {
-		if ts.GetString("viewname") == viewName {
-			return ts.GetString("viewdef"), nil
+	for {
+		hasNext, err := ts.Next()
+		if err != nil {
+			return "", err
+		}
+		if !hasNext {
+			break
+		}
+		viewnameVal, err := ts.GetString("viewname")
+		if err != nil {
+			continue
+		}
+		if viewnameVal == viewName {
+			viewdefVal, err := ts.GetString("viewdef")
+			if err != nil {
+				return "", err
+			}
+			return viewdefVal, nil
 		}
 	}
 

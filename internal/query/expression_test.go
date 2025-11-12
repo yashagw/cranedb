@@ -10,6 +10,7 @@ import (
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
 	"github.com/yashagw/cranedb/internal/record"
+	"github.com/yashagw/cranedb/internal/scan"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -50,22 +51,31 @@ func TestExpressionBasic(t *testing.T) {
 	assert.False(t, fieldExprMissing.AppliesTo(schema)) // field doesn't exist
 
 	// Test Evaluate with constant expression (doesn't need scan)
-	evaluatedConst := constExpr.Evaluate(nil)
+	evaluatedConst, err := constExpr.Evaluate(nil)
+	require.NoError(t, err)
 	assert.Equal(t, *intConst, evaluatedConst)
 }
 
 // constantScanWrapper wraps a TableScan to return Constants from GetValue
 type constantScanWrapper struct {
-	*record.TableScan
+	*scan.TableScan
 	schema *record.Schema
 }
 
-func (w *constantScanWrapper) GetValue(fldname string) any {
+func (w *constantScanWrapper) GetValue(fldname string) (any, error) {
 	fieldType := w.schema.Type(fldname)
 	if fieldType == "int" {
-		return *NewIntConstant(w.TableScan.GetInt(fldname))
+		val, err := w.TableScan.GetInt(fldname)
+		if err != nil {
+			return nil, err
+		}
+		return *NewIntConstant(val), nil
 	}
-	return *NewStringConstant(w.TableScan.GetString(fldname))
+	val, err := w.TableScan.GetString(fldname)
+	if err != nil {
+		return nil, err
+	}
+	return *NewStringConstant(val), nil
 }
 
 func TestExpressionEvaluate(t *testing.T) {
@@ -92,7 +102,8 @@ func TestExpressionEvaluate(t *testing.T) {
 	require.NotNil(t, layout)
 
 	// Create TableScan
-	ts := record.NewTableScan(tx, layout, "TestTable")
+	ts, err := scan.NewTableScan(tx, layout, "TestTable")
+	require.NoError(t, err)
 	require.NotNil(t, ts)
 
 	// Wrap TableScan to return Constants
@@ -102,23 +113,31 @@ func TestExpressionEvaluate(t *testing.T) {
 	}
 
 	// Insert a record
-	ts.Insert()
-	ts.SetInt("age", 25)
-	ts.SetString("name", "John")
+	err = ts.BeforeFirst()
+	require.NoError(t, err)
+	err = ts.Insert()
+	require.NoError(t, err)
+	err = ts.SetInt("age", 25)
+	require.NoError(t, err)
+	err = ts.SetString("name", "John")
+	require.NoError(t, err)
 
 	// Test Evaluate with field name expression for int field
 	fieldExprAge := NewFieldNameExpression("age")
-	evaluatedAge := fieldExprAge.Evaluate(wrappedScan)
+	evaluatedAge, err := fieldExprAge.Evaluate(wrappedScan)
+	require.NoError(t, err)
 	assert.Equal(t, 25, evaluatedAge.AsInt())
 
 	// Test Evaluate with field name expression for string field
 	fieldExprName := NewFieldNameExpression("name")
-	evaluatedName := fieldExprName.Evaluate(wrappedScan)
+	evaluatedName, err := fieldExprName.Evaluate(wrappedScan)
+	require.NoError(t, err)
 	assert.Equal(t, "John", evaluatedName.AsString())
 
 	// Test Evaluate with constant expression (doesn't use scan)
 	constExpr := NewConstantExpression(*NewIntConstant(100))
-	evaluatedConst := constExpr.Evaluate(wrappedScan)
+	evaluatedConst, err := constExpr.Evaluate(wrappedScan)
+	require.NoError(t, err)
 	assert.Equal(t, 100, evaluatedConst.AsInt())
 
 	// Cleanup

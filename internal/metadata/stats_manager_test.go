@@ -10,6 +10,7 @@ import (
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
 	"github.com/yashagw/cranedb/internal/record"
+	"github.com/yashagw/cranedb/internal/scan"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -85,7 +86,7 @@ func TestStatsManager_BasicOperations(t *testing.T) {
 	assert.Equal(t, 0, si3.RecordsOutput())
 	tx6.Commit()
 
-	// Test 5: Test refresh statistics
+	// Test 5: Test cache clearing behavior (simulating refresh trigger)
 	tx7 := transaction.NewTransaction(fm, lm, bm, lockTable)
 	schema3 := record.NewSchema()
 	schema3.AddIntField("id")
@@ -95,8 +96,23 @@ func TestStatsManager_BasicOperations(t *testing.T) {
 
 	tx8 := transaction.NewTransaction(fm, lm, bm, lockTable)
 	sm4 := NewStatsManager(tm, tx8)
-	sm4.refreshStatistics(tx8)
-	assert.NotNil(t, sm4.tableStats, "Table stats should not be nil after refresh")
+	layout3, err := tm.GetLayout("refresh_test", tx8)
+	require.NoError(t, err)
+
+	// Get stats to populate cache
+	si4 := sm4.GetStatInfo("refresh_test", layout3, tx8)
+	require.NotNil(t, si4)
+
+	// Simulate cache clearing (what happens when numCalls > 100 and numCalls % 100 == 0)
+	sm4.mutex.Lock()
+	sm4.tableStats = make(map[string]*StatInfo)
+	sm4.numCalls = 0
+	sm4.mutex.Unlock()
+
+	// Verify cache was cleared - getting stats again should recalculate
+	si5 := sm4.GetStatInfo("refresh_test", layout3, tx8)
+	require.NotNil(t, si5)
+	assert.NotNil(t, sm4.tableStats, "Table stats should not be nil after cache clear and recalculation")
 	tx8.Commit()
 }
 
@@ -138,7 +154,8 @@ func TestStatsManager_DistinctValues(t *testing.T) {
 	require.NoError(t, err, "Should retrieve layout successfully")
 	require.NotNil(t, layout)
 
-	ts := record.NewTableScan(tx3, layout, "test_table")
+	ts, err := scan.NewTableScan(tx3, layout, "test_table")
+	require.NoError(t, err)
 	defer ts.Close()
 
 	testData := []struct {
@@ -153,9 +170,12 @@ func TestStatsManager_DistinctValues(t *testing.T) {
 	}
 
 	for _, data := range testData {
-		ts.Insert()
-		ts.SetInt("id", data.id)
-		ts.SetString("name", data.name)
+		err = ts.Insert()
+		require.NoError(t, err)
+		err = ts.SetInt("id", data.id)
+		require.NoError(t, err)
+		err = ts.SetString("name", data.name)
+		require.NoError(t, err)
 	}
 	tx3.Commit()
 
@@ -168,14 +188,17 @@ func TestStatsManager_DistinctValues(t *testing.T) {
 	assert.Greater(t, si.BlocksAccessed(), 0)
 
 	// Test distinct values calculation
-	distinctIds := sm.GetDistinctValues("test_table", "id", layout, tx4)
+	distinctIds, err := sm.GetDistinctValues("test_table", "id", layout, tx4)
+	require.NoError(t, err)
 	assert.Equal(t, 5, distinctIds, "Should have 5 distinct IDs")
 
-	distinctNames := sm.GetDistinctValues("test_table", "name", layout, tx4)
+	distinctNames, err := sm.GetDistinctValues("test_table", "name", layout, tx4)
+	require.NoError(t, err)
 	assert.Equal(t, 3, distinctNames, "Should have 3 distinct names")
 
 	// Test caching
-	distinctIds2 := sm.GetDistinctValues("test_table", "id", layout, tx4)
+	distinctIds2, err := sm.GetDistinctValues("test_table", "id", layout, tx4)
+	require.NoError(t, err)
 	assert.Equal(t, distinctIds, distinctIds2, "Cached result should match")
 	tx4.Commit()
 }

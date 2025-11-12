@@ -23,7 +23,8 @@ func TestProjectPlan(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create TablePlan and ProjectPlan that projects only id and name
-	tablePlan := NewTablePlan(tableName, tx, md)
+	tablePlan, err := NewTablePlan(tableName, tx, md)
+	require.NoError(t, err)
 	fieldList := []string{"id", "name"}
 	projectPlan := NewProjectPlan(tablePlan, fieldList)
 
@@ -42,11 +43,20 @@ func TestProjectPlan(t *testing.T) {
 	assert.Equal(t, tablePlan.RecordsOutput(), projectPlan.RecordsOutput())
 
 	// Test DistinctValues - delegates to underlying plan
-	assert.Equal(t, tablePlan.DistinctValues("id"), projectPlan.DistinctValues("id"))
-	assert.Equal(t, tablePlan.DistinctValues("name"), projectPlan.DistinctValues("name"))
+	tableId, err := tablePlan.DistinctValues("id")
+	require.NoError(t, err)
+	projectId, err := projectPlan.DistinctValues("id")
+	require.NoError(t, err)
+	assert.Equal(t, tableId, projectId)
+	tableNameDistinct, err := tablePlan.DistinctValues("name")
+	require.NoError(t, err)
+	projectNameDistinct, err := projectPlan.DistinctValues("name")
+	require.NoError(t, err)
+	assert.Equal(t, tableNameDistinct, projectNameDistinct)
 
 	// Test Open
-	scan := projectPlan.Open()
+	scan, err := projectPlan.Open()
+	require.NoError(t, err)
 	require.NotNil(t, scan)
 	scan.Close()
 }

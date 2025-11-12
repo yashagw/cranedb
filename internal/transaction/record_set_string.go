@@ -53,8 +53,10 @@ func (s *SetStringLogRecord) TxNumber() int {
 }
 
 // Undo performs the undo operation for this log record
-func (s *SetStringLogRecord) Undo(tx *Transaction) {
-	// todo: implement it
+func (s *SetStringLogRecord) Undo(tx *Transaction) error {
+	// Restore the old value at the specified offset in the block
+	// log=false because we don't want to log the undo operation itself
+	return tx.SetString(s.block, s.offset, s.oldValue, false)
 }
 
 // WriteSetStringLogRecord writes a SetStringLogRecord to the log manager

@@ -107,7 +107,10 @@ func (rm *RecoveryManager) doRollback() error {
 			if record.Op() == LogRecordStart {
 				break
 			}
-			record.Undo(rm.transaction)
+			err := record.Undo(rm.transaction)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -138,7 +141,10 @@ func (rm *RecoveryManager) doRecovery() error {
 		}
 
 		if !slices.Contains(finishedTXs, record.TxNumber()) {
-			record.Undo(rm.transaction)
+			err := record.Undo(rm.transaction)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil

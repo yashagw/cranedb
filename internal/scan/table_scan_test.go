@@ -1,4 +1,4 @@
-package record
+package scan
 
 import (
 	"os"
@@ -9,6 +9,7 @@ import (
 	"github.com/yashagw/cranedb/internal/buffer"
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
+	"github.com/yashagw/cranedb/internal/record"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -28,20 +29,21 @@ func TestTableScan(t *testing.T) {
 	require.NotNil(t, tx)
 
 	// Create schema with int and string fields
-	schema := NewSchema()
+	schema := record.NewSchema()
 	schema.AddIntField("A")
 	schema.AddStringField("B", 9)
 
-	layout := NewLayoutFromSchema(schema)
+	layout := record.NewLayoutFromSchema(schema)
 	require.NotNil(t, layout)
 
-	for _, fieldName := range layout.schema.Fields() {
+	for _, fieldName := range layout.GetSchema().Fields() {
 		offset := layout.GetOffset(fieldName)
 		t.Logf("%s has offset %d", fieldName, offset)
 	}
 
 	// Create TableScan
-	ts := NewTableScan(tx, layout, "TestTable")
+	ts, err := NewTableScan(tx, layout, "TestTable")
+	require.NoError(t, err)
 	require.NotNil(t, ts)
 	assert.Equal(t, tx, ts.transaction)
 	assert.Equal(t, layout, ts.layout)
@@ -51,13 +53,18 @@ func TestTableScan(t *testing.T) {
 
 	// Test 1: Fill the table with 50 random records
 	st := map[int]map[int]int{}
-	ts.BeforeFirst()
+	err = ts.BeforeFirst()
+	require.NoError(t, err)
 	for i := 0; i < 50; i++ {
-		ts.Insert()
+		err = ts.Insert()
+		require.NoError(t, err)
 		n := (i * 7) % 50 // Simulate random values
-		ts.SetInt("A", n)
-		ts.SetString("B", "rec")
-		rid := ts.GetRID()
+		err = ts.SetInt("A", n)
+		require.NoError(t, err)
+		err = ts.SetString("B", "rec")
+		require.NoError(t, err)
+		rid, err := ts.GetRID()
+		require.NoError(t, err)
 		if _, ok := st[rid.Block()]; !ok {
 			st[rid.Block()] = map[int]int{}
 		}
@@ -66,13 +73,22 @@ func TestTableScan(t *testing.T) {
 	}
 
 	// Test 2: Verify we can iterate through all records
-	ts.BeforeFirst()
+	err = ts.BeforeFirst()
+	require.NoError(t, err)
 	recordCount := 0
-	for ts.Next() {
+	for {
+		hasNext, err := ts.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
 		if ts.currentSlot != -1 {
-			a := ts.GetInt("A")
-			b := ts.GetString("B")
-			rid := ts.GetRID()
+			a, err := ts.GetInt("A")
+			require.NoError(t, err)
+			b, err := ts.GetString("B")
+			require.NoError(t, err)
+			rid, err := ts.GetRID()
+			require.NoError(t, err)
 			assert.Equal(t, st[rid.Block()][rid.Slot()], a)
 			t.Logf("block %d, slot %d: {%d, %s}", rid.Block(), rid.Slot(), a, b)
 			recordCount++
@@ -83,16 +99,26 @@ func TestTableScan(t *testing.T) {
 	// Test 3: Delete records with A-values < 25
 	t.Log("Deleting records with A-values < 25.")
 	count := 0
-	ts.BeforeFirst()
-	for ts.Next() {
+	err = ts.BeforeFirst()
+	require.NoError(t, err)
+	for {
+		hasNext, err := ts.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
 		if ts.currentSlot != -1 {
-			a := ts.GetInt("A")
-			b := ts.GetString("B")
+			a, err := ts.GetInt("A")
+			require.NoError(t, err)
+			b, err := ts.GetString("B")
+			require.NoError(t, err)
 			if a < 25 {
 				count++
-				rid := ts.GetRID()
+				rid, err := ts.GetRID()
+				require.NoError(t, err)
 				t.Logf("slot %d: {%d, %s}", rid.Slot(), a, b)
-				ts.Delete()
+				err = ts.Delete()
+				require.NoError(t, err)
 			}
 		}
 	}
@@ -102,12 +128,21 @@ func TestTableScan(t *testing.T) {
 	// Test 4: Verify remaining records
 	t.Log("Here are the remaining records.")
 	remainingCount := 0
-	ts.BeforeFirst()
-	for ts.Next() {
+	err = ts.BeforeFirst()
+	require.NoError(t, err)
+	for {
+		hasNext, err := ts.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
 		if ts.currentSlot != -1 { // Only count valid records
-			a := ts.GetInt("A")
-			b := ts.GetString("B")
-			rid := ts.GetRID()
+			a, err := ts.GetInt("A")
+			require.NoError(t, err)
+			b, err := ts.GetString("B")
+			require.NoError(t, err)
+			rid, err := ts.GetRID()
+			require.NoError(t, err)
 			t.Logf("slot %d: {%d, %s}", rid.Slot(), a, b)
 			assert.GreaterOrEqual(t, a, 25)
 			remainingCount++
@@ -118,20 +153,32 @@ func TestTableScan(t *testing.T) {
 
 	// Test 5: Test MoveToRID functionality
 	t.Log("Testing MoveToRID functionality.")
-	ts.BeforeFirst()
-	ts.Next()
-	if ts.currentSlot != -1 {
-		rid := ts.GetRID()
-		originalA := ts.GetInt("A")
+	err = ts.BeforeFirst()
+	require.NoError(t, err)
+	hasNext, err := ts.Next()
+	require.NoError(t, err)
+	if hasNext && ts.currentSlot != -1 {
+		rid, err := ts.GetRID()
+		require.NoError(t, err)
+		originalA, err := ts.GetInt("A")
+		require.NoError(t, err)
 
-		ts.BeforeFirst()
-		ts.Next()
-		ts.Next()
-		if ts.currentSlot != -1 {
-			ts.MoveToRID(rid)
+		err = ts.BeforeFirst()
+		require.NoError(t, err)
+		hasNext, err = ts.Next()
+		require.NoError(t, err)
+		if hasNext {
+			hasNext, err = ts.Next()
+			require.NoError(t, err)
+		}
+		if hasNext && ts.currentSlot != -1 {
+			err = ts.MoveToRID(rid)
+			require.NoError(t, err)
 			assert.Equal(t, rid.Block(), ts.currentRecordPage.Block().Number())
 			assert.Equal(t, rid.Slot(), ts.currentSlot)
-			assert.Equal(t, originalA, ts.GetInt("A"))
+			checkA, err := ts.GetInt("A")
+			require.NoError(t, err)
+			assert.Equal(t, originalA, checkA)
 		}
 	}
 
@@ -140,41 +187,58 @@ func TestTableScan(t *testing.T) {
 	initialBlock := ts.currentRecordPage.Block().Number()
 
 	// Test MoveToNewBlock
-	ts.MoveToNewBlock()
+	err = ts.MoveToNewBlock()
+	require.NoError(t, err)
 	newBlock := ts.currentRecordPage.Block().Number()
 	assert.Greater(t, newBlock, initialBlock)
 	assert.Equal(t, -1, ts.currentSlot)
 
 	// Test AtLastBlock
-	assert.True(t, ts.AtLastBlock())
+	atLast, err := ts.AtLastBlock()
+	require.NoError(t, err)
+	assert.True(t, atLast)
 
 	// Test MoveToBlock
-	ts.MoveToBlock(0)
+	err = ts.MoveToBlock(0)
+	require.NoError(t, err)
 	assert.Equal(t, 0, ts.currentRecordPage.Block().Number())
-	assert.False(t, ts.AtLastBlock())
+	atLast, err = ts.AtLastBlock()
+	require.NoError(t, err)
+	assert.False(t, atLast)
 
 	// Test 7: Test BeforeFirst
-	ts.MoveToBlock(1)
+	err = ts.MoveToBlock(1)
+	require.NoError(t, err)
 	assert.Equal(t, 1, ts.currentRecordPage.Block().Number())
-	ts.BeforeFirst()
+	err = ts.BeforeFirst()
+	require.NoError(t, err)
 	assert.Equal(t, 0, ts.currentRecordPage.Block().Number())
 	assert.Equal(t, -1, ts.currentSlot)
 
 	// Test 8: Test Get/Set operations
 	t.Log("Testing Get/Set operations.")
-	ts.BeforeFirst()
-	ts.Next()
-	if ts.currentSlot != -1 {
+	err = ts.BeforeFirst()
+	require.NoError(t, err)
+	hasNext, err = ts.Next()
+	require.NoError(t, err)
+	if hasNext && ts.currentSlot != -1 {
 		// Test setting and getting values
-		ts.SetInt("A", 999)
-		ts.SetString("B", "updated")
-		assert.Equal(t, 999, ts.GetInt("A"))
-		assert.Equal(t, "updated", ts.GetString("B"))
+		err = ts.SetInt("A", 999)
+		require.NoError(t, err)
+		err = ts.SetString("B", "updated")
+		require.NoError(t, err)
+		checkA, err := ts.GetInt("A")
+		require.NoError(t, err)
+		checkB, err := ts.GetString("B")
+		require.NoError(t, err)
+		assert.Equal(t, 999, checkA)
+		assert.Equal(t, "updated", checkB)
 	}
 
 	// Test 9: Test Close (should not panic)
 	ts.Close()
 
 	// Cleanup
-	tx.Commit()
+	err = tx.Commit()
+	require.NoError(t, err)
 }

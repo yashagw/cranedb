@@ -24,12 +24,12 @@ const (
 type LogRecord interface {
 	Op() LogRecordType
 	TxNumber() int
-	Undo(tx *Transaction)
+	Undo(tx *Transaction) error
 }
 
 // CreateLogRecord returns the correct LogRecord based on the operation type
 func CreateLogRecord(bytes []byte) LogRecord {
-	page := file.NewPage(len(bytes))
+	page := file.NewPageFromBytes(bytes)
 
 	// First 4 bytes is the operation type
 	op := page.GetInt(0)

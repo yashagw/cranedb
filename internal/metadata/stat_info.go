@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/yashagw/cranedb/internal/record"
+	"github.com/yashagw/cranedb/internal/scan"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -42,36 +43,40 @@ func (s *StatInfo) RecordsOutput() int {
 }
 
 // DistinctValues returns the actual count of distinct values for a given field
-func (s *StatInfo) DistinctValues(fieldName string, tx *transaction.Transaction, tableName string) int {
+func (s *StatInfo) DistinctValues(fieldName string, tx *transaction.Transaction, tableName string) (int, error) {
 	s.mutex.RLock()
 	if cached, exists := s.distinctVals[fieldName]; exists {
 		s.mutex.RUnlock()
-		return cached
+		return cached, nil
 	}
 	s.mutex.RUnlock()
 
-	distinctCount := s.calculateActualDistinctValues(fieldName, tx, tableName)
+	distinctCount, err := s.calculateActualDistinctValues(fieldName, tx, tableName)
+	if err != nil {
+		return 0, err
+	}
 
 	s.mutex.Lock()
 	s.distinctVals[fieldName] = distinctCount
 	s.mutex.Unlock()
 
-	return distinctCount
+	return distinctCount, nil
 }
 
 // calculateActualDistinctValues scans through all records to count distinct values
-func (s *StatInfo) calculateActualDistinctValues(fieldName string, tx *transaction.Transaction, tableName string) int {
+func (s *StatInfo) calculateActualDistinctValues(fieldName string, tx *transaction.Transaction, tableName string) (int, error) {
 	if s.numRecs == 0 {
-		return 0
+		// Empty table has 0 distinct values
+		return 0, nil
 	}
 
 	if s.layout == nil {
-		return 1
+		return 0, fmt.Errorf("cannot calculate distinct values: layout is nil")
 	}
 
 	schema := s.layout.GetSchema()
 	if schema == nil {
-		return 1
+		return 0, fmt.Errorf("cannot calculate distinct values: schema is nil")
 	}
 
 	fields := schema.Fields()
@@ -84,23 +89,45 @@ func (s *StatInfo) calculateActualDistinctValues(fieldName string, tx *transacti
 	}
 
 	if !fieldExists {
-		return 0
+		return 0, fmt.Errorf("cannot calculate distinct values: field '%s' does not exist", fieldName)
 	}
 
 	distinctValues := make(map[string]bool)
 
-	ts := record.NewTableScan(tx, s.layout, tableName)
+	ts, err := scan.NewTableScan(tx, s.layout, tableName)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create table scan: %w", err)
+	}
 	defer ts.Close()
 
-	for ts.Next() {
+	err = ts.BeforeFirst()
+	if err != nil {
+		return 0, fmt.Errorf("failed to initialize table scan: %w", err)
+	}
+
+	for {
+		hasNext, err := ts.Next()
+		if err != nil {
+			return 0, fmt.Errorf("failed to read next record: %w", err)
+		}
+		if !hasNext {
+			break
+		}
 		fieldType := schema.Type(fieldName)
 		var value string
 
 		if fieldType == "int" {
-			intValue := ts.GetInt(fieldName)
+			intValue, err := ts.GetInt(fieldName)
+			if err != nil {
+				continue
+			}
 			value = fmt.Sprintf("%d", intValue)
 		} else if fieldType == "string" {
-			value = ts.GetString(fieldName)
+			strValue, err := ts.GetString(fieldName)
+			if err != nil {
+				continue
+			}
+			value = strValue
 		} else {
 			continue
 		}
@@ -108,5 +135,5 @@ func (s *StatInfo) calculateActualDistinctValues(fieldName string, tx *transacti
 		distinctValues[value] = true
 	}
 
-	return len(distinctValues)
+	return len(distinctValues), nil
 }

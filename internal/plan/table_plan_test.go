@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/yashagw/cranedb/internal/record"
+	"github.com/yashagw/cranedb/internal/scan"
 )
 
 func TestTablePlan(t *testing.T) {
@@ -23,7 +24,8 @@ func TestTablePlan(t *testing.T) {
 
 	// Insert test data
 	layout := record.NewLayoutFromSchema(schema)
-	ts := record.NewTableScan(tx, layout, tableName)
+	ts, err := scan.NewTableScan(tx, layout, tableName)
+	require.NoError(t, err)
 	for i := 1; i <= 10; i++ {
 		ts.Insert()
 		ts.SetInt("id", i)
@@ -33,7 +35,8 @@ func TestTablePlan(t *testing.T) {
 	ts.Close()
 
 	// Create TablePlan and test all Plan interface methods
-	tablePlan := NewTablePlan(tableName, tx, md)
+	tablePlan, err := NewTablePlan(tableName, tx, md)
+	require.NoError(t, err)
 
 	// Test Schema
 	schema2 := tablePlan.Schema()
@@ -45,11 +48,16 @@ func TestTablePlan(t *testing.T) {
 	// Test statistics methods
 	assert.Equal(t, 10, tablePlan.RecordsOutput())
 	assert.True(t, tablePlan.BlocksAccessed() >= 1)
-	assert.Equal(t, 10, tablePlan.DistinctValues("id"))
-	assert.Equal(t, 3, tablePlan.DistinctValues("status"))
+	distinctId, err := tablePlan.DistinctValues("id")
+	require.NoError(t, err)
+	assert.Equal(t, 10, distinctId)
+	distinctStatus, err := tablePlan.DistinctValues("status")
+	require.NoError(t, err)
+	assert.Equal(t, 3, distinctStatus)
 
 	// Test Open
-	scan := tablePlan.Open()
+	scan, err := tablePlan.Open()
+	require.NoError(t, err)
 	require.NotNil(t, scan)
 	scan.Close()
 }
@@ -58,7 +66,6 @@ func TestTablePlanNonExistentTable(t *testing.T) {
 	_, tx, md, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	assert.Panics(t, func() {
-		NewTablePlan("nonexistent", tx, md)
-	})
+	_, err := NewTablePlan("nonexistent", tx, md)
+	assert.Error(t, err, "Should return error for nonexistent table")
 }

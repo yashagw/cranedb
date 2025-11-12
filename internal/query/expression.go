@@ -1,6 +1,8 @@
 package query
 
 import (
+	"fmt"
+
 	"github.com/yashagw/cranedb/internal/record"
 	"github.com/yashagw/cranedb/internal/scan"
 )
@@ -49,22 +51,25 @@ func (e *Expression) String() string {
 }
 
 // evaluate returns the value of the expression for the current record in the scan.
-func (e *Expression) Evaluate(s scan.Scan) Constant {
+func (e *Expression) Evaluate(s scan.Scan) (Constant, error) {
 	if e.IsFieldName() {
-		val := s.GetValue(e.AsFieldName())
+		val, err := s.GetValue(e.AsFieldName())
+		if err != nil {
+			return Constant{}, err
+		}
 		// Convert primitive values to Constant
 		switch v := val.(type) {
 		case int:
-			return *NewIntConstant(v)
+			return *NewIntConstant(v), nil
 		case string:
-			return *NewStringConstant(v)
+			return *NewStringConstant(v), nil
 		case Constant:
-			return v
+			return v, nil
 		default:
-			panic("unsupported value type")
+			return Constant{}, fmt.Errorf("unsupported value type: %T", v)
 		}
 	}
-	return e.val
+	return e.val, nil
 }
 
 // appliesTo checks if the expression applies to the given schema.

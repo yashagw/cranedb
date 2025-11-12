@@ -14,25 +14,35 @@ import (
 )
 
 // Helper to create and populate a table with test data
-func createTableWithData(t *testing.T, tableName string, schema *record.Schema, md *metadata.Manager, tx *transaction.Transaction, dataFn func(*record.TableScan)) {
+func createTableWithData(t *testing.T, tableName string, schema *record.Schema, md *metadata.Manager, tx *transaction.Transaction, dataFn func(*scan.TableScan)) {
 	err := md.CreateTable(tableName, schema, tx)
 	require.NoError(t, err)
 
 	if dataFn != nil {
 		layout := record.NewLayoutFromSchema(schema)
-		ts := record.NewTableScan(tx, layout, tableName)
+		ts, err := scan.NewTableScan(tx, layout, tableName)
+		if err != nil {
+			t.Fatalf("Failed to create table scan: %v", err)
+		}
 		dataFn(ts)
 		ts.Close()
 	}
 }
 
 // Helper to count scan results
-func countScanResults(s scan.Scan) int {
+func countScanResults(s scan.Scan) (int, error) {
 	count := 0
-	for s.Next() {
+	for {
+		hasNext, err := s.Next()
+		if err != nil {
+			return count, err
+		}
+		if !hasNext {
+			break
+		}
 		count++
 	}
-	return count
+	return count, nil
 }
 
 func TestBasicQueryPlanner_SingleTableWithPredicate(t *testing.T) {
@@ -44,12 +54,18 @@ func TestBasicQueryPlanner_SingleTableWithPredicate(t *testing.T) {
 	schema.AddStringField("name", 20)
 	schema.AddIntField("age")
 
-	createTableWithData(t, "students", schema, md, tx, func(ts *record.TableScan) {
+	createTableWithData(t, "students", schema, md, tx, func(ts *scan.TableScan) {
+		err := ts.BeforeFirst()
+		require.NoError(t, err)
 		for i := 1; i <= 5; i++ {
-			ts.Insert()
-			ts.SetInt("id", i)
-			ts.SetString("name", "Student")
-			ts.SetInt("age", 20+i)
+			err = ts.Insert()
+			require.NoError(t, err)
+			err = ts.SetInt("id", i)
+			require.NoError(t, err)
+			err = ts.SetString("name", "Student")
+			require.NoError(t, err)
+			err = ts.SetInt("age", 20+i)
+			require.NoError(t, err)
 		}
 	})
 
@@ -69,12 +85,22 @@ func TestBasicQueryPlanner_SingleTableWithPredicate(t *testing.T) {
 	assert.False(t, plan.Schema().HasField("age"))
 
 	// Verify results
-	scan := plan.Open()
-	defer scan.Close()
+	queryScan, err := plan.Open()
+	require.NoError(t, err)
+	defer queryScan.Close()
+	err = queryScan.BeforeFirst()
+	require.NoError(t, err)
 	count := 0
-	for scan.Next() {
+	for {
+		hasNext, err := queryScan.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
 		count++
-		assert.Equal(t, 2, scan.GetInt("id"))
+		id, err := queryScan.GetInt("id")
+		require.NoError(t, err)
+		assert.Equal(t, 2, id)
 	}
 	assert.Equal(t, 1, count)
 }
@@ -87,11 +113,16 @@ func TestBasicQueryPlanner_NoPredicate(t *testing.T) {
 	schema.AddIntField("id")
 	schema.AddStringField("name", 20)
 
-	createTableWithData(t, "products", schema, md, tx, func(ts *record.TableScan) {
+	createTableWithData(t, "products", schema, md, tx, func(ts *scan.TableScan) {
+		err := ts.BeforeFirst()
+		require.NoError(t, err)
 		for i := 1; i <= 3; i++ {
-			ts.Insert()
-			ts.SetInt("id", i)
-			ts.SetString("name", "Product")
+			err = ts.Insert()
+			require.NoError(t, err)
+			err = ts.SetInt("id", i)
+			require.NoError(t, err)
+			err = ts.SetString("name", "Product")
+			require.NoError(t, err)
 		}
 	})
 
@@ -101,9 +132,12 @@ func TestBasicQueryPlanner_NoPredicate(t *testing.T) {
 	), tx)
 	require.NoError(t, err)
 
-	scan := plan.Open()
+	scan, err := plan.Open()
+	require.NoError(t, err)
 	defer scan.Close()
-	assert.Equal(t, 3, countScanResults(scan))
+	count, err := countScanResults(scan)
+	require.NoError(t, err)
+	assert.Equal(t, 3, count)
 }
 
 func TestBasicQueryPlanner_CartesianProduct(t *testing.T) {
@@ -115,16 +149,24 @@ func TestBasicQueryPlanner_CartesianProduct(t *testing.T) {
 	s2 := record.NewSchema()
 	s2.AddIntField("cid")
 
-	createTableWithData(t, "students", s1, md, tx, func(ts *record.TableScan) {
+	createTableWithData(t, "students", s1, md, tx, func(ts *scan.TableScan) {
+		err := ts.BeforeFirst()
+		require.NoError(t, err)
 		for i := 1; i <= 2; i++ {
-			ts.Insert()
-			ts.SetInt("sid", i)
+			err = ts.Insert()
+			require.NoError(t, err)
+			err = ts.SetInt("sid", i)
+			require.NoError(t, err)
 		}
 	})
-	createTableWithData(t, "courses", s2, md, tx, func(ts *record.TableScan) {
+	createTableWithData(t, "courses", s2, md, tx, func(ts *scan.TableScan) {
+		err := ts.BeforeFirst()
+		require.NoError(t, err)
 		for i := 1; i <= 2; i++ {
-			ts.Insert()
-			ts.SetInt("cid", i)
+			err = ts.Insert()
+			require.NoError(t, err)
+			err = ts.SetInt("cid", i)
+			require.NoError(t, err)
 		}
 	})
 
@@ -134,10 +176,14 @@ func TestBasicQueryPlanner_CartesianProduct(t *testing.T) {
 	), tx)
 	require.NoError(t, err)
 
-	scan := plan.Open()
+	scan, err := plan.Open()
+	require.NoError(t, err)
 	defer scan.Close()
-	scan.BeforeFirst()
-	assert.Equal(t, 4, countScanResults(scan)) // 2 * 2 = 4
+	err = scan.BeforeFirst()
+	require.NoError(t, err)
+	count, err := countScanResults(scan)
+	require.NoError(t, err)
+	assert.Equal(t, 4, count) // 2 * 2 = 4
 }
 
 func TestBasicQueryPlanner_JoinWithPredicate(t *testing.T) {
@@ -149,7 +195,8 @@ func TestBasicQueryPlanner_JoinWithPredicate(t *testing.T) {
 	s1.AddIntField("id")
 	s1.AddStringField("name", 20)
 	md.CreateTable("students", s1, tx)
-	ts1 := record.NewTableScan(tx, record.NewLayoutFromSchema(s1), "students")
+	ts1, err := scan.NewTableScan(tx, record.NewLayoutFromSchema(s1), "students")
+	require.NoError(t, err)
 
 	ts1.Insert()
 	ts1.SetInt("id", 1)
@@ -173,7 +220,8 @@ func TestBasicQueryPlanner_JoinWithPredicate(t *testing.T) {
 	s2.AddIntField("student_id")
 	s2.AddStringField("course", 20)
 	md.CreateTable("enrollments", s2, tx)
-	ts2 := record.NewTableScan(tx, record.NewLayoutFromSchema(s2), "enrollments")
+	ts2, err := scan.NewTableScan(tx, record.NewLayoutFromSchema(s2), "enrollments")
+	require.NoError(t, err)
 
 	ts2.Insert()
 	ts2.SetInt("student_id", 1)
@@ -213,14 +261,25 @@ func TestBasicQueryPlanner_JoinWithPredicate(t *testing.T) {
 	), tx)
 
 	// Should return 2 records: Bob enrolled in Physics and Chemistry
-	scan := plan.Open()
+	scan, err := plan.Open()
+	require.NoError(t, err)
 	defer scan.Close()
-	scan.BeforeFirst()
+	err = scan.BeforeFirst()
+	require.NoError(t, err)
 
 	courses := []string{}
-	for scan.Next() {
-		assert.Equal(t, "Bob", scan.GetString("name"))
-		courses = append(courses, scan.GetString("course"))
+	for {
+		hasNext, err := scan.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		name, err := scan.GetString("name")
+		require.NoError(t, err)
+		assert.Equal(t, "Bob", name)
+		course, err := scan.GetString("course")
+		require.NoError(t, err)
+		courses = append(courses, course)
 	}
 
 	assert.Equal(t, 2, len(courses))

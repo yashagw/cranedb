@@ -9,7 +9,7 @@ import (
 	"github.com/yashagw/cranedb/internal/buffer"
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
-	"github.com/yashagw/cranedb/internal/record"
+	"github.com/yashagw/cranedb/internal/scan"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -105,13 +105,21 @@ func TestViewManager_BasicOperations(t *testing.T) {
 	layout, err := tm.GetLayout(ViewCatalogName, tx8)
 	require.NoError(t, err, "Should get view catalog layout")
 
-	ts := record.NewTableScan(tx8, layout, ViewCatalogName)
+	ts, err := scan.NewTableScan(tx8, layout, ViewCatalogName)
+	require.NoError(t, err)
 	defer ts.Close()
 
 	foundViews := make(map[string]string)
-	for ts.Next() {
-		vName := ts.GetString("viewname")
-		vDef := ts.GetString("viewdef")
+	for {
+		hasNext, err := ts.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		vName, err := ts.GetString("viewname")
+		require.NoError(t, err)
+		vDef, err := ts.GetString("viewdef")
+		require.NoError(t, err)
 		foundViews[vName] = vDef
 	}
 

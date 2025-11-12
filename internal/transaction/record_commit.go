@@ -33,8 +33,9 @@ func (s *CommitLogRecord) TxNumber() int {
 }
 
 // Undo performs the undo operation for this log record
-func (s *CommitLogRecord) Undo(tx *Transaction) {
+func (s *CommitLogRecord) Undo(tx *Transaction) error {
 	// No need to undo anything for Commit Record
+	return nil
 }
 
 // WriteCommitLogRecord writes a CommitLogRecord to the log manager

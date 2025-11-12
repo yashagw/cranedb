@@ -33,7 +33,8 @@ func TestTransaction_BasicOperations(t *testing.T) {
 
 	// Test 3: Pin and unpin buffer
 	block := file.NewBlockID("testfile", 1)
-	buff := tx1.Pin(block)
+	buff, err := tx1.Pin(block)
+	require.NoError(t, err)
 	require.NotNil(t, buff)
 	assert.NotNil(t, tx1.bufferList.GetBuffer(block))
 	tx1.Unpin(block)
@@ -78,25 +79,30 @@ func TestTransaction_DataOperation(t *testing.T) {
 	block := file.NewBlockID("testfile", 1)
 
 	// Pin the buffer first
-	buff := tx.Pin(block)
+	buff, err := tx.Pin(block)
+	require.NoError(t, err)
 	require.NotNil(t, buff)
 
 	// Test 1: Set and get integer
 	tx.SetInt(block, 0, 42, true)
-	val := tx.GetInt(block, 0)
+	val, err := tx.GetInt(block, 0)
+	require.NoError(t, err)
 	assert.Equal(t, 42, val)
 
 	// Test 2: Set and get string
 	tx.SetString(block, 4, "hello", true)
-	str := tx.GetString(block, 4)
+	str, err := tx.GetString(block, 4)
+	require.NoError(t, err)
 	assert.Equal(t, "hello", str)
 
 	// Test 3: Multiple operations on same block
 	tx.SetInt(block, 8, 100, true)
 	tx.SetString(block, 12, "world", true)
-	intVal := tx.GetInt(block, 8)
-	strVal := tx.GetString(block, 12)
+	intVal, err := tx.GetInt(block, 8)
+	require.NoError(t, err)
 	assert.Equal(t, 100, intVal)
+	strVal, err := tx.GetString(block, 12)
+	require.NoError(t, err)
 	assert.Equal(t, "world", strVal)
 
 	tx.Commit()
@@ -122,7 +128,8 @@ func TestTransaction_ConcurrencyOperations(t *testing.T) {
 			defer wg.Done()
 
 			tx := NewTransaction(fileManager, logManager, bufferManager, lockTable)
-			buff := tx.Pin(block)
+			buff, err := tx.Pin(block)
+			require.NoError(t, err)
 			require.NotNil(t, buff)
 
 			// Each transaction writes a different value
@@ -133,7 +140,8 @@ func TestTransaction_ConcurrencyOperations(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 
 			// Read the value back - should see its own value
-			val := tx.GetInt(block, 0)
+			val, err := tx.GetInt(block, 0)
+			require.NoError(t, err)
 			results[index] = val
 
 			tx.Commit()
@@ -168,7 +176,8 @@ func TestTransaction_ReadWriteConcurrency(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		tx := NewTransaction(fileManager, logManager, bufferManager, lockTable)
-		buff := tx.Pin(block)
+		buff, err := tx.Pin(block)
+		require.NoError(t, err)
 		require.NotNil(t, buff)
 
 		// Write operation with exclusive lock
@@ -191,11 +200,13 @@ func TestTransaction_ReadWriteConcurrency(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 
 			tx := NewTransaction(fileManager, logManager, bufferManager, lockTable)
-			buff := tx.Pin(block)
+			buff, err := tx.Pin(block)
+			require.NoError(t, err)
 			require.NotNil(t, buff)
 
 			// Read operation with shared lock
-			val := tx.GetInt(block, 0)
+			val, err := tx.GetInt(block, 0)
+			require.NoError(t, err)
 			readResults[index] = val
 
 			tx.Commit()

@@ -8,6 +8,7 @@ import (
 	"github.com/yashagw/cranedb/internal/parse/parserdata"
 	"github.com/yashagw/cranedb/internal/query"
 	"github.com/yashagw/cranedb/internal/record"
+	"github.com/yashagw/cranedb/internal/scan"
 )
 
 func TestBasicUpdatePlanner_ExecuteInsert(t *testing.T) {
@@ -38,10 +39,22 @@ func TestBasicUpdatePlanner_ExecuteInsert(t *testing.T) {
 
 	// Verify the insert
 	layout := record.NewLayoutFromSchema(schema)
-	ts := record.NewTableScan(tx, layout, tableName)
+	ts, err := scan.NewTableScan(tx, layout, tableName)
+	require.NoError(t, err)
+	err = ts.BeforeFirst()
+	require.NoError(t, err)
 	found := false
-	for ts.Next() {
-		if ts.GetInt("id") == 1 && ts.GetString("name") == "Alice" {
+	for {
+		hasNext, err := ts.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		id, err := ts.GetInt("id")
+		require.NoError(t, err)
+		name, err := ts.GetString("name")
+		require.NoError(t, err)
+		if id == 1 && name == "Alice" {
 			found = true
 			break
 		}
@@ -64,14 +77,21 @@ func TestBasicUpdatePlanner_ExecuteDelete(t *testing.T) {
 
 	// Insert test data
 	layout := record.NewLayoutFromSchema(schema)
-	ts := record.NewTableScan(tx, layout, tableName)
+	ts, err := scan.NewTableScan(tx, layout, tableName)
+	require.NoError(t, err)
+	err = ts.BeforeFirst()
+	require.NoError(t, err)
 	for i := 1; i <= 5; i++ {
-		ts.Insert()
-		ts.SetInt("id", i)
+		err = ts.Insert()
+		require.NoError(t, err)
+		err = ts.SetInt("id", i)
+		require.NoError(t, err)
 		if i == 3 {
-			ts.SetString("name", "ToDelete")
+			err = ts.SetString("name", "ToDelete")
+			require.NoError(t, err)
 		} else {
-			ts.SetString("name", "Student")
+			err = ts.SetString("name", "Student")
+			require.NoError(t, err)
 		}
 	}
 	ts.Close()
@@ -92,11 +112,20 @@ func TestBasicUpdatePlanner_ExecuteDelete(t *testing.T) {
 	assert.Equal(t, 1, count, "Should delete 1 record (id=3)")
 
 	// Verify deletion
-	ts = record.NewTableScan(tx, layout, tableName)
+	ts, err = scan.NewTableScan(tx, layout, tableName)
+	require.NoError(t, err)
+	err = ts.BeforeFirst()
+	require.NoError(t, err)
 	remaining := 0
-	for ts.Next() {
+	for {
+		hasNext, err := ts.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
 		remaining++
-		name := ts.GetString("name")
+		name, err := ts.GetString("name")
+		require.NoError(t, err)
 		assert.Equal(t, "Student", name, "Only 'Student' records should remain")
 	}
 	ts.Close()
@@ -117,11 +146,17 @@ func TestBasicUpdatePlanner_ExecuteModify(t *testing.T) {
 
 	// Insert test data
 	layout := record.NewLayoutFromSchema(schema)
-	ts := record.NewTableScan(tx, layout, tableName)
+	ts, err := scan.NewTableScan(tx, layout, tableName)
+	require.NoError(t, err)
+	err = ts.BeforeFirst()
+	require.NoError(t, err)
 	for i := 1; i <= 3; i++ {
-		ts.Insert()
-		ts.SetInt("id", i)
-		ts.SetString("name", "OldName")
+		err = ts.Insert()
+		require.NoError(t, err)
+		err = ts.SetInt("id", i)
+		require.NoError(t, err)
+		err = ts.SetString("name", "OldName")
+		require.NoError(t, err)
 	}
 	ts.Close()
 
@@ -143,17 +178,30 @@ func TestBasicUpdatePlanner_ExecuteModify(t *testing.T) {
 	assert.Equal(t, 1, count, "Should update 1 record")
 
 	// Verify update
-	ts = record.NewTableScan(tx, layout, tableName)
+	ts, err = scan.NewTableScan(tx, layout, tableName)
+	require.NoError(t, err)
 	updatedCount := 0
 	oldNameCount := 0
-	for ts.Next() {
-		name := ts.GetString("name")
+	err = ts.BeforeFirst()
+	require.NoError(t, err)
+	for {
+		hasNext, err := ts.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		name, err := ts.GetString("name")
+		require.NoError(t, err)
 		if name == "NewName" {
 			updatedCount++
-			assert.Equal(t, 2, ts.GetInt("id"))
+			id, err := ts.GetInt("id")
+			require.NoError(t, err)
+			assert.Equal(t, 2, id)
 		} else {
 			oldNameCount++
-			assert.NotEqual(t, 2, ts.GetInt("id"))
+			id, err := ts.GetInt("id")
+			require.NoError(t, err)
+			assert.NotEqual(t, 2, id)
 		}
 	}
 	ts.Close()

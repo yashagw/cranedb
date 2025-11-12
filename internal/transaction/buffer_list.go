@@ -24,23 +24,23 @@ func (bl *BufferList) GetBuffer(blk *file.BlockID) *buffer.Buffer {
 	return bl.buffers[makeKey(blk)]
 }
 
-func (bl *BufferList) Pin(blk *file.BlockID) *buffer.Buffer {
+func (bl *BufferList) Pin(blk *file.BlockID) (*buffer.Buffer, error) {
 	key := makeKey(blk)
 
 	// If buffer is already pinned, just increment pin count
 	if pinCount, exists := bl.pins[key]; exists {
 		bl.pins[key] = pinCount + 1
-		return bl.buffers[key]
+		return bl.buffers[key], nil
 	}
 
 	// First time pinning this buffer
 	buff, err := bl.bufferManager.Pin(blk)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	bl.buffers[key] = buff
 	bl.pins[key] = 1
-	return buff
+	return buff, nil
 }
 
 func (bl *BufferList) Unpin(blk *file.BlockID) {

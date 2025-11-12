@@ -1,4 +1,4 @@
-package query
+package scan
 
 import (
 	"os"
@@ -14,7 +14,7 @@ import (
 )
 
 // setupProductScanTest creates two test tables for cartesian product testing
-func setupProductScanTest(t *testing.T, testDir string) (*transaction.Transaction, *record.TableScan, *record.TableScan) {
+func setupProductScanTest(t *testing.T, testDir string) (*transaction.Transaction, *TableScan, *TableScan) {
 	// Setup database components
 	fileManager, err := file.NewManager(testDir, 400)
 	require.NoError(t, err)
@@ -33,7 +33,8 @@ func setupProductScanTest(t *testing.T, testDir string) (*transaction.Transactio
 	schema1.AddStringField("name", 20)
 
 	layout1 := record.NewLayoutFromSchema(schema1)
-	ts1 := record.NewTableScan(tx, layout1, "Students")
+	ts1, err := NewTableScan(tx, layout1, "Students")
+	require.NoError(t, err)
 
 	// Insert student data
 	students := []struct {
@@ -45,11 +46,15 @@ func setupProductScanTest(t *testing.T, testDir string) (*transaction.Transactio
 		{3, "Charlie"},
 	}
 
-	ts1.BeforeFirst()
+	err = ts1.BeforeFirst()
+	require.NoError(t, err)
 	for _, student := range students {
-		ts1.Insert()
-		ts1.SetInt("student_id", student.id)
-		ts1.SetString("name", student.name)
+		err = ts1.Insert()
+		require.NoError(t, err)
+		err = ts1.SetInt("student_id", student.id)
+		require.NoError(t, err)
+		err = ts1.SetString("name", student.name)
+		require.NoError(t, err)
 		t.Logf("Inserted student: id=%d, name=%s", student.id, student.name)
 	}
 
@@ -59,7 +64,8 @@ func setupProductScanTest(t *testing.T, testDir string) (*transaction.Transactio
 	schema2.AddStringField("course_name", 20)
 
 	layout2 := record.NewLayoutFromSchema(schema2)
-	ts2 := record.NewTableScan(tx, layout2, "Courses")
+	ts2, err := NewTableScan(tx, layout2, "Courses")
+	require.NoError(t, err)
 
 	// Insert course data
 	courses := []struct {
@@ -70,11 +76,15 @@ func setupProductScanTest(t *testing.T, testDir string) (*transaction.Transactio
 		{102, "Science"},
 	}
 
-	ts2.BeforeFirst()
+	err = ts2.BeforeFirst()
+	require.NoError(t, err)
 	for _, course := range courses {
-		ts2.Insert()
-		ts2.SetInt("course_id", course.id)
-		ts2.SetString("course_name", course.name)
+		err = ts2.Insert()
+		require.NoError(t, err)
+		err = ts2.SetInt("course_id", course.id)
+		require.NoError(t, err)
+		err = ts2.SetString("course_name", course.name)
+		require.NoError(t, err)
 		t.Logf("Inserted course: id=%d, name=%s", course.id, course.name)
 	}
 
@@ -90,8 +100,10 @@ func TestProductScanCartesianProduct(t *testing.T) {
 	defer tx.Commit()
 
 	// Create ProductScan
-	ts1.BeforeFirst()
-	ts2.BeforeFirst()
+	err := ts1.BeforeFirst()
+	require.NoError(t, err)
+	err = ts2.BeforeFirst()
+	require.NoError(t, err)
 	productScan := NewProductScan(ts1, ts2)
 	require.NotNil(t, productScan)
 
@@ -104,12 +116,22 @@ func TestProductScanCartesianProduct(t *testing.T) {
 	}
 	var results []Result
 
-	productScan.BeforeFirst()
-	for productScan.Next() {
-		studentID := productScan.GetInt("student_id")
-		studentName := productScan.GetString("name")
-		courseID := productScan.GetInt("course_id")
-		courseName := productScan.GetString("course_name")
+	err = productScan.BeforeFirst()
+	require.NoError(t, err)
+	for {
+		hasNext, err := productScan.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		studentID, err := productScan.GetInt("student_id")
+		require.NoError(t, err)
+		studentName, err := productScan.GetString("name")
+		require.NoError(t, err)
+		courseID, err := productScan.GetInt("course_id")
+		require.NoError(t, err)
+		courseName, err := productScan.GetString("course_name")
+		require.NoError(t, err)
 
 		results = append(results, Result{
 			studentID:   studentID,
@@ -153,8 +175,10 @@ func TestProductScanFieldAccess(t *testing.T) {
 	tx, ts1, ts2 := setupProductScanTest(t, testDir)
 	defer tx.Commit()
 
-	ts1.BeforeFirst()
-	ts2.BeforeFirst()
+	err := ts1.BeforeFirst()
+	require.NoError(t, err)
+	err = ts2.BeforeFirst()
+	require.NoError(t, err)
 	productScan := NewProductScan(ts1, ts2)
 
 	t.Run("HasField", func(t *testing.T) {
@@ -173,45 +197,60 @@ func TestProductScanFieldAccess(t *testing.T) {
 	})
 
 	t.Run("GetIntFromBothScans", func(t *testing.T) {
-		productScan.BeforeFirst()
-		if productScan.Next() {
+		err := productScan.BeforeFirst()
+		require.NoError(t, err)
+		hasNext, err := productScan.Next()
+		require.NoError(t, err)
+		if hasNext {
 			// Get int from scan1
-			studentID := productScan.GetInt("student_id")
+			studentID, err := productScan.GetInt("student_id")
+			require.NoError(t, err)
 			assert.Greater(t, studentID, 0)
 			t.Logf("Got student_id from scan1: %d", studentID)
 
 			// Get int from scan2
-			courseID := productScan.GetInt("course_id")
+			courseID, err := productScan.GetInt("course_id")
+			require.NoError(t, err)
 			assert.Greater(t, courseID, 0)
 			t.Logf("Got course_id from scan2: %d", courseID)
 		}
 	})
 
 	t.Run("GetStringFromBothScans", func(t *testing.T) {
-		productScan.BeforeFirst()
-		if productScan.Next() {
+		err := productScan.BeforeFirst()
+		require.NoError(t, err)
+		hasNext, err := productScan.Next()
+		require.NoError(t, err)
+		if hasNext {
 			// Get string from scan1
-			studentName := productScan.GetString("name")
+			studentName, err := productScan.GetString("name")
+			require.NoError(t, err)
 			assert.NotEmpty(t, studentName)
 			t.Logf("Got name from scan1: %s", studentName)
 
 			// Get string from scan2
-			courseName := productScan.GetString("course_name")
+			courseName, err := productScan.GetString("course_name")
+			require.NoError(t, err)
 			assert.NotEmpty(t, courseName)
 			t.Logf("Got course_name from scan2: %s", courseName)
 		}
 	})
 
 	t.Run("GetValue", func(t *testing.T) {
-		productScan.BeforeFirst()
-		if productScan.Next() {
+		err := productScan.BeforeFirst()
+		require.NoError(t, err)
+		hasNext, err := productScan.Next()
+		require.NoError(t, err)
+		if hasNext {
 			// GetValue from scan1
-			studentIDVal := productScan.GetValue("student_id")
+			studentIDVal, err := productScan.GetValue("student_id")
+			require.NoError(t, err)
 			require.NotNil(t, studentIDVal)
 			t.Logf("Got student_id via GetValue: %v", studentIDVal)
 
 			// GetValue from scan2
-			courseIDVal := productScan.GetValue("course_id")
+			courseIDVal, err := productScan.GetValue("course_id")
+			require.NoError(t, err)
 			require.NotNil(t, courseIDVal)
 			t.Logf("Got course_id via GetValue: %v", courseIDVal)
 		}
@@ -228,18 +267,28 @@ func TestProductScanNavigation(t *testing.T) {
 	tx, ts1, ts2 := setupProductScanTest(t, testDir)
 	defer tx.Commit()
 
-	ts1.BeforeFirst()
-	ts2.BeforeFirst()
+	err := ts1.BeforeFirst()
+	require.NoError(t, err)
+	err = ts2.BeforeFirst()
+	require.NoError(t, err)
 	productScan := NewProductScan(ts1, ts2)
 
 	t.Run("IterationOrder", func(t *testing.T) {
 		// Product scan should iterate: for each record in scan1, iterate all records in scan2
-		productScan.BeforeFirst()
+		err := productScan.BeforeFirst()
+		require.NoError(t, err)
 
 		var order []string
-		for productScan.Next() {
-			studentName := productScan.GetString("name")
-			courseName := productScan.GetString("course_name")
+		for {
+			hasNext, err := productScan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
+			studentName, err := productScan.GetString("name")
+			require.NoError(t, err)
+			courseName, err := productScan.GetString("course_name")
+			require.NoError(t, err)
 			combo := studentName + "-" + courseName
 			order = append(order, combo)
 			t.Logf("Iteration order: %s", combo)
@@ -257,17 +306,29 @@ func TestProductScanNavigation(t *testing.T) {
 
 	t.Run("ReIteration", func(t *testing.T) {
 		// First iteration
-		productScan.BeforeFirst()
+		err := productScan.BeforeFirst()
+		require.NoError(t, err)
 		count1 := 0
-		for productScan.Next() {
+		for {
+			hasNext, err := productScan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
 			count1++
 		}
 		t.Logf("First iteration: %d records", count1)
 
 		// Second iteration
-		productScan.BeforeFirst()
+		err = productScan.BeforeFirst()
+		require.NoError(t, err)
 		count2 := 0
-		for productScan.Next() {
+		for {
+			hasNext, err := productScan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
 			count2++
 		}
 		t.Logf("Second iteration: %d records", count2)
@@ -301,20 +362,30 @@ func TestProductScanEmptyScans(t *testing.T) {
 		schema1 := record.NewSchema()
 		schema1.AddIntField("id1")
 		layout1 := record.NewLayoutFromSchema(schema1)
-		ts1 := record.NewTableScan(tx, layout1, "EmptyBoth1")
+		ts1, err := NewTableScan(tx, layout1, "EmptyBoth1")
+		require.NoError(t, err)
 
 		schema2 := record.NewSchema()
 		schema2.AddIntField("id2")
 		layout2 := record.NewLayoutFromSchema(schema2)
-		ts2 := record.NewTableScan(tx, layout2, "EmptyBoth2")
+		ts2, err := NewTableScan(tx, layout2, "EmptyBoth2")
+		require.NoError(t, err)
 
-		ts1.BeforeFirst()
-		ts2.BeforeFirst()
+		err = ts1.BeforeFirst()
+		require.NoError(t, err)
+		err = ts2.BeforeFirst()
+		require.NoError(t, err)
 		productScan := NewProductScan(ts1, ts2)
 
-		productScan.BeforeFirst()
+		err = productScan.BeforeFirst()
+		require.NoError(t, err)
 		count := 0
-		for productScan.Next() {
+		for {
+			hasNext, err := productScan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
 			count++
 		}
 
@@ -327,25 +398,38 @@ func TestProductScanEmptyScans(t *testing.T) {
 		schema1 := record.NewSchema()
 		schema1.AddIntField("id1")
 		layout1 := record.NewLayoutFromSchema(schema1)
-		ts1 := record.NewTableScan(tx, layout1, "NonEmpty2")
+		ts1, err := NewTableScan(tx, layout1, "NonEmpty2")
+		require.NoError(t, err)
 
 		schema2 := record.NewSchema()
 		schema2.AddIntField("id2")
 		layout2 := record.NewLayoutFromSchema(schema2)
-		ts2 := record.NewTableScan(tx, layout2, "Empty2")
+		ts2, err := NewTableScan(tx, layout2, "Empty2")
+		require.NoError(t, err)
 
 		// Add one record to scan1
-		ts1.BeforeFirst()
-		ts1.Insert()
-		ts1.SetInt("id1", 1)
+		err = ts1.BeforeFirst()
+		require.NoError(t, err)
+		err = ts1.Insert()
+		require.NoError(t, err)
+		err = ts1.SetInt("id1", 1)
+		require.NoError(t, err)
 
-		ts1.BeforeFirst()
-		ts2.BeforeFirst()
+		err = ts1.BeforeFirst()
+		require.NoError(t, err)
+		err = ts2.BeforeFirst()
+		require.NoError(t, err)
 		productScan := NewProductScan(ts1, ts2)
 
-		productScan.BeforeFirst()
+		err = productScan.BeforeFirst()
+		require.NoError(t, err)
 		count := 0
-		for productScan.Next() {
+		for {
+			hasNext, err := productScan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
 			count++
 		}
 
@@ -364,21 +448,31 @@ func TestProductScanWithSelectScan(t *testing.T) {
 	defer tx.Commit()
 
 	// Create product scan
-	ts1.BeforeFirst()
-	ts2.BeforeFirst()
+	err := ts1.BeforeFirst()
+	require.NoError(t, err)
+	err = ts2.BeforeFirst()
+	require.NoError(t, err)
 	productScan := NewProductScan(ts1, ts2)
 
 	// Apply a filter: student_id = 1 (Alice only)
-	term := NewTerm(*NewFieldNameExpression("student_id"), *NewConstantExpression(*NewIntConstant(1)))
-	predicate := NewPredicate(*term)
-	selectScan := NewSelectScan(productScan, *predicate)
+	predicate := newTestPredicate("student_id", 1)
+	selectScan := NewSelectScan(productScan, predicate)
 
-	selectScan.BeforeFirst()
+	err = selectScan.BeforeFirst()
+	require.NoError(t, err)
 	count := 0
-	for selectScan.Next() {
-		studentID := selectScan.GetInt("student_id")
-		studentName := selectScan.GetString("name")
-		courseName := selectScan.GetString("course_name")
+	for {
+		hasNext, err := selectScan.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		studentID, err := selectScan.GetInt("student_id")
+		require.NoError(t, err)
+		studentName, err := selectScan.GetString("name")
+		require.NoError(t, err)
+		courseName, err := selectScan.GetString("course_name")
+		require.NoError(t, err)
 
 		assert.Equal(t, 1, studentID)
 		assert.Equal(t, "Alice", studentName)

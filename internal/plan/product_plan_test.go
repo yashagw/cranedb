@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/yashagw/cranedb/internal/record"
+	"github.com/yashagw/cranedb/internal/scan"
 )
 
 func TestProductPlan(t *testing.T) {
@@ -29,26 +30,40 @@ func TestProductPlan(t *testing.T) {
 
 	// Insert data into both tables
 	layout1 := record.NewLayoutFromSchema(schema1)
-	ts1 := record.NewTableScan(tx, layout1, table1)
+	ts1, err := scan.NewTableScan(tx, layout1, table1)
+	require.NoError(t, err)
+	err = ts1.BeforeFirst()
+	require.NoError(t, err)
 	for i := 1; i <= 3; i++ {
-		ts1.Insert()
-		ts1.SetInt("student_id", i)
-		ts1.SetString("name", "Student")
+		err = ts1.Insert()
+		require.NoError(t, err)
+		err = ts1.SetInt("student_id", i)
+		require.NoError(t, err)
+		err = ts1.SetString("name", "Student")
+		require.NoError(t, err)
 	}
 	ts1.Close()
 
 	layout2 := record.NewLayoutFromSchema(schema2)
-	ts2 := record.NewTableScan(tx, layout2, table2)
+	ts2, err := scan.NewTableScan(tx, layout2, table2)
+	require.NoError(t, err)
+	err = ts2.BeforeFirst()
+	require.NoError(t, err)
 	for i := 1; i <= 2; i++ {
-		ts2.Insert()
-		ts2.SetInt("course_id", i*100)
-		ts2.SetString("title", "Course")
+		err = ts2.Insert()
+		require.NoError(t, err)
+		err = ts2.SetInt("course_id", i*100)
+		require.NoError(t, err)
+		err = ts2.SetString("title", "Course")
+		require.NoError(t, err)
 	}
 	ts2.Close()
 
 	// Create TablePlans and ProductPlan
-	tablePlan1 := NewTablePlan(table1, tx, md)
-	tablePlan2 := NewTablePlan(table2, tx, md)
+	tablePlan1, err := NewTablePlan(table1, tx, md)
+	require.NoError(t, err)
+	tablePlan2, err := NewTablePlan(table2, tx, md)
+	require.NoError(t, err)
 	productPlan := NewProductPlan(tablePlan1, tablePlan2)
 
 	// Test Schema - should contain fields from both tables
@@ -69,13 +84,30 @@ func TestProductPlan(t *testing.T) {
 	assert.Equal(t, expectedBlocks, productPlan.BlocksAccessed())
 
 	// Test DistinctValues - should delegate to appropriate plan
-	assert.Equal(t, tablePlan1.DistinctValues("student_id"), productPlan.DistinctValues("student_id"))
-	assert.Equal(t, tablePlan1.DistinctValues("name"), productPlan.DistinctValues("name"))
-	assert.Equal(t, tablePlan2.DistinctValues("course_id"), productPlan.DistinctValues("course_id"))
-	assert.Equal(t, tablePlan2.DistinctValues("title"), productPlan.DistinctValues("title"))
+	val1, err := tablePlan1.DistinctValues("student_id")
+	require.NoError(t, err)
+	val2, err := productPlan.DistinctValues("student_id")
+	require.NoError(t, err)
+	assert.Equal(t, val1, val2)
+	val3, err := tablePlan1.DistinctValues("name")
+	require.NoError(t, err)
+	val4, err := productPlan.DistinctValues("name")
+	require.NoError(t, err)
+	assert.Equal(t, val3, val4)
+	val5, err := tablePlan2.DistinctValues("course_id")
+	require.NoError(t, err)
+	val6, err := productPlan.DistinctValues("course_id")
+	require.NoError(t, err)
+	assert.Equal(t, val5, val6)
+	val7, err := tablePlan2.DistinctValues("title")
+	require.NoError(t, err)
+	val8, err := productPlan.DistinctValues("title")
+	require.NoError(t, err)
+	assert.Equal(t, val7, val8)
 
 	// Test Open
-	scan := productPlan.Open()
+	scan, err := productPlan.Open()
+	require.NoError(t, err)
 	require.NotNil(t, scan)
 	scan.Close()
 }

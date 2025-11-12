@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/yashagw/cranedb/internal/record"
+	"github.com/yashagw/cranedb/internal/scan"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -50,22 +51,55 @@ func (t *TableManager) CreateTable(tableName string, schema *record.Schema, tx *
 	layout := record.NewLayoutFromSchema(schema)
 
 	// Insert a record into tableCatelog
-	tcat := record.NewTableScan(tx, t.tableCatelog, TableCatalogName)
+	tcat, err := scan.NewTableScan(tx, t.tableCatelog, TableCatalogName)
+	if err != nil {
+		return err
+	}
 	defer tcat.Close()
-	tcat.Insert()
-	tcat.SetString("table_name", tableName)
-	tcat.SetInt("slot_size", layout.GetSlotSize())
+	err = tcat.Insert()
+	if err != nil {
+		return err
+	}
+	err = tcat.SetString("table_name", tableName)
+	if err != nil {
+		return err
+	}
+	err = tcat.SetInt("slot_size", layout.GetSlotSize())
+	if err != nil {
+		return err
+	}
 
 	// Insert a record into fieldCatelog for each field
-	fcat := record.NewTableScan(tx, t.fieldCatelog, FieldCatalogName)
+	fcat, err := scan.NewTableScan(tx, t.fieldCatelog, FieldCatalogName)
+	if err != nil {
+		return err
+	}
 	defer fcat.Close()
 	for _, fieldName := range schema.Fields() {
-		fcat.Insert()
-		fcat.SetString("table_name", tableName)
-		fcat.SetString("field_name", fieldName)
-		fcat.SetString("type", schema.Type(fieldName))
-		fcat.SetInt("length", schema.Length(fieldName))
-		fcat.SetInt("offset", layout.GetOffset(fieldName))
+		err = fcat.Insert()
+		if err != nil {
+			return err
+		}
+		err = fcat.SetString("table_name", tableName)
+		if err != nil {
+			return err
+		}
+		err = fcat.SetString("field_name", fieldName)
+		if err != nil {
+			return err
+		}
+		err = fcat.SetString("type", schema.Type(fieldName))
+		if err != nil {
+			return err
+		}
+		err = fcat.SetInt("length", schema.Length(fieldName))
+		if err != nil {
+			return err
+		}
+		err = fcat.SetInt("offset", layout.GetOffset(fieldName))
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -74,12 +108,30 @@ func (t *TableManager) CreateTable(tableName string, schema *record.Schema, tx *
 func (t *TableManager) GetLayout(tableName string, tx *transaction.Transaction) (*record.Layout, error) {
 	// First, find the slot size from table catalog
 	slotSize := -1
-	tcat := record.NewTableScan(tx, t.tableCatelog, TableCatalogName)
+	tcat, err := scan.NewTableScan(tx, t.tableCatelog, TableCatalogName)
+	if err != nil {
+		return nil, err
+	}
 	defer tcat.Close()
 
-	for tcat.Next() {
-		if tcat.GetString("table_name") == tableName {
-			slotSize = tcat.GetInt("slot_size")
+	for {
+		hasNext, err := tcat.Next()
+		if err != nil {
+			return nil, err
+		}
+		if !hasNext {
+			break
+		}
+		tableNameVal, err := tcat.GetString("table_name")
+		if err != nil {
+			return nil, err
+		}
+		if tableNameVal == tableName {
+			slotSizeVal, err := tcat.GetInt("slot_size")
+			if err != nil {
+				return nil, err
+			}
+			slotSize = slotSizeVal
 			break
 		}
 	}
@@ -92,15 +144,41 @@ func (t *TableManager) GetLayout(tableName string, tx *transaction.Transaction) 
 	schema := record.NewSchema()
 	offsets := make(map[string]int)
 
-	fcat := record.NewTableScan(tx, t.fieldCatelog, FieldCatalogName)
+	fcat, err := scan.NewTableScan(tx, t.fieldCatelog, FieldCatalogName)
+	if err != nil {
+		return nil, err
+	}
 	defer fcat.Close()
 
-	for fcat.Next() {
-		if fcat.GetString("table_name") == tableName {
-			fieldName := fcat.GetString("field_name")
-			fieldType := fcat.GetString("type")
-			fieldLength := fcat.GetInt("length")
-			offset := fcat.GetInt("offset")
+	for {
+		hasNext, err := fcat.Next()
+		if err != nil {
+			return nil, err
+		}
+		if !hasNext {
+			break
+		}
+		tableNameVal, err := fcat.GetString("table_name")
+		if err != nil {
+			return nil, err
+		}
+		if tableNameVal == tableName {
+			fieldName, err := fcat.GetString("field_name")
+			if err != nil {
+				return nil, err
+			}
+			fieldType, err := fcat.GetString("type")
+			if err != nil {
+				return nil, err
+			}
+			fieldLength, err := fcat.GetInt("length")
+			if err != nil {
+				return nil, err
+			}
+			offset, err := fcat.GetInt("offset")
+			if err != nil {
+				return nil, err
+			}
 
 			offsets[fieldName] = offset
 			if fieldType == "int" {

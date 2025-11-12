@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"github.com/yashagw/cranedb/internal/record"
+	"github.com/yashagw/cranedb/internal/scan"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -39,13 +40,28 @@ func (im *IndexManager) CreateIndex(indexName string, tableName string, fieldNam
 		return err
 	}
 
-	ts := record.NewTableScan(tx, layout, IndexCatalogName)
+	ts, err := scan.NewTableScan(tx, layout, IndexCatalogName)
+	if err != nil {
+		return err
+	}
 	defer ts.Close()
 
-	ts.Insert()
-	ts.SetString("indexname", indexName)
-	ts.SetString("tablename", tableName)
-	ts.SetString("fieldname", fieldName)
+	err = ts.Insert()
+	if err != nil {
+		return err
+	}
+	err = ts.SetString("indexname", indexName)
+	if err != nil {
+		return err
+	}
+	err = ts.SetString("tablename", tableName)
+	if err != nil {
+		return err
+	}
+	err = ts.SetString("fieldname", fieldName)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -59,16 +75,36 @@ func (im *IndexManager) GetIndexInfo(tableName string, tx *transaction.Transacti
 
 	result := make(map[string]*IndexInfo)
 
-	ts := record.NewTableScan(tx, layout, IndexCatalogName)
+	ts, err := scan.NewTableScan(tx, layout, IndexCatalogName)
+	if err != nil {
+		return nil, err
+	}
 	defer ts.Close()
 
-	for ts.Next() {
-		if ts.GetString("tablename") != tableName {
+	for {
+		hasNext, err := ts.Next()
+		if err != nil {
+			return nil, err
+		}
+		if !hasNext {
+			break
+		}
+		tablenameVal, err := ts.GetString("tablename")
+		if err != nil {
+			return nil, err
+		}
+		if tablenameVal != tableName {
 			continue
 		}
 
-		idxName := ts.GetString("indexname")
-		fldName := ts.GetString("fieldname")
+		idxName, err := ts.GetString("indexname")
+		if err != nil {
+			return nil, err
+		}
+		fldName, err := ts.GetString("fieldname")
+		if err != nil {
+			return nil, err
+		}
 
 		tblLayout, err := im.tableManager.GetLayout(tableName, tx)
 		if err != nil {

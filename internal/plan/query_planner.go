@@ -24,7 +24,10 @@ func (p *BasicQueryPlanner) CreatePlan(queryData *parserdata.QueryData, tx *tran
 	// Create a plan for each table in the query
 	tablePlans := make([]Plan, len(queryData.Tables()))
 	for i, tableName := range queryData.Tables() {
-		tablePlan := NewTablePlan(tableName, tx, p.metadataManager)
+		tablePlan, err := NewTablePlan(tableName, tx, p.metadataManager)
+		if err != nil {
+			return nil, err
+		}
 		tablePlans[i] = tablePlan
 	}
 

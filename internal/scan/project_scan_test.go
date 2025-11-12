@@ -1,4 +1,4 @@
-package query
+package scan
 
 import (
 	"os"
@@ -14,7 +14,7 @@ import (
 )
 
 // setupProjectScanTest creates a test table with multiple fields
-func setupProjectScanTest(t *testing.T, testDir string) (*transaction.Transaction, *record.TableScan) {
+func setupProjectScanTest(t *testing.T, testDir string) (*transaction.Transaction, *TableScan) {
 	fileManager, err := file.NewManager(testDir, 400)
 	require.NoError(t, err)
 	logManager, err := log.NewManager(fileManager, "test.log")
@@ -35,7 +35,8 @@ func setupProjectScanTest(t *testing.T, testDir string) (*transaction.Transactio
 	schema.AddIntField("salary")
 
 	layout := record.NewLayoutFromSchema(schema)
-	ts := record.NewTableScan(tx, layout, "Employees")
+	ts, err := NewTableScan(tx, layout, "Employees")
+	require.NoError(t, err)
 
 	// Insert test data
 	employees := []struct {
@@ -50,14 +51,26 @@ func setupProjectScanTest(t *testing.T, testDir string) (*transaction.Transactio
 		{3, "Charlie", 28, "charlie@example.com", 55000},
 	}
 
-	ts.BeforeFirst()
+	err = ts.BeforeFirst()
+	require.NoError(t, err)
 	for _, emp := range employees {
-		ts.Insert()
-		ts.SetInt("id", emp.id)
-		ts.SetString("name", emp.name)
-		ts.SetInt("age", emp.age)
-		ts.SetString("email", emp.email)
-		ts.SetInt("salary", emp.salary)
+		err = ts.Insert()
+		require.NoError(t, err)
+		err = ts.SetInt("id", emp.id)
+
+		require.NoError(t, err)
+		err = ts.SetString("name", emp.name)
+
+		require.NoError(t, err)
+		err = ts.SetInt("age", emp.age)
+
+		require.NoError(t, err)
+		err = ts.SetString("email", emp.email)
+
+		require.NoError(t, err)
+		err = ts.SetInt("salary", emp.salary)
+
+		require.NoError(t, err)
 		t.Logf("Inserted: id=%d, name=%s, age=%d, email=%s, salary=%d",
 			emp.id, emp.name, emp.age, emp.email, emp.salary)
 	}
@@ -74,18 +87,29 @@ func TestProjectScanBasicProjection(t *testing.T) {
 	defer tx.Commit()
 
 	t.Run("ProjectTwoFields", func(t *testing.T) {
-		ts.BeforeFirst()
+		err := ts.BeforeFirst()
+		require.NoError(t, err)
 
 		// Project only id and name
 		fieldList := []string{"id", "name"}
 		projectScan := NewProjectScan(ts, fieldList)
 		require.NotNil(t, projectScan)
 
-		projectScan.BeforeFirst()
+		err = projectScan.BeforeFirst()
+		require.NoError(t, err)
 		count := 0
-		for projectScan.Next() {
-			id := projectScan.GetInt("id")
-			name := projectScan.GetString("name")
+		for {
+			hasNext, err := projectScan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
+			id, err := projectScan.GetInt("id")
+
+			require.NoError(t, err)
+			name, err := projectScan.GetString("name")
+
+			require.NoError(t, err)
 			t.Logf("Projected record: id=%d, name=%s", id, name)
 			count++
 		}
@@ -95,16 +119,25 @@ func TestProjectScanBasicProjection(t *testing.T) {
 	})
 
 	t.Run("ProjectSingleField", func(t *testing.T) {
-		ts.BeforeFirst()
+		err := ts.BeforeFirst()
+		require.NoError(t, err)
 
 		// Project only name
 		fieldList := []string{"name"}
 		projectScan := NewProjectScan(ts, fieldList)
 
-		projectScan.BeforeFirst()
+		err = projectScan.BeforeFirst()
+		require.NoError(t, err)
 		names := []string{}
-		for projectScan.Next() {
-			name := projectScan.GetString("name")
+		for {
+			hasNext, err := projectScan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
+			name, err := projectScan.GetString("name")
+
+			require.NoError(t, err)
 			names = append(names, name)
 			t.Logf("Projected name: %s", name)
 		}
@@ -118,19 +151,33 @@ func TestProjectScanBasicProjection(t *testing.T) {
 	})
 
 	t.Run("ProjectAllFields", func(t *testing.T) {
-		ts.BeforeFirst()
+		err := ts.BeforeFirst()
+		require.NoError(t, err)
 
 		// Project all fields
 		fieldList := []string{"id", "name", "age", "email", "salary"}
 		projectScan := NewProjectScan(ts, fieldList)
 
-		projectScan.BeforeFirst()
-		if projectScan.Next() {
-			id := projectScan.GetInt("id")
-			name := projectScan.GetString("name")
-			age := projectScan.GetInt("age")
-			email := projectScan.GetString("email")
-			salary := projectScan.GetInt("salary")
+		err = projectScan.BeforeFirst()
+		require.NoError(t, err)
+		hasNext, err := projectScan.Next()
+		require.NoError(t, err)
+		if hasNext {
+			id, err := projectScan.GetInt("id")
+
+			require.NoError(t, err)
+			name, err := projectScan.GetString("name")
+
+			require.NoError(t, err)
+			age, err := projectScan.GetInt("age")
+
+			require.NoError(t, err)
+			email, err := projectScan.GetString("email")
+
+			require.NoError(t, err)
+			salary, err := projectScan.GetInt("salary")
+
+			require.NoError(t, err)
 
 			t.Logf("All fields: id=%d, name=%s, age=%d, email=%s, salary=%d",
 				id, name, age, email, salary)
@@ -154,7 +201,8 @@ func TestProjectScanHasField(t *testing.T) {
 	tx, ts := setupProjectScanTest(t, testDir)
 	defer tx.Commit()
 
-	ts.BeforeFirst()
+	err := ts.BeforeFirst()
+	require.NoError(t, err)
 
 	// Project only id and name
 	fieldList := []string{"id", "name"}
@@ -185,34 +233,40 @@ func TestProjectScanAccessNonProjectedField(t *testing.T) {
 	tx, ts := setupProjectScanTest(t, testDir)
 	defer tx.Commit()
 
-	ts.BeforeFirst()
+	err := ts.BeforeFirst()
+	require.NoError(t, err)
 
 	// Project only id and name
 	fieldList := []string{"id", "name"}
 	projectScan := NewProjectScan(ts, fieldList)
 
-	projectScan.BeforeFirst()
-	if projectScan.Next() {
+	err = projectScan.BeforeFirst()
+
+	require.NoError(t, err)
+	hasNext, err := projectScan.Next()
+	require.NoError(t, err)
+	if hasNext {
 		// Accessing projected fields should work
-		id := projectScan.GetInt("id")
-		name := projectScan.GetString("name")
+		id, err := projectScan.GetInt("id")
+
+		require.NoError(t, err)
+		name, err := projectScan.GetString("name")
+
+		require.NoError(t, err)
 		t.Logf("Accessed projected fields: id=%d, name=%s", id, name)
 
-		// Accessing non-projected field should panic
-		assert.Panics(t, func() {
-			projectScan.GetInt("age")
-		}, "Accessing non-projected int field should panic")
-		t.Log("GetInt on non-projected field correctly panics")
+		// Accessing non-projected field should return error
+		_, err = projectScan.GetInt("age")
+		assert.Error(t, err, "Accessing non-projected int field should return error")
+		t.Log("GetInt on non-projected field correctly returns error")
 
-		assert.Panics(t, func() {
-			projectScan.GetString("email")
-		}, "Accessing non-projected string field should panic")
-		t.Log("GetString on non-projected field correctly panics")
+		_, err = projectScan.GetString("email")
+		assert.Error(t, err, "Accessing non-projected string field should return error")
+		t.Log("GetString on non-projected field correctly returns error")
 
-		assert.Panics(t, func() {
-			projectScan.GetValue("salary")
-		}, "Accessing non-projected field via GetValue should panic")
-		t.Log("GetValue on non-projected field correctly panics")
+		_, err = projectScan.GetValue("salary")
+		assert.Error(t, err, "Accessing non-projected field via GetValue should return error")
+		t.Log("GetValue on non-projected field correctly returns error")
 	}
 
 	projectScan.Close()
@@ -227,14 +281,21 @@ func TestProjectScanNavigation(t *testing.T) {
 	defer tx.Commit()
 
 	t.Run("NextIteration", func(t *testing.T) {
-		ts.BeforeFirst()
+		err := ts.BeforeFirst()
+		require.NoError(t, err)
 
 		fieldList := []string{"id", "name"}
 		projectScan := NewProjectScan(ts, fieldList)
 
-		projectScan.BeforeFirst()
+		err = projectScan.BeforeFirst()
+		require.NoError(t, err)
 		count := 0
-		for projectScan.Next() {
+		for {
+			hasNext, err := projectScan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
 			count++
 		}
 
@@ -245,23 +306,38 @@ func TestProjectScanNavigation(t *testing.T) {
 	})
 
 	t.Run("ReIteration", func(t *testing.T) {
-		ts.BeforeFirst()
+		err := ts.BeforeFirst()
+		require.NoError(t, err)
 
 		fieldList := []string{"id", "name"}
 		projectScan := NewProjectScan(ts, fieldList)
 
 		// First iteration
-		projectScan.BeforeFirst()
+		err = projectScan.BeforeFirst()
+
+		require.NoError(t, err)
 		count1 := 0
-		for projectScan.Next() {
+		for {
+			hasNext, err := projectScan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
 			count1++
 		}
 		t.Logf("First iteration: %d records", count1)
 
 		// Second iteration
-		projectScan.BeforeFirst()
+		err = projectScan.BeforeFirst()
+
+		require.NoError(t, err)
 		count2 := 0
-		for projectScan.Next() {
+		for {
+			hasNext, err := projectScan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
 			count2++
 		}
 		t.Logf("Second iteration: %d records", count2)
@@ -281,20 +357,29 @@ func TestProjectScanGetValue(t *testing.T) {
 	tx, ts := setupProjectScanTest(t, testDir)
 	defer tx.Commit()
 
-	ts.BeforeFirst()
+	err := ts.BeforeFirst()
+	require.NoError(t, err)
 
 	fieldList := []string{"id", "name", "age"}
 	projectScan := NewProjectScan(ts, fieldList)
 
-	projectScan.BeforeFirst()
-	if projectScan.Next() {
+	err = projectScan.BeforeFirst()
+
+	require.NoError(t, err)
+	hasNext, err := projectScan.Next()
+	require.NoError(t, err)
+	if hasNext {
 		// GetValue on int field
-		idVal := projectScan.GetValue("id")
+		idVal, err := projectScan.GetValue("id")
+
+		require.NoError(t, err)
 		require.NotNil(t, idVal)
 		t.Logf("GetValue(id) returned: %v (type: %T)", idVal, idVal)
 
 		// GetValue on string field
-		nameVal := projectScan.GetValue("name")
+		nameVal, err := projectScan.GetValue("name")
+
+		require.NoError(t, err)
 		require.NotNil(t, nameVal)
 		t.Logf("GetValue(name) returned: %v (type: %T)", nameVal, nameVal)
 	}
@@ -310,23 +395,36 @@ func TestProjectScanWithSelectScan(t *testing.T) {
 	tx, ts := setupProjectScanTest(t, testDir)
 	defer tx.Commit()
 
-	ts.BeforeFirst()
+	err := ts.BeforeFirst()
+	require.NoError(t, err)
 
 	// First apply projection
 	fieldList := []string{"id", "name", "age"}
 	projectScan := NewProjectScan(ts, fieldList)
 
 	// Then apply filter: age = 30 (exact match)
-	term := NewTerm(*NewFieldNameExpression("age"), *NewConstantExpression(*NewIntConstant(30)))
-	predicate := NewPredicate(*term)
-	selectScan := NewSelectScan(projectScan, *predicate)
+	predicate := newTestPredicate("age", 30)
+	selectScan := NewSelectScan(projectScan, predicate)
 
-	selectScan.BeforeFirst()
+	err = selectScan.BeforeFirst()
+
+	require.NoError(t, err)
 	count := 0
-	for selectScan.Next() {
-		id := selectScan.GetInt("id")
-		name := selectScan.GetString("name")
-		age := selectScan.GetInt("age")
+	for {
+		hasNext, err := selectScan.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		id, err := selectScan.GetInt("id")
+
+		require.NoError(t, err)
+		name, err := selectScan.GetString("name")
+
+		require.NoError(t, err)
+		age, err := selectScan.GetInt("age")
+
+		require.NoError(t, err)
 
 		assert.Equal(t, 30, age, "Age should be exactly 30")
 		t.Logf("Projected and filtered: id=%d, name=%s, age=%d", id, name, age)
@@ -348,7 +446,8 @@ func TestProjectScanEmptyFieldList(t *testing.T) {
 	tx, ts := setupProjectScanTest(t, testDir)
 	defer tx.Commit()
 
-	ts.BeforeFirst()
+	err := ts.BeforeFirst()
+	require.NoError(t, err)
 
 	// Empty field list (edge case)
 	fieldList := []string{}
@@ -360,9 +459,16 @@ func TestProjectScanEmptyFieldList(t *testing.T) {
 	t.Log("Empty field list results in no accessible fields")
 
 	// Should still iterate through records
-	projectScan.BeforeFirst()
+	err = projectScan.BeforeFirst()
+
+	require.NoError(t, err)
 	count := 0
-	for projectScan.Next() {
+	for {
+		hasNext, err := projectScan.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
 		count++
 	}
 	assert.Equal(t, 3, count, "Should still iterate through all records")
@@ -378,16 +484,26 @@ func TestProjectScanOrdering(t *testing.T) {
 	tx, ts := setupProjectScanTest(t, testDir)
 	defer tx.Commit()
 
-	ts.BeforeFirst()
+	err := ts.BeforeFirst()
+	require.NoError(t, err)
 
 	fieldList := []string{"id", "name"}
 	projectScan := NewProjectScan(ts, fieldList)
 
 	// Collect IDs in order
-	projectScan.BeforeFirst()
+	err = projectScan.BeforeFirst()
+
+	require.NoError(t, err)
 	var ids []int
-	for projectScan.Next() {
-		id := projectScan.GetInt("id")
+	for {
+		hasNext, err := projectScan.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		id, err := projectScan.GetInt("id")
+
+		require.NoError(t, err)
 		ids = append(ids, id)
 	}
 

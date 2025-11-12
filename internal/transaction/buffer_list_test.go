@@ -21,12 +21,14 @@ func TestBufferList_PinAndUnpin(t *testing.T) {
 	block := file.NewBlockID("testfile", 1)
 
 	// Test 1: Pin a buffer for the first time
-	buff1 := bufferList.Pin(block)
+	buff1, err := bufferList.Pin(block)
+	require.NoError(t, err)
 	require.NotNil(t, buff1)
 	assert.Equal(t, 1, bufferList.pins[makeKey(block)])
 
 	// Test 2: Pin the same buffer again (should increment pin count)
-	buff2 := bufferList.Pin(block)
+	buff2, err := bufferList.Pin(block)
+	require.NoError(t, err)
 	require.NotNil(t, buff2)
 	assert.Equal(t, buff1, buff2) // Should return the same buffer
 	assert.Equal(t, 2, bufferList.pins[makeKey(block)])

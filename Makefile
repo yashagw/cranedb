@@ -43,9 +43,7 @@ test:
 
 # Run targets
 run-server: build-server
-	@echo "Starting CraneDB server on port 8080..."
 	@./bin/server
 
 run-client: build-client
-	@echo "Starting CraneDB client..."
 	@./bin/client

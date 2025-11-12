@@ -25,9 +25,12 @@ func NewSelectPlan(p Plan, pred *query.Predicate) *SelectPlan {
 	}
 }
 
-func (sp *SelectPlan) Open() scan.Scan {
-	s := sp.p.Open()
-	return query.NewSelectScan(s, *sp.pred)
+func (sp *SelectPlan) Open() (scan.Scan, error) {
+	s, err := sp.p.Open()
+	if err != nil {
+		return nil, err
+	}
+	return scan.NewSelectScan(s, sp.pred), nil
 }
 
 // BlocksAccessed returns the same as the underlying plan (selection doesn't change block access).
@@ -37,21 +40,38 @@ func (sp *SelectPlan) BlocksAccessed() int {
 
 // RecordsOutput estimates output records as input records / reduction factor.
 func (sp *SelectPlan) RecordsOutput() int {
-	return sp.p.RecordsOutput() / sp.pred.ReductionFactor(sp.p)
+	reductionFactor, err := sp.pred.ReductionFactor(sp.p)
+	if err != nil {
+		// If we can't calculate reduction factor, return input records (no reduction)
+		return sp.p.RecordsOutput()
+	}
+	if reductionFactor == 0 {
+		// Avoid division by zero
+		return sp.p.RecordsOutput()
+	}
+	return sp.p.RecordsOutput() / reductionFactor
 }
 
 // DistinctValues returns:
 // - 1 if the field is equated with a constant
 // - min of both fields if equated with another field
 // - underlying plan's value otherwise
-func (sp *SelectPlan) DistinctValues(fldname string) int {
+func (sp *SelectPlan) DistinctValues(fldname string) (int, error) {
 	if sp.pred.EquatesWithConstant(fldname) != nil {
-		return 1
+		return 1, nil
 	}
 
 	fldname2 := sp.pred.EquatesWithField(fldname)
 	if fldname2 != nil {
-		return int(math.Min(float64(sp.p.DistinctValues(fldname)), float64(sp.p.DistinctValues(*fldname2))))
+		val1, err := sp.p.DistinctValues(fldname)
+		if err != nil {
+			return 0, err
+		}
+		val2, err := sp.p.DistinctValues(*fldname2)
+		if err != nil {
+			return 0, err
+		}
+		return int(math.Min(float64(val1), float64(val2))), nil
 	}
 
 	return sp.p.DistinctValues(fldname)
