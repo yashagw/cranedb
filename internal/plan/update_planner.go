@@ -208,3 +208,12 @@ func (p *BasicUpdatePlanner) ExecuteCreateView(createViewData *parserdata.Create
 	}
 	return 0, nil
 }
+
+// ExecuteCreateIndex executes a create index statement and returns 0.
+func (p *BasicUpdatePlanner) ExecuteCreateIndex(createIndexData *parserdata.CreateIndexData, tx *transaction.Transaction) (int, error) {
+	err := p.metadataManager.CreateIndex(createIndexData.IndexName(), createIndexData.TableName(), createIndexData.FieldName(), tx)
+	if err != nil {
+		return 0, err
+	}
+	return 0, nil
+}

@@ -265,3 +265,35 @@ func TestBasicUpdatePlanner_ExecuteCreateView(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "SELECT id, name FROM students", viewDef)
 }
+
+func TestBasicUpdatePlanner_ExecuteCreateIndex(t *testing.T) {
+	_, tx, md, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Create planner
+	planner := NewBasicUpdatePlanner(md)
+
+	// Create a base table first
+	schema := record.NewSchema()
+	schema.AddIntField("id")
+	schema.AddStringField("name", 20)
+	err := md.CreateTable("students", schema, tx)
+	require.NoError(t, err)
+
+	// Create index
+	createIndexData := parserdata.NewCreateIndexData("idx_name", "students", "name")
+	count, err := planner.ExecuteCreateIndex(createIndexData, tx)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+
+	// Verify index exists
+	tableIndexInfo, err := md.GetIndexInfo("students", tx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, len(tableIndexInfo))
+	indexInfo, ok := tableIndexInfo["name"]
+	require.True(t, ok)
+	require.NotNil(t, indexInfo)
+	require.Equal(t, "idx_name", indexInfo.IndexName())
+	require.Equal(t, "name", indexInfo.FieldName())
+	require.Equal(t, schema, indexInfo.TableSchema())
+}

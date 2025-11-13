@@ -18,6 +18,7 @@ type UpdatePlanner interface {
 	ExecuteDelete(deleteData *parserdata.DeleteData, tx *transaction.Transaction) (int, error)
 	ExecuteCreateTable(createTableData *parserdata.CreateTableData, tx *transaction.Transaction) (int, error)
 	ExecuteCreateView(createViewData *parserdata.CreateViewData, tx *transaction.Transaction) (int, error)
+	ExecuteCreateIndex(createIndexData *parserdata.CreateIndexData, tx *transaction.Transaction) (int, error)
 }
 
 type Planner struct {
@@ -59,6 +60,8 @@ func (p *Planner) ExecuteUpdate(sql string, tx *transaction.Transaction) (int, e
 		return p.updatePlanner.ExecuteCreateTable(updateData, tx)
 	case *parserdata.CreateViewData:
 		return p.updatePlanner.ExecuteCreateView(updateData, tx)
+	case *parserdata.CreateIndexData:
+		return p.updatePlanner.ExecuteCreateIndex(updateData, tx)
 	}
 
 	return 0, errors.New("invalid update command")

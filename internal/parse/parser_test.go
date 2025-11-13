@@ -323,6 +323,20 @@ func TestParserCreateView(t *testing.T) {
 	assert.Equal(t, "age = 30", qd.Predicate().String())
 }
 
+func TestParserCreateIndex(t *testing.T) {
+	stmt := "create index idx_name on students (name)"
+	p := NewParser(NewLexer(stmt))
+	require.NotNil(t, p)
+	cmd, err := p.CreateCmd()
+	require.NoError(t, err)
+	ci, ok := cmd.(*parserdata.CreateIndexData)
+	require.True(t, ok)
+	require.NotNil(t, ci)
+	assert.Equal(t, "idx_name", ci.IndexName())
+	assert.Equal(t, "students", ci.TableName())
+	assert.Equal(t, "name", ci.FieldName())
+}
+
 func TestParserFieldDefinitionsHelpers(t *testing.T) {
 	t.Run("fieldDefsMixed", func(t *testing.T) {
 		p := NewParser(NewLexer("id int, name varchar(10), age int"))

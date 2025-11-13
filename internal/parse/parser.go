@@ -172,6 +172,8 @@ func (p *Parser) CreateCmd() (interface{}, error) {
 		return p.createTable()
 	} else if p.lexer.MatchKeyword("view") {
 		return p.createView()
+	} else if p.lexer.MatchKeyword("index") {
+		return p.createIndex()
 	} else {
 		return nil, ErrBadSyntax
 	}
@@ -233,6 +235,53 @@ func (p *Parser) createView() (*parserdata.CreateViewData, error) {
 		return nil, err
 	}
 	return parserdata.NewCreateViewData(viewName, query), nil
+}
+
+func (p *Parser) createIndex() (*parserdata.CreateIndexData, error) {
+	// Create is already eaten by CreateCmd()
+
+	// Index Keyword
+	err := p.lexer.EatKeyword("index")
+	if err != nil {
+		return nil, err
+	}
+
+	// Index Name
+	indexName, err := p.field()
+	if err != nil {
+		return nil, err
+	}
+
+	// On Keyword
+	err = p.lexer.EatKeyword("on")
+	if err != nil {
+		return nil, err
+	}
+
+	// Table Name
+	tableName, err := p.field()
+	if err != nil {
+		return nil, err
+	}
+
+	// (
+	err = p.lexer.EatDelim('(')
+	if err != nil {
+		return nil, err
+	}
+
+	// Field Name
+	fieldName, err := p.field()
+	if err != nil {
+		return nil, err
+	}
+
+	// )
+	err = p.lexer.EatDelim(')')
+	if err != nil {
+		return nil, err
+	}
+	return parserdata.NewCreateIndexData(indexName, tableName, fieldName), nil
 }
 
 func (p *Parser) insert() (*parserdata.InsertData, error) {

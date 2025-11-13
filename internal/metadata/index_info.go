@@ -74,3 +74,15 @@ func (ii *IndexInfo) CreateIndexLayout() *record.Layout {
 
 	return record.NewLayoutFromSchema(sch)
 }
+
+func (ii *IndexInfo) IndexName() string {
+	return ii.indexName
+}
+
+func (ii *IndexInfo) FieldName() string {
+	return ii.fieldName
+}
+
+func (ii *IndexInfo) TableSchema() *record.Schema {
+	return ii.tableSchema
+}
