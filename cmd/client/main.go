@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 )
 
 const (
@@ -48,40 +49,44 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
-func (c *Client) ExecuteQuery(query string) (*QueryResponse, error) {
+func (c *Client) ExecuteQuery(query string) (*QueryResponse, time.Duration, error) {
+	start := time.Now()
+
 	if _, err := c.writer.WriteString(query + "\n"); err != nil {
-		return nil, fmt.Errorf("failed to send query: %w", err)
+		return nil, 0, fmt.Errorf("failed to send query: %w", err)
 	}
 	if err := c.writer.Flush(); err != nil {
-		return nil, fmt.Errorf("failed to flush query: %w", err)
+		return nil, 0, fmt.Errorf("failed to flush query: %w", err)
 	}
 
 	responseLine, err := c.reader.ReadString('\n')
 	if err != nil {
 		if err == io.EOF {
-			return nil, fmt.Errorf("server closed connection")
+			return nil, 0, fmt.Errorf("server closed connection")
 		}
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, 0, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	var response QueryResponse
 	if err := json.Unmarshal([]byte(strings.TrimSpace(responseLine)), &response); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, 0, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return &response, nil
+	duration := time.Since(start)
+	return &response, duration, nil
 }
 
-func printQueryResults(response *QueryResponse) {
+func printQueryResults(response *QueryResponse, duration time.Duration) {
 	if response.Error != "" {
-		fmt.Printf("❌ Error: %s\n\n", response.Error)
+		fmt.Printf("❌ Error: %s\n", response.Error)
+		fmt.Printf("⏱️  Time: %v\n\n", duration)
 		return
 	}
 
 	if response.Type == "query" {
 		if len(response.Rows) == 0 {
 			fmt.Println("(0 rows)")
-			fmt.Println()
+			fmt.Printf("⏱️  Time: %v\n\n", duration)
 			return
 		}
 
@@ -114,9 +119,11 @@ func printQueryResults(response *QueryResponse) {
 			fmt.Fprint(w, "\n")
 		}
 		w.Flush()
-		fmt.Printf("\n(%d row(s))\n\n", len(response.Rows))
+		fmt.Printf("\n(%d row(s))\n", len(response.Rows))
+		fmt.Printf("⏱️  Time: %v\n\n", duration)
 	} else if response.Type == "update" {
-		fmt.Printf("✓ %d row(s) affected\n\n", response.Affected)
+		fmt.Printf("✓ %d row(s) affected\n", response.Affected)
+		fmt.Printf("⏱️  Time: %v\n\n", duration)
 	}
 }
 
@@ -134,13 +141,13 @@ func processQuery(query string, client *Client) bool {
 		return true
 	}
 
-	response, err := client.ExecuteQuery(query)
+	response, duration, err := client.ExecuteQuery(query)
 	if err != nil {
 		fmt.Printf("❌ Error: %v\n\n", err)
 		return false
 	}
 
-	printQueryResults(response)
+	printQueryResults(response, duration)
 	return false
 }
 
