@@ -63,6 +63,105 @@ func TestBasicUpdatePlanner_ExecuteInsert(t *testing.T) {
 	assert.True(t, found, "Inserted record should be found")
 }
 
+func TestBasicUpdatePlanner_ExecuteInsertWithIndex(t *testing.T) {
+	_, tx, md, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Create a schema and table
+	schema := record.NewSchema()
+	schema.AddIntField("id")
+	schema.AddStringField("name", 20)
+	tableName := "students"
+	err := md.CreateTable(tableName, schema, tx)
+	require.NoError(t, err)
+
+	// Create index
+	err = md.CreateIndex("idx_name", tableName, "name", tx)
+	require.NoError(t, err)
+
+	// Create planner
+	planner := NewBasicUpdatePlanner(md)
+
+	// Insert data
+	insertData := parserdata.NewInsertData(
+		tableName,
+		[]string{"id", "name"},
+		[]any{1, "Alice"},
+	)
+
+	count, err := planner.ExecuteInsert(insertData, tx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	// Verify the insert
+	layout := record.NewLayoutFromSchema(schema)
+	ts, err := table.NewTableScan(tx, layout, tableName)
+	require.NoError(t, err)
+	err = ts.BeforeFirst()
+	require.NoError(t, err)
+	found := false
+	for {
+		hasNext, err := ts.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		id, err := ts.GetInt("id")
+		require.NoError(t, err)
+		name, err := ts.GetString("name")
+		require.NoError(t, err)
+		if id == 1 && name == "Alice" {
+			found = true
+			break
+		}
+	}
+
+	// Verify the stored index data using IndexSelectScan
+	indexInfoMap, err := md.GetIndexInfo(tableName, tx)
+	require.NoError(t, err)
+	require.NotNil(t, indexInfoMap)
+	indexInfo, exists := indexInfoMap["name"]
+	require.True(t, exists, "Index info for 'name' field should exist")
+	require.NotNil(t, indexInfo)
+
+	// Open the index
+	idx, err := indexInfo.Open()
+	require.NoError(t, err)
+	require.NotNil(t, idx)
+
+	// Create a new table scan for the index scan
+	ts2, err := table.NewTableScan(tx, layout, tableName)
+	require.NoError(t, err)
+
+	// Create IndexSelectScan to search for "Alice"
+	// Note: IndexSelectScan.Close() will close both the index and table scan
+	indexScan, err := query.NewIndexSelectScan(ts2, idx, "Alice")
+	require.NoError(t, err)
+	require.NotNil(t, indexScan)
+	defer indexScan.Close()
+
+	// Verify we can find the record using the index
+	hasNext, err := indexScan.Next()
+	require.NoError(t, err)
+	assert.True(t, hasNext, "Index should find the record with name='Alice'")
+
+	// Verify the record data matches
+	foundId, err := indexScan.GetInt("id")
+	require.NoError(t, err)
+	foundName, err := indexScan.GetString("name")
+	require.NoError(t, err)
+	assert.Equal(t, 1, foundId)
+	assert.Equal(t, "Alice", foundName)
+
+	// Verify there are no more records with this value
+	hasNext, err = indexScan.Next()
+	require.NoError(t, err)
+	assert.False(t, hasNext, "Should only find one record with name='Alice'")
+
+	ts.Close()
+	assert.True(t, found, "Inserted record should be found")
+}
+
 func TestBasicUpdatePlanner_ExecuteDelete(t *testing.T) {
 	_, tx, md, cleanup := setupTestDB(t)
 	defer cleanup()

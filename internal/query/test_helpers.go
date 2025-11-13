@@ -24,16 +24,16 @@ func createCompoundPredicate(conditions []struct {
 	if len(conditions) == 0 {
 		panic("no conditions provided")
 	}
-	
+
 	// Create first predicate
 	predicate := createEqualsPredicate(conditions[0].fieldName, conditions[0].value)
-	
+
 	// Add remaining conditions with AND
 	for i := 1; i < len(conditions); i++ {
 		cond := conditions[i]
 		nextPredicate := createEqualsPredicate(cond.fieldName, cond.value)
 		predicate.ConjunctWith(*nextPredicate)
 	}
-	
+
 	return predicate
 }

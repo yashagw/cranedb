@@ -127,3 +127,15 @@ func (p *Predicate) String() string {
 	}
 	return strings.Join(parts, " and ")
 }
+
+// GetTerms returns a copy of the terms slice
+func (p *Predicate) GetTerms() []Term {
+	result := make([]Term, len(p.terms))
+	copy(result, p.terms)
+	return result
+}
+
+// IsEmpty returns true if the predicate has no terms
+func (p *Predicate) IsEmpty() bool {
+	return len(p.terms) == 0
+}

@@ -111,7 +111,6 @@ func (ts *TableScan) Insert() error {
 		createdNewBlock := false
 		if atLastBlock {
 			// No more blocks, create a new one
-			log.Printf("[INSERT] No room in block %d and at last block, creating new block for %s", ts.currentRecordPage.Block().Number(), ts.fileName)
 			err = ts.MoveToNewBlock()
 			if err != nil {
 				log.Printf("[INSERT] MoveToNewBlock failed: %v", err)
@@ -121,7 +120,6 @@ func (ts *TableScan) Insert() error {
 		} else {
 			// Move to the next block
 			nextBlockNum := ts.currentRecordPage.Block().Number() + 1
-			log.Printf("[INSERT] No room in block %d, moving to next block %d", ts.currentRecordPage.Block().Number(), nextBlockNum)
 			err = ts.MoveToBlock(nextBlockNum)
 			if err != nil {
 				log.Printf("[INSERT] MoveToBlock failed: %v", err)
@@ -143,7 +141,6 @@ func (ts *TableScan) Insert() error {
 		}
 	}
 
-	log.Printf("[INSERT] Found slot %d in block %d for %s", ts.currentSlot, ts.currentRecordPage.Block().Number(), ts.fileName)
 	return nil
 }
 

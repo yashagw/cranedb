@@ -42,6 +42,11 @@ func (e *Expression) AsFieldName() string {
 	return *e.fldName
 }
 
+// IsConstant checks if the expression is a constant value.
+func (e *Expression) IsConstant() bool {
+	return e.fldName == nil
+}
+
 // String returns a string representation of the expression.
 func (e *Expression) String() string {
 	if e.IsFieldName() {

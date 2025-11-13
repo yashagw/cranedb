@@ -78,18 +78,21 @@ func TestIndexSelectPlan(t *testing.T) {
 
 	// Test DistinctValues - should delegate to indexInfo
 	// For the indexed field, should return 1
-	indexedFieldDistinct := indexSelectPlan.DistinctValues("id")
+	indexedFieldDistinct, err := indexSelectPlan.DistinctValues("id")
+	require.NoError(t, err)
 	assert.Equal(t, 1, indexedFieldDistinct)
 
 	// For non-indexed fields, should return the stat info distinct values
 	statusDistinct, err := tablePlan.DistinctValues("status")
 	require.NoError(t, err)
-	indexSelectStatusDistinct := indexSelectPlan.DistinctValues("status")
+	indexSelectStatusDistinct, err := indexSelectPlan.DistinctValues("status")
+	require.NoError(t, err)
 	assert.Equal(t, statusDistinct, indexSelectStatusDistinct)
 
 	nameDistinct, err := tablePlan.DistinctValues("name")
 	require.NoError(t, err)
-	indexSelectNameDistinct := indexSelectPlan.DistinctValues("name")
+	indexSelectNameDistinct, err := indexSelectPlan.DistinctValues("name")
+	require.NoError(t, err)
 	assert.Equal(t, nameDistinct, indexSelectNameDistinct)
 
 	// Test Open
@@ -163,7 +166,8 @@ func TestIndexSelectPlanWithStringField(t *testing.T) {
 	assert.Equal(t, expectedBlocks, actualBlocks)
 
 	// Test DistinctValues for indexed string field
-	indexedFieldDistinct := indexSelectPlan.DistinctValues("name")
+	indexedFieldDistinct, err := indexSelectPlan.DistinctValues("name")
+	require.NoError(t, err)
 	assert.Equal(t, 1, indexedFieldDistinct)
 
 	// Test Open

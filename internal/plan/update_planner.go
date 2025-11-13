@@ -1,8 +1,6 @@
 package plan
 
 import (
-	"log"
-
 	"github.com/yashagw/cranedb/internal/metadata"
 	"github.com/yashagw/cranedb/internal/parse/parserdata"
 	"github.com/yashagw/cranedb/internal/query"
@@ -123,29 +121,35 @@ func (p *BasicUpdatePlanner) ExecuteModify(modifyData *parserdata.ModifyData, tx
 
 // ExecuteInsert executes an insert statement and returns 1 (always inserts one record).
 func (p *BasicUpdatePlanner) ExecuteInsert(insertData *parserdata.InsertData, tx *transaction.Transaction) (int, error) {
-	log.Printf("[UPDATE] ExecuteInsert: Starting insert into table %s", insertData.Table())
 	plan, err := NewTablePlan(insertData.Table(), tx, p.metadataManager)
 	if err != nil {
-		log.Printf("[UPDATE] ExecuteInsert: NewTablePlan failed for %s: %v", insertData.Table(), err)
 		return 0, err
 	}
-	log.Printf("[UPDATE] ExecuteInsert: Got plan for %s, opening scan", insertData.Table())
 
 	s, err := plan.Open()
 	if err != nil {
-		log.Printf("[UPDATE] ExecuteInsert: plan.Open failed for %s: %v", insertData.Table(), err)
 		return 0, err
 	}
-	log.Printf("[UPDATE] ExecuteInsert: Got scan for %s, checking UpdateScan", insertData.Table())
 	us, ok := s.(scan.UpdateScan)
 	if !ok {
-		log.Printf("[UPDATE] ExecuteInsert: Scan is not UpdateScan for %s", insertData.Table())
 		s.Close()
 		return 0, nil
 	}
-	log.Printf("[UPDATE] ExecuteInsert: Calling Insert() for %s", insertData.Table())
 
 	err = us.Insert()
+	if err != nil {
+		us.Close()
+		return 0, err
+	}
+
+	rid, err := us.GetRID()
+	if err != nil {
+		us.Close()
+		return 0, err
+	}
+
+	// Check if index exists for the table
+	indexInfo, err := p.metadataManager.GetIndexInfo(insertData.Table(), tx)
 	if err != nil {
 		us.Close()
 		return 0, err
@@ -168,6 +172,25 @@ func (p *BasicUpdatePlanner) ExecuteInsert(insertData *parserdata.InsertData, tx
 			constant = v
 		case query.Constant:
 			constant = &v
+		}
+
+		if ii, exists := indexInfo[fieldName]; exists {
+			index, err := ii.Open()
+			if err != nil {
+				us.Close()
+				return 0, err
+			}
+			defer index.Close()
+			err = index.Insert(val, rid)
+			if err != nil {
+				us.Close()
+				return 0, err
+			}
+			err = index.Close()
+			if err != nil {
+				us.Close()
+				return 0, err
+			}
 		}
 
 		if constant != nil {

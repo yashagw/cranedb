@@ -114,3 +114,13 @@ func (t *Term) ReductionFactor(plan interface{ DistinctValues(string) (int, erro
 	// If neither side is a field (constant = constant), return 1
 	return 1, nil
 }
+
+// GetLHS returns the left-hand side expression
+func (t *Term) GetLHS() *Expression {
+	return &t.left
+}
+
+// GetRHS returns the right-hand side expression
+func (t *Term) GetRHS() *Expression {
+	return &t.right
+}

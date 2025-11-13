@@ -56,8 +56,8 @@ func (isp *IndexSelectPlan) RecordsOutput() int {
 }
 
 // DistinctValues delegates to the index.
-func (isp *IndexSelectPlan) DistinctValues(fieldName string) int {
-	return isp.indexInfo.DistinctValues(fieldName)
+func (isp *IndexSelectPlan) DistinctValues(fieldName string) (int, error) {
+	return isp.indexInfo.DistinctValues(fieldName), nil
 }
 
 // Schema returns the schema of the data table.
