@@ -9,7 +9,6 @@ import (
 	"github.com/yashagw/cranedb/internal/buffer"
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
-	"github.com/yashagw/cranedb/internal/query"
 	"github.com/yashagw/cranedb/internal/record"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
@@ -72,8 +71,8 @@ func TestHashIndex_InsertSearchAndDelete(t *testing.T) {
 	hashIndex, cleanup := setupHashIndexTest(t, layout)
 	defer cleanup()
 
-	searchKey := query.NewIntConstant(42)
-	otherKey := query.NewIntConstant(99)
+	searchKey := 42
+	otherKey := 99
 
 	rid1 := record.NewRID(1, 3)
 	rid2 := record.NewRID(2, 5)
@@ -146,8 +145,8 @@ func TestHashIndex_StringKeys(t *testing.T) {
 	hashIndex, cleanup := setupHashIndexTest(t, layout)
 	defer cleanup()
 
-	searchKey := query.NewStringConstant("alpha")
-	otherKey := query.NewStringConstant("beta")
+	searchKey := "alpha"
+	otherKey := "beta"
 
 	rid1 := record.NewRID(4, 1)
 	rid2 := record.NewRID(4, 2)

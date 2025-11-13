@@ -30,7 +30,7 @@ func (sp *SelectPlan) Open() (scan.Scan, error) {
 	if err != nil {
 		return nil, err
 	}
-	return scan.NewSelectScan(s, sp.pred), nil
+	return query.NewSelectScan(s, *sp.pred), nil
 }
 
 // BlocksAccessed returns the same as the underlying plan (selection doesn't change block access).

@@ -9,7 +9,7 @@ import (
 	"github.com/yashagw/cranedb/internal/buffer"
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
-	"github.com/yashagw/cranedb/internal/scan"
+	"github.com/yashagw/cranedb/internal/table"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -105,7 +105,7 @@ func TestViewManager_BasicOperations(t *testing.T) {
 	layout, err := tm.GetLayout(ViewCatalogName, tx8)
 	require.NoError(t, err, "Should get view catalog layout")
 
-	ts, err := scan.NewTableScan(tx8, layout, ViewCatalogName)
+	ts, err := table.NewTableScan(tx8, layout, ViewCatalogName)
 	require.NoError(t, err)
 	defer ts.Close()
 

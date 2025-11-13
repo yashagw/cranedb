@@ -10,7 +10,7 @@ import (
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
 	"github.com/yashagw/cranedb/internal/record"
-	"github.com/yashagw/cranedb/internal/scan"
+	"github.com/yashagw/cranedb/internal/table"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -129,7 +129,7 @@ func TestTableManager_BasicOperations(t *testing.T) {
 	tx8 := transaction.NewTransaction(fm, lm, bm, lockTable)
 
 	// Verify table catalog contains correct data for both tables
-	tcat, err := scan.NewTableScan(tx8, tm.tableCatelog, TableCatalogName)
+	tcat, err := table.NewTableScan(tx8, tm.tableCatelog, TableCatalogName)
 	require.NoError(t, err)
 	defer tcat.Close()
 
@@ -161,7 +161,7 @@ func TestTableManager_BasicOperations(t *testing.T) {
 	assert.True(t, productsTableFound, "Products table should be found in table catalog")
 
 	// Verify field catalog contains correct data for both tables
-	fcat, err := scan.NewTableScan(tx8, tm.fieldCatelog, FieldCatalogName)
+	fcat, err := table.NewTableScan(tx8, tm.fieldCatelog, FieldCatalogName)
 	require.NoError(t, err)
 	defer fcat.Close()
 

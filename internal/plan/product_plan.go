@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"github.com/yashagw/cranedb/internal/query"
 	"github.com/yashagw/cranedb/internal/record"
 	"github.com/yashagw/cranedb/internal/scan"
 )
@@ -36,7 +37,7 @@ func (pp *ProductPlan) Open() (scan.Scan, error) {
 	if err != nil {
 		return nil, err
 	}
-	return scan.NewProductScan(s1, s2), nil
+	return query.NewProductScan(s1, s2), nil
 }
 
 // BlocksAccessed uses nested loop cost model: p1.blocks + (p1.records * p2.blocks).

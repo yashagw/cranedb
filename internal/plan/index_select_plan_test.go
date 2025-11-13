@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/yashagw/cranedb/internal/record"
-	"github.com/yashagw/cranedb/internal/scan"
+	"github.com/yashagw/cranedb/internal/table"
 )
 
 func TestIndexSelectPlan(t *testing.T) {
@@ -24,7 +24,7 @@ func TestIndexSelectPlan(t *testing.T) {
 
 	// Insert test data
 	layout := record.NewLayoutFromSchema(schema)
-	ts, err := scan.NewTableScan(tx, layout, tableName)
+	ts, err := table.NewTableScan(tx, layout, tableName)
 	require.NoError(t, err)
 	err = ts.BeforeFirst()
 	require.NoError(t, err)
@@ -113,7 +113,7 @@ func TestIndexSelectPlanWithStringField(t *testing.T) {
 
 	// Insert test data
 	layout := record.NewLayoutFromSchema(schema)
-	ts, err := scan.NewTableScan(tx, layout, tableName)
+	ts, err := table.NewTableScan(tx, layout, tableName)
 	require.NoError(t, err)
 	err = ts.BeforeFirst()
 	require.NoError(t, err)

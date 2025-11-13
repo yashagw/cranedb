@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/yashagw/cranedb/internal/record"
-	"github.com/yashagw/cranedb/internal/scan"
+	"github.com/yashagw/cranedb/internal/table"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -51,7 +51,7 @@ func (t *TableManager) CreateTable(tableName string, schema *record.Schema, tx *
 	layout := record.NewLayoutFromSchema(schema)
 
 	// Insert a record into tableCatelog
-	tcat, err := scan.NewTableScan(tx, t.tableCatelog, TableCatalogName)
+	tcat, err := table.NewTableScan(tx, t.tableCatelog, TableCatalogName)
 	if err != nil {
 		return err
 	}
@@ -70,7 +70,7 @@ func (t *TableManager) CreateTable(tableName string, schema *record.Schema, tx *
 	}
 
 	// Insert a record into fieldCatelog for each field
-	fcat, err := scan.NewTableScan(tx, t.fieldCatelog, FieldCatalogName)
+	fcat, err := table.NewTableScan(tx, t.fieldCatelog, FieldCatalogName)
 	if err != nil {
 		return err
 	}
@@ -108,7 +108,7 @@ func (t *TableManager) CreateTable(tableName string, schema *record.Schema, tx *
 func (t *TableManager) GetLayout(tableName string, tx *transaction.Transaction) (*record.Layout, error) {
 	// First, find the slot size from table catalog
 	slotSize := -1
-	tcat, err := scan.NewTableScan(tx, t.tableCatelog, TableCatalogName)
+	tcat, err := table.NewTableScan(tx, t.tableCatelog, TableCatalogName)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +144,7 @@ func (t *TableManager) GetLayout(tableName string, tx *transaction.Transaction) 
 	schema := record.NewSchema()
 	offsets := make(map[string]int)
 
-	fcat, err := scan.NewTableScan(tx, t.fieldCatelog, FieldCatalogName)
+	fcat, err := table.NewTableScan(tx, t.fieldCatelog, FieldCatalogName)
 	if err != nil {
 		return nil, err
 	}

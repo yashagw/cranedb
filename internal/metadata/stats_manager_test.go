@@ -10,7 +10,7 @@ import (
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
 	"github.com/yashagw/cranedb/internal/record"
-	"github.com/yashagw/cranedb/internal/scan"
+	"github.com/yashagw/cranedb/internal/table"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -158,7 +158,7 @@ func TestStatsManager_DistinctValues(t *testing.T) {
 	require.NoError(t, err, "Should retrieve layout successfully")
 	require.NotNil(t, layout)
 
-	ts, err := scan.NewTableScan(tx3, layout, "test_table")
+	ts, err := table.NewTableScan(tx3, layout, "test_table")
 	require.NoError(t, err)
 	defer ts.Close()
 

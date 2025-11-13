@@ -1,21 +1,22 @@
-package scan
+package query
 
 import (
 	"fmt"
 
 	"github.com/yashagw/cranedb/internal/record"
+	"github.com/yashagw/cranedb/internal/scan"
 )
 
 var (
-	_ UpdateScan = (*SelectScan)(nil)
+	_ scan.UpdateScan = (*SelectScan)(nil)
 )
 
 type SelectScan struct {
-	input     Scan
+	input     scan.Scan
 	predicate Predicate
 }
 
-func NewSelectScan(input Scan, predicate Predicate) *SelectScan {
+func NewSelectScan(input scan.Scan, predicate Predicate) *SelectScan {
 	return &SelectScan{
 		input:     input,
 		predicate: predicate,
@@ -66,49 +67,49 @@ func (s *SelectScan) Close() {
 }
 
 func (s *SelectScan) SetInt(fldname string, val int) error {
-	updateScan, ok := s.input.(UpdateScan)
+	updateScan, ok := s.input.(scan.UpdateScan)
 	if !ok {
-		return fmt.Errorf("input is not an UpdateScan")
+		return fmt.Errorf("input is not an scan.UpdateScan")
 	}
 	return updateScan.SetInt(fldname, val)
 }
 
 func (s *SelectScan) SetString(fldname string, val string) error {
-	updateScan, ok := s.input.(UpdateScan)
+	updateScan, ok := s.input.(scan.UpdateScan)
 	if !ok {
-		return fmt.Errorf("input is not an UpdateScan")
+		return fmt.Errorf("input is not an scan.UpdateScan")
 	}
 	return updateScan.SetString(fldname, val)
 }
 
 func (s *SelectScan) Insert() error {
-	updateScan, ok := s.input.(UpdateScan)
+	updateScan, ok := s.input.(scan.UpdateScan)
 	if !ok {
-		return fmt.Errorf("input is not an UpdateScan")
+		return fmt.Errorf("input is not an scan.UpdateScan")
 	}
 	return updateScan.Insert()
 }
 
 func (s *SelectScan) Delete() error {
-	updateScan, ok := s.input.(UpdateScan)
+	updateScan, ok := s.input.(scan.UpdateScan)
 	if !ok {
-		return fmt.Errorf("input is not an UpdateScan")
+		return fmt.Errorf("input is not an scan.UpdateScan")
 	}
 	return updateScan.Delete()
 }
 
 func (s *SelectScan) GetRID() (*record.RID, error) {
-	updateScan, ok := s.input.(UpdateScan)
+	updateScan, ok := s.input.(scan.UpdateScan)
 	if !ok {
-		return nil, fmt.Errorf("input is not an UpdateScan")
+		return nil, fmt.Errorf("input is not an scan.UpdateScan")
 	}
 	return updateScan.GetRID()
 }
 
 func (s *SelectScan) MoveToRID(rid *record.RID) error {
-	updateScan, ok := s.input.(UpdateScan)
+	updateScan, ok := s.input.(scan.UpdateScan)
 	if !ok {
-		return fmt.Errorf("input is not an UpdateScan")
+		return fmt.Errorf("input is not an scan.UpdateScan")
 	}
 	return updateScan.MoveToRID(rid)
 }

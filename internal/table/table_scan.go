@@ -1,4 +1,4 @@
-package scan
+package table
 
 import (
 	"fmt"
@@ -248,4 +248,12 @@ func (ts *TableScan) SetInt(fieldName string, value int) error {
 // SetString sets a string value in the current record
 func (ts *TableScan) SetString(fieldName string, value string) error {
 	return ts.currentRecordPage.SetString(ts.currentSlot, fieldName, value)
+}
+
+func (ts *TableScan) SetValue(fieldName string, value any) error {
+	fieldType := ts.layout.GetSchema().Type(fieldName)
+	if fieldType == "int" {
+		return ts.SetInt(fieldName, value.(int))
+	}
+	return ts.SetString(fieldName, value.(string))
 }

@@ -2,7 +2,7 @@ package metadata
 
 import (
 	"github.com/yashagw/cranedb/internal/record"
-	"github.com/yashagw/cranedb/internal/scan"
+	"github.com/yashagw/cranedb/internal/table"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -38,7 +38,7 @@ func (v *ViewManager) CreateView(viewName string, viewDef string, tx *transactio
 		return err
 	}
 
-	ts, err := scan.NewTableScan(tx, layout, ViewCatalogName)
+	ts, err := table.NewTableScan(tx, layout, ViewCatalogName)
 	if err != nil {
 		return err
 	}
@@ -67,7 +67,7 @@ func (v *ViewManager) GetViewDef(viewName string, tx *transaction.Transaction) (
 		return "", err
 	}
 
-	ts, err := scan.NewTableScan(tx, layout, ViewCatalogName)
+	ts, err := table.NewTableScan(tx, layout, ViewCatalogName)
 	if err != nil {
 		return "", err
 	}

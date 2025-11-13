@@ -3,10 +3,10 @@ package index
 import (
 	"fmt"
 
-	"github.com/yashagw/cranedb/internal/query"
 	"github.com/yashagw/cranedb/internal/record"
-	"github.com/yashagw/cranedb/internal/scan"
+	"github.com/yashagw/cranedb/internal/table"
 	"github.com/yashagw/cranedb/internal/transaction"
+	"github.com/yashagw/cranedb/internal/utils"
 )
 
 var (
@@ -22,8 +22,8 @@ type HashIndex struct {
 	indexName   string
 	indexLayout *record.Layout
 
-	searchKey *query.Constant
-	tableScan *scan.TableScan
+	searchKey any
+	tableScan *table.TableScan
 }
 
 func NewHashIndex(transaction *transaction.Transaction, indexName string, layout *record.Layout) (*HashIndex, error) {
@@ -34,13 +34,17 @@ func NewHashIndex(transaction *transaction.Transaction, indexName string, layout
 	}, nil
 }
 
-func (hi *HashIndex) BeforeFirst(searchKey *query.Constant) error {
+func (hi *HashIndex) BeforeFirst(searchKey any) error {
 	hi.Close()
 	hi.searchKey = searchKey
 
-	bucket := searchKey.Hash() % NumBuckets
+	hashValue, err := utils.HashValue(searchKey)
+	if err != nil {
+		return err
+	}
+	bucket := hashValue % NumBuckets
 	indexTableName := fmt.Sprintf("%s-%d", hi.indexName, bucket)
-	tableScan, err := scan.NewTableScan(hi.transaction, hi.indexLayout, indexTableName)
+	tableScan, err := table.NewTableScan(hi.transaction, hi.indexLayout, indexTableName)
 	if err != nil {
 		return err
 	}
@@ -73,11 +77,11 @@ func (hi *HashIndex) Next() (bool, error) {
 			return false, nil
 		}
 
-		matches, err := hi.currentRecordMatchesSearchKey()
+		dataval, err := hi.tableScan.GetValue("dataval")
 		if err != nil {
 			return false, err
 		}
-		if matches {
+		if dataval == hi.searchKey {
 			return true, nil
 		}
 	}
@@ -100,7 +104,7 @@ func (hi *HashIndex) GetDataRid() (*record.RID, error) {
 	return record.NewRID(blockNum, slot), nil
 }
 
-func (hi *HashIndex) Insert(dataVal *query.Constant, dataRid *record.RID) error {
+func (hi *HashIndex) Insert(dataVal any, dataRid *record.RID) error {
 	if err := hi.BeforeFirst(dataVal); err != nil {
 		return err
 	}
@@ -119,10 +123,10 @@ func (hi *HashIndex) Insert(dataVal *query.Constant, dataRid *record.RID) error 
 		return err
 	}
 
-	return hi.setDataValue(dataVal)
+	return hi.tableScan.SetValue("dataval", dataVal)
 }
 
-func (hi *HashIndex) Delete(dataVal *query.Constant, dataRid *record.RID) error {
+func (hi *HashIndex) Delete(dataVal any, dataRid *record.RID) error {
 	if err := hi.BeforeFirst(dataVal); err != nil {
 		return err
 	}
@@ -144,38 +148,6 @@ func (hi *HashIndex) Delete(dataVal *query.Constant, dataRid *record.RID) error 
 			return hi.tableScan.Delete()
 		}
 	}
-}
-
-func (hi *HashIndex) currentRecordMatchesSearchKey() (bool, error) {
-	if hi.searchKey == nil {
-		return false, fmt.Errorf("search key not set; call BeforeFirst with a key")
-	}
-
-	if hi.searchKey.IsInt() {
-		val, err := hi.tableScan.GetInt("dataval")
-		if err != nil {
-			return false, err
-		}
-		return val == hi.searchKey.AsInt(), nil
-	}
-
-	val, err := hi.tableScan.GetString("dataval")
-	if err != nil {
-		return false, err
-	}
-	return val == hi.searchKey.AsString(), nil
-}
-
-func (hi *HashIndex) setDataValue(dataVal *query.Constant) error {
-	if dataVal == nil {
-		return fmt.Errorf("data value cannot be nil")
-	}
-
-	if dataVal.IsInt() {
-		return hi.tableScan.SetInt("dataval", dataVal.AsInt())
-	}
-
-	return hi.tableScan.SetString("dataval", dataVal.AsString())
 }
 
 // HashSearchCost returns the cost of searching an index file having

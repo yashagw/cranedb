@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/yashagw/cranedb/internal/record"
-	"github.com/yashagw/cranedb/internal/scan"
+	"github.com/yashagw/cranedb/internal/table"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -77,7 +77,7 @@ func (sm *StatsManager) calcTableStats(tblName string, layout *record.Layout, tx
 		distinctVals[field] = make(map[any]struct{})
 	}
 
-	ts, err := scan.NewTableScan(tx, layout, tblName)
+	ts, err := table.NewTableScan(tx, layout, tblName)
 	if err != nil {
 		return nil, err
 	}

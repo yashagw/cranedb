@@ -4,6 +4,7 @@ import (
 	"github.com/yashagw/cranedb/internal/metadata"
 	"github.com/yashagw/cranedb/internal/record"
 	"github.com/yashagw/cranedb/internal/scan"
+	"github.com/yashagw/cranedb/internal/table"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -37,7 +38,7 @@ func NewTablePlan(tableName string, tx *transaction.Transaction, md *metadata.Ma
 }
 
 func (p *TablePlan) Open() (scan.Scan, error) {
-	scan, err := scan.NewTableScan(p.tx, p.layout, p.tableName)
+	scan, err := table.NewTableScan(p.tx, p.layout, p.tableName)
 	if err != nil {
 		return nil, err
 	}

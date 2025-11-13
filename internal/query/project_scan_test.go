@@ -1,4 +1,4 @@
-package scan
+package query
 
 import (
 	"os"
@@ -10,11 +10,12 @@ import (
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
 	"github.com/yashagw/cranedb/internal/record"
+	"github.com/yashagw/cranedb/internal/table"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
 // setupProjectScanTest creates a test table with multiple fields
-func setupProjectScanTest(t *testing.T, testDir string) (*transaction.Transaction, *TableScan) {
+func setupProjectScanTest(t *testing.T, testDir string) (*transaction.Transaction, *table.TableScan) {
 	fileManager, err := file.NewManager(testDir, 400)
 	require.NoError(t, err)
 	logManager, err := log.NewManager(fileManager, "test.log")
@@ -35,7 +36,7 @@ func setupProjectScanTest(t *testing.T, testDir string) (*transaction.Transactio
 	schema.AddIntField("salary")
 
 	layout := record.NewLayoutFromSchema(schema)
-	ts, err := NewTableScan(tx, layout, "Employees")
+	ts, err := table.NewTableScan(tx, layout, "Employees")
 	require.NoError(t, err)
 
 	// Insert test data
@@ -403,8 +404,8 @@ func TestProjectScanWithSelectScan(t *testing.T) {
 	projectScan := NewProjectScan(ts, fieldList)
 
 	// Then apply filter: age = 30 (exact match)
-	predicate := newTestPredicate("age", 30)
-	selectScan := NewSelectScan(projectScan, predicate)
+	predicate := createEqualsPredicate("age", 30)
+	selectScan := NewSelectScan(projectScan, *predicate)
 
 	err = selectScan.BeforeFirst()
 

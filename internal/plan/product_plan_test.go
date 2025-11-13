@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/yashagw/cranedb/internal/record"
-	"github.com/yashagw/cranedb/internal/scan"
+	"github.com/yashagw/cranedb/internal/table"
 )
 
 func TestProductPlan(t *testing.T) {
@@ -30,7 +30,7 @@ func TestProductPlan(t *testing.T) {
 
 	// Insert data into both tables
 	layout1 := record.NewLayoutFromSchema(schema1)
-	ts1, err := scan.NewTableScan(tx, layout1, table1)
+	ts1, err := table.NewTableScan(tx, layout1, table1)
 	require.NoError(t, err)
 	err = ts1.BeforeFirst()
 	require.NoError(t, err)
@@ -45,7 +45,7 @@ func TestProductPlan(t *testing.T) {
 	ts1.Close()
 
 	layout2 := record.NewLayoutFromSchema(schema2)
-	ts2, err := scan.NewTableScan(tx, layout2, table2)
+	ts2, err := table.NewTableScan(tx, layout2, table2)
 	require.NoError(t, err)
 	err = ts2.BeforeFirst()
 	require.NoError(t, err)

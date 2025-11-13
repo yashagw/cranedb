@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/yashagw/cranedb/internal/record"
-	"github.com/yashagw/cranedb/internal/scan"
+	"github.com/yashagw/cranedb/internal/table"
 )
 
 func TestTablePlan(t *testing.T) {
@@ -24,7 +24,7 @@ func TestTablePlan(t *testing.T) {
 
 	// Insert test data
 	layout := record.NewLayoutFromSchema(schema)
-	ts, err := scan.NewTableScan(tx, layout, tableName)
+	ts, err := table.NewTableScan(tx, layout, tableName)
 	require.NoError(t, err)
 	for i := 1; i <= 10; i++ {
 		ts.Insert()

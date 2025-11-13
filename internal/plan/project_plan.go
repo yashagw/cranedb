@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"github.com/yashagw/cranedb/internal/query"
 	"github.com/yashagw/cranedb/internal/record"
 	"github.com/yashagw/cranedb/internal/scan"
 )
@@ -31,7 +32,7 @@ func (pp *ProjectPlan) Open() (scan.Scan, error) {
 	if err != nil {
 		return nil, err
 	}
-	return scan.NewProjectScan(s, pp.schema.Fields()), nil
+	return query.NewProjectScan(s, pp.schema.Fields()), nil
 }
 
 // BlocksAccessed returns the same as the underlying plan (projection doesn't change block access).

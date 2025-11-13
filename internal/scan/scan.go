@@ -42,11 +42,3 @@ type UpdateScan interface {
 	// MoveToRID moves the scan to the record specified by the given RID.
 	MoveToRID(rid *record.RID) error
 }
-
-// Predicate is an interface for checking if a predicate is satisfied by a scan.
-// This allows the scan package to work with predicates without importing the query package,
-// breaking the import cycle between scan and query.
-type Predicate interface {
-	// IsSatisfied checks if the predicate is satisfied by the current record in the scan.
-	IsSatisfied(s Scan) (bool, error)
-}

@@ -10,17 +10,18 @@ import (
 	"github.com/yashagw/cranedb/internal/query"
 	"github.com/yashagw/cranedb/internal/record"
 	"github.com/yashagw/cranedb/internal/scan"
+	"github.com/yashagw/cranedb/internal/table"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
 // Helper to create and populate a table with test data
-func createTableWithData(t *testing.T, tableName string, schema *record.Schema, md *metadata.Manager, tx *transaction.Transaction, dataFn func(*scan.TableScan)) {
+func createTableWithData(t *testing.T, tableName string, schema *record.Schema, md *metadata.Manager, tx *transaction.Transaction, dataFn func(*table.TableScan)) {
 	err := md.CreateTable(tableName, schema, tx)
 	require.NoError(t, err)
 
 	if dataFn != nil {
 		layout := record.NewLayoutFromSchema(schema)
-		ts, err := scan.NewTableScan(tx, layout, tableName)
+		ts, err := table.NewTableScan(tx, layout, tableName)
 		if err != nil {
 			t.Fatalf("Failed to create table scan: %v", err)
 		}
@@ -54,7 +55,7 @@ func TestBasicQueryPlanner_SingleTableWithPredicate(t *testing.T) {
 	schema.AddStringField("name", 20)
 	schema.AddIntField("age")
 
-	createTableWithData(t, "students", schema, md, tx, func(ts *scan.TableScan) {
+	createTableWithData(t, "students", schema, md, tx, func(ts *table.TableScan) {
 		err := ts.BeforeFirst()
 		require.NoError(t, err)
 		for i := 1; i <= 5; i++ {
@@ -113,7 +114,7 @@ func TestBasicQueryPlanner_NoPredicate(t *testing.T) {
 	schema.AddIntField("id")
 	schema.AddStringField("name", 20)
 
-	createTableWithData(t, "products", schema, md, tx, func(ts *scan.TableScan) {
+	createTableWithData(t, "products", schema, md, tx, func(ts *table.TableScan) {
 		err := ts.BeforeFirst()
 		require.NoError(t, err)
 		for i := 1; i <= 3; i++ {
@@ -149,7 +150,7 @@ func TestBasicQueryPlanner_CartesianProduct(t *testing.T) {
 	s2 := record.NewSchema()
 	s2.AddIntField("cid")
 
-	createTableWithData(t, "students", s1, md, tx, func(ts *scan.TableScan) {
+	createTableWithData(t, "students", s1, md, tx, func(ts *table.TableScan) {
 		err := ts.BeforeFirst()
 		require.NoError(t, err)
 		for i := 1; i <= 2; i++ {
@@ -159,7 +160,7 @@ func TestBasicQueryPlanner_CartesianProduct(t *testing.T) {
 			require.NoError(t, err)
 		}
 	})
-	createTableWithData(t, "courses", s2, md, tx, func(ts *scan.TableScan) {
+	createTableWithData(t, "courses", s2, md, tx, func(ts *table.TableScan) {
 		err := ts.BeforeFirst()
 		require.NoError(t, err)
 		for i := 1; i <= 2; i++ {
@@ -195,7 +196,7 @@ func TestBasicQueryPlanner_JoinWithPredicate(t *testing.T) {
 	s1.AddIntField("id")
 	s1.AddStringField("name", 20)
 	md.CreateTable("students", s1, tx)
-	ts1, err := scan.NewTableScan(tx, record.NewLayoutFromSchema(s1), "students")
+	ts1, err := table.NewTableScan(tx, record.NewLayoutFromSchema(s1), "students")
 	require.NoError(t, err)
 
 	ts1.Insert()
@@ -220,7 +221,7 @@ func TestBasicQueryPlanner_JoinWithPredicate(t *testing.T) {
 	s2.AddIntField("student_id")
 	s2.AddStringField("course", 20)
 	md.CreateTable("enrollments", s2, tx)
-	ts2, err := scan.NewTableScan(tx, record.NewLayoutFromSchema(s2), "enrollments")
+	ts2, err := table.NewTableScan(tx, record.NewLayoutFromSchema(s2), "enrollments")
 	require.NoError(t, err)
 
 	ts2.Insert()

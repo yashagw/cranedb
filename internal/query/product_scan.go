@@ -1,15 +1,17 @@
-package scan
+package query
+
+import "github.com/yashagw/cranedb/internal/scan"
 
 var (
-	_ Scan = (*ProductScan)(nil)
+	_ scan.Scan = (*ProductScan)(nil)
 )
 
 type ProductScan struct {
-	scan1 Scan
-	scan2 Scan
+	scan1 scan.Scan
+	scan2 scan.Scan
 }
 
-func NewProductScan(scan1 Scan, scan2 Scan) *ProductScan {
+func NewProductScan(scan1 scan.Scan, scan2 scan.Scan) *ProductScan {
 	return &ProductScan{
 		scan1: scan1,
 		scan2: scan2,

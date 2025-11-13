@@ -1,4 +1,4 @@
-package scan
+package query
 
 import (
 	"os"
@@ -10,76 +10,12 @@ import (
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
 	"github.com/yashagw/cranedb/internal/record"
+	"github.com/yashagw/cranedb/internal/table"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
-// testPredicate is a simple predicate implementation for testing
-// that avoids importing the query package to prevent import cycles
-type testPredicate struct {
-	isSatisfiedFunc func(Scan) (bool, error)
-}
-
-func (p *testPredicate) IsSatisfied(s Scan) (bool, error) {
-	return p.isSatisfiedFunc(s)
-}
-
-// newTestPredicate creates a test predicate that checks if a field equals a value
-func newTestPredicate(fieldName string, expectedValue interface{}) Predicate {
-	return &testPredicate{
-		isSatisfiedFunc: func(s Scan) (bool, error) {
-			val, err := s.GetValue(fieldName)
-			if err != nil {
-				return false, err
-			}
-			switch expected := expectedValue.(type) {
-			case int:
-				if actual, ok := val.(int); ok {
-					return actual == expected, nil
-				}
-			case string:
-				if actual, ok := val.(string); ok {
-					return actual == expected, nil
-				}
-			}
-			return false, nil
-		},
-	}
-}
-
-// newCompoundTestPredicate creates a test predicate that checks multiple conditions (AND)
-func newCompoundTestPredicate(conditions []struct {
-	fieldName string
-	value     interface{}
-}) Predicate {
-	return &testPredicate{
-		isSatisfiedFunc: func(s Scan) (bool, error) {
-			for _, cond := range conditions {
-				val, err := s.GetValue(cond.fieldName)
-				if err != nil {
-					return false, err
-				}
-				matched := false
-				switch expected := cond.value.(type) {
-				case int:
-					if actual, ok := val.(int); ok {
-						matched = actual == expected
-					}
-				case string:
-					if actual, ok := val.(string); ok {
-						matched = actual == expected
-					}
-				}
-				if !matched {
-					return false, nil
-				}
-			}
-			return true, nil
-		},
-	}
-}
-
 // setupTestDB creates a test database with sample data
-func setupTestDB(t *testing.T, testDir string) (*transaction.Transaction, *TableScan) {
+func setupTestDB(t *testing.T, testDir string) (*transaction.Transaction, *table.TableScan) {
 	// Setup database components
 	fileManager, err := file.NewManager(testDir, 400)
 	require.NoError(t, err)
@@ -102,7 +38,7 @@ func setupTestDB(t *testing.T, testDir string) (*transaction.Transaction, *Table
 	require.NotNil(t, layout)
 
 	// Create TableScan and insert test data
-	ts, err := NewTableScan(tx, layout, "TestTable")
+	ts, err := table.NewTableScan(tx, layout, "TestTable")
 	require.NoError(t, err)
 	require.NotNil(t, ts)
 
@@ -151,10 +87,10 @@ func TestSelectScanFiltering(t *testing.T) {
 		ts.BeforeFirst()
 
 		// Create predicate: age = 25
-		predicate := newTestPredicate("age", 25)
+		predicate := createEqualsPredicate("age", 25)
 
 		// Create SelectScan
-		selectScan := NewSelectScan(ts, predicate)
+		selectScan := NewSelectScan(ts, *predicate)
 		require.NotNil(t, selectScan)
 
 		// Collect results
@@ -207,10 +143,10 @@ func TestSelectScanFiltering(t *testing.T) {
 		ts.BeforeFirst()
 
 		// Create predicate: name = "Bob"
-		predicate := newTestPredicate("name", "Bob")
+		predicate := createEqualsPredicate("name", "Bob")
 
 		// Create SelectScan
-		selectScan := NewSelectScan(ts, predicate)
+		selectScan := NewSelectScan(ts, *predicate)
 		require.NotNil(t, selectScan)
 
 		// Collect results
@@ -247,7 +183,7 @@ func TestSelectScanFiltering(t *testing.T) {
 		ts.BeforeFirst()
 
 		// Create compound predicate: age = 30 AND name = "Grace"
-		predicate := newCompoundTestPredicate([]struct {
+		predicate := createCompoundPredicate([]struct {
 			fieldName string
 			value     interface{}
 		}{
@@ -256,7 +192,7 @@ func TestSelectScanFiltering(t *testing.T) {
 		})
 
 		// Create SelectScan
-		selectScan := NewSelectScan(ts, predicate)
+		selectScan := NewSelectScan(ts, *predicate)
 		require.NotNil(t, selectScan)
 
 		// Collect results
@@ -293,10 +229,10 @@ func TestSelectScanFiltering(t *testing.T) {
 		ts.BeforeFirst()
 
 		// Create predicate: age = 100 (no records should match)
-		predicate := newTestPredicate("age", 100)
+		predicate := createEqualsPredicate("age", 100)
 
 		// Create SelectScan
-		selectScan := NewSelectScan(ts, predicate)
+		selectScan := NewSelectScan(ts, *predicate)
 		require.NotNil(t, selectScan)
 
 		// Verify no results
@@ -328,8 +264,8 @@ func TestSelectScanReadOperations(t *testing.T) {
 	t.Run("HasField", func(t *testing.T) {
 		ts.BeforeFirst()
 
-		predicate := newTestPredicate("age", 25)
-		selectScan := NewSelectScan(ts, predicate)
+		predicate := createEqualsPredicate("age", 25)
+		selectScan := NewSelectScan(ts, *predicate)
 
 		assert.True(t, selectScan.HasField("id"))
 		assert.True(t, selectScan.HasField("age"))
@@ -342,8 +278,8 @@ func TestSelectScanReadOperations(t *testing.T) {
 	t.Run("GetValue", func(t *testing.T) {
 		ts.BeforeFirst()
 
-		predicate := newTestPredicate("age", 25)
-		selectScan := NewSelectScan(ts, predicate)
+		predicate := createEqualsPredicate("age", 25)
+		selectScan := NewSelectScan(ts, *predicate)
 
 		err := selectScan.BeforeFirst()
 		require.NoError(t, err)
@@ -377,8 +313,8 @@ func TestSelectScanReadOperations(t *testing.T) {
 	t.Run("GetIntAndGetString", func(t *testing.T) {
 		ts.BeforeFirst()
 
-		predicate := newTestPredicate("id", 2)
-		selectScan := NewSelectScan(ts, predicate)
+		predicate := createEqualsPredicate("id", 2)
+		selectScan := NewSelectScan(ts, *predicate)
 
 		err := selectScan.BeforeFirst()
 		require.NoError(t, err)
@@ -417,8 +353,8 @@ func TestSelectScanUpdateOperations(t *testing.T) {
 		ts.BeforeFirst()
 
 		// Find Bob and update his age
-		predicate := newTestPredicate("name", "Bob")
-		selectScan := NewSelectScan(ts, predicate)
+		predicate := createEqualsPredicate("name", "Bob")
+		selectScan := NewSelectScan(ts, *predicate)
 
 		err := selectScan.BeforeFirst()
 		require.NoError(t, err)
@@ -443,8 +379,8 @@ func TestSelectScanUpdateOperations(t *testing.T) {
 
 		// Verify the update persisted
 		ts.BeforeFirst()
-		predicate2 := newTestPredicate("name", "Bob")
-		selectScan2 := NewSelectScan(ts, predicate2)
+		predicate2 := createEqualsPredicate("name", "Bob")
+		selectScan2 := NewSelectScan(ts, *predicate2)
 
 		err = selectScan2.BeforeFirst()
 		require.NoError(t, err)
@@ -463,8 +399,8 @@ func TestSelectScanUpdateOperations(t *testing.T) {
 		ts.BeforeFirst()
 
 		// Find Alice and update her name
-		predicate := newTestPredicate("id", 1)
-		selectScan := NewSelectScan(ts, predicate)
+		predicate := createEqualsPredicate("id", 1)
+		selectScan := NewSelectScan(ts, *predicate)
 
 		err := selectScan.BeforeFirst()
 		require.NoError(t, err)
@@ -489,8 +425,8 @@ func TestSelectScanUpdateOperations(t *testing.T) {
 
 		// Verify the update persisted
 		ts.BeforeFirst()
-		predicate2 := newTestPredicate("id", 1)
-		selectScan2 := NewSelectScan(ts, predicate2)
+		predicate2 := createEqualsPredicate("id", 1)
+		selectScan2 := NewSelectScan(ts, *predicate2)
 
 		err = selectScan2.BeforeFirst()
 		require.NoError(t, err)
@@ -530,12 +466,12 @@ func TestSelectScanInsertOperation(t *testing.T) {
 	schema.AddStringField("name", 20)
 
 	layout := record.NewLayoutFromSchema(schema)
-	ts, err := NewTableScan(tx, layout, "TestTable")
+	ts, err := table.NewTableScan(tx, layout, "TestTable")
 	require.NoError(t, err)
 
 	// Create SelectScan with a predicate
-	predicate := newTestPredicate("id", 1)
-	selectScan := NewSelectScan(ts, predicate)
+	predicate := createEqualsPredicate("id", 1)
+	selectScan := NewSelectScan(ts, *predicate)
 
 	// Test Insert through SelectScan
 	t.Log("Inserting new record through SelectScan")
@@ -599,8 +535,8 @@ func TestSelectScanDeleteOperation(t *testing.T) {
 
 	// Delete all records with age = 25
 	ts.BeforeFirst()
-	predicate := newTestPredicate("age", 25)
-	selectScan := NewSelectScan(ts, predicate)
+	predicate := createEqualsPredicate("age", 25)
+	selectScan := NewSelectScan(ts, *predicate)
 
 	deletedCount := 0
 	selectScan.BeforeFirst()
@@ -656,8 +592,8 @@ func TestSelectScanNavigationOperations(t *testing.T) {
 	t.Run("GetRIDAndMoveToRID", func(t *testing.T) {
 		ts.BeforeFirst()
 
-		predicate := newTestPredicate("age", 30)
-		selectScan := NewSelectScan(ts, predicate)
+		predicate := createEqualsPredicate("age", 30)
+		selectScan := NewSelectScan(ts, *predicate)
 
 		err := selectScan.BeforeFirst()
 		require.NoError(t, err)
@@ -696,8 +632,8 @@ func TestSelectScanNavigationOperations(t *testing.T) {
 	t.Run("BeforeFirstAndNext", func(t *testing.T) {
 		ts.BeforeFirst()
 
-		predicate := newTestPredicate("age", 25)
-		selectScan := NewSelectScan(ts, predicate)
+		predicate := createEqualsPredicate("age", 25)
+		selectScan := NewSelectScan(ts, *predicate)
 
 		// First iteration
 		selectScan.BeforeFirst()

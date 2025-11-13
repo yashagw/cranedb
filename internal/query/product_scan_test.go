@@ -1,4 +1,4 @@
-package scan
+package query
 
 import (
 	"os"
@@ -10,11 +10,12 @@ import (
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
 	"github.com/yashagw/cranedb/internal/record"
+	"github.com/yashagw/cranedb/internal/table"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
 // setupProductScanTest creates two test tables for cartesian product testing
-func setupProductScanTest(t *testing.T, testDir string) (*transaction.Transaction, *TableScan, *TableScan) {
+func setupProductScanTest(t *testing.T, testDir string) (*transaction.Transaction, *table.TableScan, *table.TableScan) {
 	// Setup database components
 	fileManager, err := file.NewManager(testDir, 400)
 	require.NoError(t, err)
@@ -33,7 +34,7 @@ func setupProductScanTest(t *testing.T, testDir string) (*transaction.Transactio
 	schema1.AddStringField("name", 20)
 
 	layout1 := record.NewLayoutFromSchema(schema1)
-	ts1, err := NewTableScan(tx, layout1, "Students")
+	ts1, err := table.NewTableScan(tx, layout1, "Students")
 	require.NoError(t, err)
 
 	// Insert student data
@@ -64,7 +65,7 @@ func setupProductScanTest(t *testing.T, testDir string) (*transaction.Transactio
 	schema2.AddStringField("course_name", 20)
 
 	layout2 := record.NewLayoutFromSchema(schema2)
-	ts2, err := NewTableScan(tx, layout2, "Courses")
+	ts2, err := table.NewTableScan(tx, layout2, "Courses")
 	require.NoError(t, err)
 
 	// Insert course data
@@ -362,13 +363,13 @@ func TestProductScanEmptyScans(t *testing.T) {
 		schema1 := record.NewSchema()
 		schema1.AddIntField("id1")
 		layout1 := record.NewLayoutFromSchema(schema1)
-		ts1, err := NewTableScan(tx, layout1, "EmptyBoth1")
+		ts1, err := table.NewTableScan(tx, layout1, "EmptyBoth1")
 		require.NoError(t, err)
 
 		schema2 := record.NewSchema()
 		schema2.AddIntField("id2")
 		layout2 := record.NewLayoutFromSchema(schema2)
-		ts2, err := NewTableScan(tx, layout2, "EmptyBoth2")
+		ts2, err := table.NewTableScan(tx, layout2, "EmptyBoth2")
 		require.NoError(t, err)
 
 		err = ts1.BeforeFirst()
@@ -398,13 +399,13 @@ func TestProductScanEmptyScans(t *testing.T) {
 		schema1 := record.NewSchema()
 		schema1.AddIntField("id1")
 		layout1 := record.NewLayoutFromSchema(schema1)
-		ts1, err := NewTableScan(tx, layout1, "NonEmpty2")
+		ts1, err := table.NewTableScan(tx, layout1, "NonEmpty2")
 		require.NoError(t, err)
 
 		schema2 := record.NewSchema()
 		schema2.AddIntField("id2")
 		layout2 := record.NewLayoutFromSchema(schema2)
-		ts2, err := NewTableScan(tx, layout2, "Empty2")
+		ts2, err := table.NewTableScan(tx, layout2, "Empty2")
 		require.NoError(t, err)
 
 		// Add one record to scan1
@@ -455,8 +456,8 @@ func TestProductScanWithSelectScan(t *testing.T) {
 	productScan := NewProductScan(ts1, ts2)
 
 	// Apply a filter: student_id = 1 (Alice only)
-	predicate := newTestPredicate("student_id", 1)
-	selectScan := NewSelectScan(productScan, predicate)
+	predicate := createEqualsPredicate("student_id", 1)
+	selectScan := NewSelectScan(productScan, *predicate)
 
 	err = selectScan.BeforeFirst()
 	require.NoError(t, err)

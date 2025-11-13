@@ -2,7 +2,7 @@ package metadata
 
 import (
 	"github.com/yashagw/cranedb/internal/record"
-	"github.com/yashagw/cranedb/internal/scan"
+	"github.com/yashagw/cranedb/internal/table"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -40,7 +40,7 @@ func (im *IndexManager) CreateIndex(indexName string, tableName string, fieldNam
 		return err
 	}
 
-	ts, err := scan.NewTableScan(tx, layout, IndexCatalogName)
+	ts, err := table.NewTableScan(tx, layout, IndexCatalogName)
 	if err != nil {
 		return err
 	}
@@ -75,7 +75,7 @@ func (im *IndexManager) GetIndexInfo(tableName string, tx *transaction.Transacti
 
 	result := make(map[string]*IndexInfo)
 
-	ts, err := scan.NewTableScan(tx, layout, IndexCatalogName)
+	ts, err := table.NewTableScan(tx, layout, IndexCatalogName)
 	if err != nil {
 		return nil, err
 	}

@@ -1,9 +1,13 @@
 package plan
 
 import (
+	"fmt"
+
 	"github.com/yashagw/cranedb/internal/metadata"
+	"github.com/yashagw/cranedb/internal/query"
 	"github.com/yashagw/cranedb/internal/record"
 	"github.com/yashagw/cranedb/internal/scan"
+	"github.com/yashagw/cranedb/internal/table"
 )
 
 var (
@@ -34,7 +38,11 @@ func (isp *IndexSelectPlan) Open() (scan.Scan, error) {
 	if err != nil {
 		return nil, err
 	}
-	return scan.NewIndexSelectScan(inputScan, index, isp.value), nil
+	inputTableScan, ok := inputScan.(*table.TableScan)
+	if !ok {
+		return nil, fmt.Errorf("input scan is not a TableScan")
+	}
+	return query.NewIndexSelectScan(inputTableScan, index, isp.value)
 }
 
 // BlocksAccessed returns index traversal cost plus matching data records.

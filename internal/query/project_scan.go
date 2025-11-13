@@ -1,20 +1,22 @@
-package scan
+package query
 
 import (
 	"fmt"
 	"slices"
+
+	"github.com/yashagw/cranedb/internal/scan"
 )
 
 var (
-	_ Scan = (*ProjectScan)(nil)
+	_ scan.Scan = (*ProjectScan)(nil)
 )
 
 type ProjectScan struct {
-	input     Scan
+	input     scan.Scan
 	fieldList []string
 }
 
-func NewProjectScan(input Scan, fieldList []string) *ProjectScan {
+func NewProjectScan(input scan.Scan, fieldList []string) *ProjectScan {
 	return &ProjectScan{
 		input:     input,
 		fieldList: fieldList,

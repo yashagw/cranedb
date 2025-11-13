@@ -10,7 +10,7 @@ import (
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
 	"github.com/yashagw/cranedb/internal/record"
-	"github.com/yashagw/cranedb/internal/scan"
+	"github.com/yashagw/cranedb/internal/table"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -58,7 +58,7 @@ func TestExpressionBasic(t *testing.T) {
 
 // constantScanWrapper wraps a TableScan to return Constants from GetValue
 type constantScanWrapper struct {
-	*scan.TableScan
+	*table.TableScan
 	schema *record.Schema
 }
 
@@ -102,7 +102,7 @@ func TestExpressionEvaluate(t *testing.T) {
 	require.NotNil(t, layout)
 
 	// Create TableScan
-	ts, err := scan.NewTableScan(tx, layout, "TestTable")
+	ts, err := table.NewTableScan(tx, layout, "TestTable")
 	require.NoError(t, err)
 	require.NotNil(t, ts)
 

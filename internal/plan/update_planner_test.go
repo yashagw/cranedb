@@ -8,7 +8,7 @@ import (
 	"github.com/yashagw/cranedb/internal/parse/parserdata"
 	"github.com/yashagw/cranedb/internal/query"
 	"github.com/yashagw/cranedb/internal/record"
-	"github.com/yashagw/cranedb/internal/scan"
+	"github.com/yashagw/cranedb/internal/table"
 )
 
 func TestBasicUpdatePlanner_ExecuteInsert(t *testing.T) {
@@ -39,7 +39,7 @@ func TestBasicUpdatePlanner_ExecuteInsert(t *testing.T) {
 
 	// Verify the insert
 	layout := record.NewLayoutFromSchema(schema)
-	ts, err := scan.NewTableScan(tx, layout, tableName)
+	ts, err := table.NewTableScan(tx, layout, tableName)
 	require.NoError(t, err)
 	err = ts.BeforeFirst()
 	require.NoError(t, err)
@@ -77,7 +77,7 @@ func TestBasicUpdatePlanner_ExecuteDelete(t *testing.T) {
 
 	// Insert test data
 	layout := record.NewLayoutFromSchema(schema)
-	ts, err := scan.NewTableScan(tx, layout, tableName)
+	ts, err := table.NewTableScan(tx, layout, tableName)
 	require.NoError(t, err)
 	err = ts.BeforeFirst()
 	require.NoError(t, err)
@@ -112,7 +112,7 @@ func TestBasicUpdatePlanner_ExecuteDelete(t *testing.T) {
 	assert.Equal(t, 1, count, "Should delete 1 record (id=3)")
 
 	// Verify deletion
-	ts, err = scan.NewTableScan(tx, layout, tableName)
+	ts, err = table.NewTableScan(tx, layout, tableName)
 	require.NoError(t, err)
 	err = ts.BeforeFirst()
 	require.NoError(t, err)
@@ -146,7 +146,7 @@ func TestBasicUpdatePlanner_ExecuteModify(t *testing.T) {
 
 	// Insert test data
 	layout := record.NewLayoutFromSchema(schema)
-	ts, err := scan.NewTableScan(tx, layout, tableName)
+	ts, err := table.NewTableScan(tx, layout, tableName)
 	require.NoError(t, err)
 	err = ts.BeforeFirst()
 	require.NoError(t, err)
@@ -178,7 +178,7 @@ func TestBasicUpdatePlanner_ExecuteModify(t *testing.T) {
 	assert.Equal(t, 1, count, "Should update 1 record")
 
 	// Verify update
-	ts, err = scan.NewTableScan(tx, layout, tableName)
+	ts, err = table.NewTableScan(tx, layout, tableName)
 	require.NoError(t, err)
 	updatedCount := 0
 	oldNameCount := 0

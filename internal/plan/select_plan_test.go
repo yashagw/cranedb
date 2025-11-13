@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/yashagw/cranedb/internal/query"
 	"github.com/yashagw/cranedb/internal/record"
-	"github.com/yashagw/cranedb/internal/scan"
+	"github.com/yashagw/cranedb/internal/table"
 )
 
 func TestSelectPlanMethods(t *testing.T) {
@@ -27,7 +27,7 @@ func TestSelectPlanMethods(t *testing.T) {
 	require.NoError(t, err)
 
 	// Insert some test data
-	ts, err := scan.NewTableScan(tx, layout, tableName)
+	ts, err := table.NewTableScan(tx, layout, tableName)
 	require.NoError(t, err)
 	err = ts.BeforeFirst()
 	require.NoError(t, err)
@@ -142,7 +142,7 @@ func TestSelectPlanRecordsOutputCalculation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Insert data with known distinct values
-	ts, err := scan.NewTableScan(tx, layout, tableName)
+	ts, err := table.NewTableScan(tx, layout, tableName)
 	require.NoError(t, err)
 	err = ts.BeforeFirst()
 	require.NoError(t, err)
