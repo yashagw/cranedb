@@ -52,7 +52,7 @@ func TestStatsManager_BasicOperations(t *testing.T) {
 	schema.AddStringField("name", 20)
 	layout := record.NewLayoutFromSchema(schema)
 
-	si := NewStatInfo(5, 100, layout)
+	si := NewStatInfo(5, 100, make(map[string]int))
 	require.NotNil(t, si)
 	assert.Equal(t, 5, si.BlocksAccessed())
 	assert.Equal(t, 100, si.RecordsOutput())
@@ -62,7 +62,8 @@ func TestStatsManager_BasicOperations(t *testing.T) {
 	// Test 3: Get stats for non-existent table
 	tx4 := transaction.NewTransaction(fm, lm, bm, lockTable)
 	sm2 := NewStatsManager(tm, tx4)
-	si2 := sm2.GetStatInfo("nonexistent", layout, tx4)
+	si2, err := sm2.GetStatInfo("nonexistent", layout, tx4)
+	require.NoError(t, err)
 	require.NotNil(t, si2)
 	assert.Equal(t, 0, si2.BlocksAccessed())
 	assert.Equal(t, 0, si2.RecordsOutput())
@@ -80,7 +81,8 @@ func TestStatsManager_BasicOperations(t *testing.T) {
 	require.NotNil(t, layout2)
 
 	sm3 := NewStatsManager(tm, tx6)
-	si3 := sm3.GetStatInfo("test_table", layout2, tx6)
+	si3, err := sm3.GetStatInfo("test_table", layout2, tx6)
+	require.NoError(t, err)
 	require.NotNil(t, si3)
 	assert.Equal(t, 0, si3.BlocksAccessed())
 	assert.Equal(t, 0, si3.RecordsOutput())
@@ -100,7 +102,8 @@ func TestStatsManager_BasicOperations(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get stats to populate cache
-	si4 := sm4.GetStatInfo("refresh_test", layout3, tx8)
+	si4, err := sm4.GetStatInfo("refresh_test", layout3, tx8)
+	require.NoError(t, err)
 	require.NotNil(t, si4)
 
 	// Simulate cache clearing (what happens when numCalls > 100 and numCalls % 100 == 0)
@@ -110,7 +113,8 @@ func TestStatsManager_BasicOperations(t *testing.T) {
 	sm4.mutex.Unlock()
 
 	// Verify cache was cleared - getting stats again should recalculate
-	si5 := sm4.GetStatInfo("refresh_test", layout3, tx8)
+	si5, err := sm4.GetStatInfo("refresh_test", layout3, tx8)
+	require.NoError(t, err)
 	require.NotNil(t, si5)
 	assert.NotNil(t, sm4.tableStats, "Table stats should not be nil after cache clear and recalculation")
 	tx8.Commit()
@@ -182,23 +186,21 @@ func TestStatsManager_DistinctValues(t *testing.T) {
 	// Test StatsManager with data
 	tx4 := transaction.NewTransaction(fm, lm, bm, lockTable)
 	sm := NewStatsManager(tm, tx4)
-	si := sm.GetStatInfo("test_table", layout, tx4)
+	si, err := sm.GetStatInfo("test_table", layout, tx4)
+	require.NoError(t, err)
 	require.NotNil(t, si)
 	assert.Equal(t, 5, si.RecordsOutput())
 	assert.Greater(t, si.BlocksAccessed(), 0)
 
 	// Test distinct values calculation
-	distinctIds, err := sm.GetDistinctValues("test_table", "id", layout, tx4)
-	require.NoError(t, err)
+	distinctIds := si.DistinctValues("id")
 	assert.Equal(t, 5, distinctIds, "Should have 5 distinct IDs")
 
-	distinctNames, err := sm.GetDistinctValues("test_table", "name", layout, tx4)
-	require.NoError(t, err)
+	distinctNames := si.DistinctValues("name")
 	assert.Equal(t, 3, distinctNames, "Should have 3 distinct names")
 
 	// Test caching
-	distinctIds2, err := sm.GetDistinctValues("test_table", "id", layout, tx4)
-	require.NoError(t, err)
+	distinctIds2 := si.DistinctValues("id")
 	assert.Equal(t, distinctIds, distinctIds2, "Cached result should match")
 	tx4.Commit()
 }

@@ -111,7 +111,8 @@ func TestMetadataManager_BasicOperations(t *testing.T) {
 
 	// Test 9: Get stat info through MetadataManager
 	tx9 := transaction.NewTransaction(fm, lm, bm, lockTable)
-	statInfo := mm.GetStatInfo("users", layout, tx9)
+	statInfo, err := mm.GetStatInfo("users", layout, tx9)
+	require.NoError(t, err)
 	require.NotNil(t, statInfo)
 	assert.Equal(t, 0, statInfo.BlocksAccessed(), "Empty table should have 0 blocks accessed")
 	assert.Equal(t, 0, statInfo.RecordsOutput(), "Empty table should have 0 records output")

@@ -1,6 +1,10 @@
 package query
 
-import "fmt"
+import (
+	"encoding/binary"
+	"fmt"
+	"hash/fnv"
+)
 
 // Constant represents either an integer or string constant value.
 type Constant struct {
@@ -83,4 +87,21 @@ func (c *Constant) IsInt() bool {
 // IsString returns true if the constant holds a string value.
 func (c *Constant) IsString() bool {
 	return c.strVal != nil
+}
+
+// Hash returns a hash of the constant.
+func (c *Constant) Hash() int {
+	hasher := fnv.New64a()
+
+	if c.intVal != nil {
+		var buf [9]byte
+		buf[0] = 0x01
+		binary.LittleEndian.PutUint64(buf[1:], uint64(int64(*c.intVal)))
+		_, _ = hasher.Write(buf[:])
+	} else {
+		_, _ = hasher.Write([]byte{0x02})
+		_, _ = hasher.Write([]byte(*c.strVal))
+	}
+
+	return int(hasher.Sum64())
 }

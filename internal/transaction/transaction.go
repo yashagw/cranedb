@@ -1,7 +1,6 @@
 package transaction
 
 import (
-	"log"
 	"sync"
 
 	"github.com/yashagw/cranedb/internal/buffer"
@@ -60,21 +59,15 @@ func NewTransaction(fileManager *file.Manager, logManager *dblog.Manager, buffer
 }
 
 func (t *Transaction) Commit() error {
-	log.Printf("[TX] Starting commit for tx=%d", t.txNum)
 	err := t.recoveryManager.Commit()
 	if err != nil {
-		log.Printf("[TX] RecoveryManager.Commit failed for tx=%d: %v", t.txNum, err)
 		return err
 	}
-	log.Printf("[TX] RecoveryManager.Commit succeeded for tx=%d", t.txNum)
 	err = t.concurrencyManager.release()
 	if err != nil {
-		log.Printf("[TX] ConcurrencyManager.release failed for tx=%d: %v", t.txNum, err)
 		return err
 	}
-	log.Printf("[TX] Locks released for tx=%d", t.txNum)
 	t.bufferList.UnpinAll()
-	log.Printf("[TX] Commit completed for tx=%d", t.txNum)
 	return nil
 }
 

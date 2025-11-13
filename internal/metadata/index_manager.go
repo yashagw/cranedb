@@ -110,15 +110,12 @@ func (im *IndexManager) GetIndexInfo(tableName string, tx *transaction.Transacti
 		if err != nil {
 			return nil, err
 		}
-		si := im.statsManager.GetStatInfo(tableName, tblLayout, tx)
-
-		ii := &IndexInfo{
-			indexName:   idxName,
-			fieldName:   fldName,
-			tableSchema: tblLayout.GetSchema(),
-			indexLayout: createIndexLayout(tblLayout, fldName),
-			stats:       si,
+		si, err := im.statsManager.GetStatInfo(tableName, tblLayout, tx)
+		if err != nil {
+			return nil, err
 		}
+		ii := NewIndexInfo(idxName, fldName, tblLayout.GetSchema(), tx, si)
+
 		result[fldName] = ii
 	}
 

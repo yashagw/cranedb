@@ -50,6 +50,6 @@ func (m *Manager) GetIndexInfo(tableName string, tx *transaction.Transaction) (m
 	return m.indexManager.GetIndexInfo(tableName, tx)
 }
 
-func (m *Manager) GetStatInfo(tableName string, layout *record.Layout, tx *transaction.Transaction) *StatInfo {
+func (m *Manager) GetStatInfo(tableName string, layout *record.Layout, tx *transaction.Transaction) (*StatInfo, error) {
 	return m.statsManager.GetStatInfo(tableName, layout, tx)
 }

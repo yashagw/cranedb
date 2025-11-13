@@ -2,7 +2,6 @@ package transaction
 
 import (
 	"errors"
-	"log"
 	"sync"
 	"time"
 
@@ -88,11 +87,9 @@ func (lt *LockTable) xLock(block *file.BlockID) error {
 			// No locks, we can acquire exclusive lock
 			lt.locks[key] = -1
 			lt.mu.Unlock()
-			log.Printf("[LOCK] Acquired X lock on %s:%d", key.filename, key.blkNum)
 			return nil
 		}
 
-		log.Printf("[LOCK] Waiting for X lock on %s:%d (current locks: %d)", key.filename, key.blkNum, lt.locks[key])
 		if lt.waiters[key] == nil {
 			lt.waiters[key] = make(chan struct{}, 1)
 		}
@@ -101,7 +98,6 @@ func (lt *LockTable) xLock(block *file.BlockID) error {
 
 		timeout := time.Until(deadline)
 		if timeout <= 0 {
-			log.Printf("[LOCK] X lock timeout on %s:%d", key.filename, key.blkNum)
 			return ErrLockAbort
 		}
 		timer := time.NewTimer(timeout)
@@ -109,9 +105,7 @@ func (lt *LockTable) xLock(block *file.BlockID) error {
 		select {
 		case <-waiter:
 			timer.Stop()
-			log.Printf("[LOCK] Woken up for X lock on %s:%d, retrying", key.filename, key.blkNum)
 		case <-timer.C:
-			log.Printf("[LOCK] X lock wait timeout on %s:%d", key.filename, key.blkNum)
 			return ErrLockAbort
 		}
 	}
@@ -130,14 +124,11 @@ func (lt *LockTable) unlock(block *file.BlockID) error {
 
 	if val == -1 {
 		delete(lt.locks, key)
-		log.Printf("[LOCK] Released X lock on %s:%d", key.filename, key.blkNum)
 	} else if val > 0 {
 		lt.locks[key]--
 		if lt.locks[key] == 0 {
 			delete(lt.locks, key)
-			log.Printf("[LOCK] Released last S lock on %s:%d", key.filename, key.blkNum)
 		} else {
-			log.Printf("[LOCK] Released S lock on %s:%d (remaining: %d)", key.filename, key.blkNum, lt.locks[key])
 		}
 	} else {
 		return ErrLockDoNotExist
@@ -147,7 +138,6 @@ func (lt *LockTable) unlock(block *file.BlockID) error {
 	if waiter, exists := lt.waiters[key]; exists {
 		select {
 		case waiter <- struct{}{}:
-			log.Printf("[LOCK] Notified waiters for %s:%d", key.filename, key.blkNum)
 		default:
 		}
 	}
