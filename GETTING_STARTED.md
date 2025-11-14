@@ -16,9 +16,9 @@ make run-server
 
 Server starts on port `8080` by default.
 
-To use a different port:
+To use a different port and database dir:
 ```bash
-PORT=9090 ./bin/server
+PORT=8082 DB_DIR=./cranedb_data make run-server
 ```
 
 ## Run Client
@@ -31,7 +31,7 @@ make run-client
 
 To connect to a different port:
 ```bash
-./bin/client --port 9090
+CRANEDB_PORT=8082 make run-client 
 ```
 
 ## Supported SQL
@@ -42,6 +42,7 @@ To connect to a different port:
 
 ### Statements
 - `CREATE TABLE` - Create a table
+- `CREATE INDEX` - Create an index
 - `INSERT INTO` - Insert records
 - `SELECT` - Query data
 - `UPDATE` - Modify records
@@ -77,6 +78,10 @@ CREATE TABLE orders (user_id INT, product VARCHAR(20));
 INSERT INTO orders (user_id, product) VALUES (1, 'Laptop');
 
 SELECT name, age, product FROM users, orders WHERE id = user_id;
+
+-- Index
+CREATE INDEX users_age_idx ON users (age);
+SELECT name, age FROM users WHERE age = 25;
 ```
 
 ## Tips
