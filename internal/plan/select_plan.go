@@ -80,3 +80,23 @@ func (sp *SelectPlan) DistinctValues(fldname string) (int, error) {
 func (sp *SelectPlan) Schema() *record.Schema {
 	return sp.p.Schema()
 }
+
+// Explain returns a string representation of the plan tree.
+func (sp *SelectPlan) Explain(indent string, lastChild bool) string {
+	predStr := sp.pred.String()
+	if predStr == "" {
+		predStr = "(no predicate)"
+	}
+	result := indent + "SelectPlan(predicate: " + predStr + ")\n"
+
+	// Determine child indent
+	childIndent := indent
+	if lastChild {
+		childIndent += "    "
+	} else {
+		childIndent += "│   "
+	}
+	childLines := sp.p.Explain(childIndent+"└─ ", true)
+	result += childLines
+	return result
+}

@@ -149,6 +149,19 @@ func (p *Parser) Query() (*parserdata.QueryData, error) {
 	return parserdata.NewQueryData(fields, tableNames, predicate), nil
 }
 
+// Explain parses EXPLAIN <query> and returns the query data wrapped in ExplainData
+func (p *Parser) Explain() (*parserdata.ExplainData, error) {
+	err := p.lexer.EatKeyword("explain")
+	if err != nil {
+		return nil, err
+	}
+	queryData, err := p.Query()
+	if err != nil {
+		return nil, err
+	}
+	return parserdata.NewExplainData(queryData), nil
+}
+
 func (p *Parser) UpdateCmd() (interface{}, error) {
 	if p.lexer.MatchKeyword("insert") {
 		return p.insert()

@@ -38,7 +38,7 @@ func (sm *StatsManager) GetStatInfo(tblName string, layout *record.Layout, tx *t
 	// Increment call count and check if refresh is needed (but don't block on refresh)
 	sm.mutex.Lock()
 	sm.numCalls++
-	shouldRefresh := sm.numCalls > 100 && sm.numCalls%100 == 0
+	shouldRefresh := sm.numCalls > 1000 && sm.numCalls%1000 == 0
 	sm.mutex.Unlock()
 
 	// If refresh is needed

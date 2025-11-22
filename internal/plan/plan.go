@@ -18,4 +18,6 @@ type Plan interface {
 	DistinctValues(fldname string) (int, error)
 	// Schema returns the schema of the output records produced by this plan node.
 	Schema() *record.Schema
+	// Explain returns a string representation of the plan tree for EXPLAIN statements.
+	Explain(indent string, lastChild bool) string
 }

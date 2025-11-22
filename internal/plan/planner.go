@@ -10,6 +10,7 @@ import (
 
 type QueryPlanner interface {
 	CreatePlan(queryData *parserdata.QueryData, tx *transaction.Transaction) (Plan, error)
+	ExplainPlan(explainData *parserdata.ExplainData, tx *transaction.Transaction) (string, error)
 }
 
 type UpdatePlanner interface {
@@ -40,6 +41,17 @@ func (p *Planner) CreatePlan(sql string, tx *transaction.Transaction) (Plan, err
 		return nil, err
 	}
 	return p.queryPlanner.CreatePlan(queryData, tx)
+}
+
+// ExplainPlan parses the EXPLAIN SQL statement and delegates to the query planner's ExplainPlan method.
+func (p *Planner) ExplainPlan(sql string, tx *transaction.Transaction) (string, error) {
+	parser := parse.NewParserFromString(sql)
+	explainData, err := parser.Explain()
+	if err != nil {
+		return "", err
+	}
+
+	return p.queryPlanner.ExplainPlan(explainData, tx)
 }
 
 func (p *Planner) ExecuteUpdate(sql string, tx *transaction.Transaction) (int, error) {

@@ -64,3 +64,28 @@ func (isp *IndexSelectPlan) DistinctValues(fieldName string) (int, error) {
 func (isp *IndexSelectPlan) Schema() *record.Schema {
 	return isp.p.Schema()
 }
+
+// Explain returns a string representation of the plan tree.
+func (isp *IndexSelectPlan) Explain(indent string, lastChild bool) string {
+	var valueStr string
+	switch v := isp.value.(type) {
+	case string:
+		valueStr = fmt.Sprintf("'%s'", v)
+	case int:
+		valueStr = fmt.Sprintf("%d", v)
+	default:
+		valueStr = fmt.Sprintf("%v", v)
+	}
+	result := indent + "IndexSelectPlan(" + isp.indexInfo.FieldName() + "=" + valueStr + ")\n"
+
+	// Determine child indent
+	childIndent := indent
+	if lastChild {
+		childIndent += "    "
+	} else {
+		childIndent += "│   "
+	}
+	childLines := isp.p.Explain(childIndent+"└─ ", true)
+	result += childLines
+	return result
+}

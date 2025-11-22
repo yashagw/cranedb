@@ -83,7 +83,17 @@ func printQueryResults(response *QueryResponse, duration time.Duration) {
 		return
 	}
 
-	if response.Type == "query" {
+	if response.Type == "explain" {
+		// Print the plan tree directly as a multiline string
+		if len(response.Rows) > 0 && len(response.Columns) > 0 {
+			if plan, ok := response.Rows[0]["plan"].(string); ok {
+				fmt.Println(plan)
+			} else {
+				fmt.Printf("%v\n", response.Rows[0]["plan"])
+			}
+		}
+		fmt.Printf("⏱️  Time: %v\n\n", duration)
+	} else if response.Type == "query" {
 		if len(response.Rows) == 0 {
 			fmt.Println("(0 rows)")
 			fmt.Printf("⏱️  Time: %v\n\n", duration)

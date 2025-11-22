@@ -162,10 +162,36 @@ func (s *Server) executeQuery(sql string) QueryResponse {
 		}
 	}()
 
-	// Check if it's a SELECT query by looking at the first keyword
+	// Check if it's a SELECT query or EXPLAIN by looking at the first keyword
 	// This avoids parsing the SQL twice (once here, once in planner methods)
 	trimmedSQL := strings.TrimSpace(strings.ToLower(sql))
 	isQuery := strings.HasPrefix(trimmedSQL, "select")
+	isExplain := strings.HasPrefix(trimmedSQL, "explain")
+
+	if isExplain {
+		planTree, err := s.planner.ExplainPlan(sql, tx)
+		if err != nil {
+			return QueryResponse{
+				Type:  "error",
+				Error: err.Error(),
+			}
+		}
+
+		if err := tx.Commit(); err != nil {
+			return QueryResponse{
+				Type:  "error",
+				Error: fmt.Sprintf("Failed to commit transaction: %v", err),
+			}
+		}
+		committed = true
+
+		// Return plan tree as a single row with a "plan" column
+		return QueryResponse{
+			Type:    "explain",
+			Rows:    []map[string]interface{}{{"plan": planTree}},
+			Columns: []string{"plan"},
+		}
+	}
 
 	if isQuery {
 		queryPlan, err := s.planner.CreatePlan(sql, tx)

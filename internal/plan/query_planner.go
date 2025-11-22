@@ -24,6 +24,16 @@ func NewBasicQueryPlanner(metadataManager *metadata.Manager) *BasicQueryPlanner 
 	}
 }
 
+// ExplainPlan creates a query plan and returns its string representation for EXPLAIN statements.
+func (p *BasicQueryPlanner) ExplainPlan(explainData *parserdata.ExplainData, tx *transaction.Transaction) (string, error) {
+	queryPlan, err := p.CreatePlan(explainData.QueryData(), tx)
+	if err != nil {
+		return "", err
+	}
+
+	return queryPlan.Explain("", true), nil
+}
+
 func (p *BasicQueryPlanner) CreatePlan(queryData *parserdata.QueryData, tx *transaction.Transaction) (Plan, error) {
 	tables := queryData.Tables()
 	predicate := queryData.Predicate()

@@ -95,3 +95,28 @@ func (ijp *IndexJoinPlan) DistinctValues(fldname string) (int, error) {
 func (ijp *IndexJoinPlan) Schema() *record.Schema {
 	return ijp.schema
 }
+
+// Explain returns a string representation of the plan tree.
+func (ijp *IndexJoinPlan) Explain(indent string, lastChild bool) string {
+	result := indent + "IndexJoinPlan(joinField: " + ijp.joinField + ")\n"
+
+	// Determine child indent
+	childIndent := indent
+	if lastChild {
+		childIndent += "    "
+	} else {
+		childIndent += "│   "
+	}
+
+	// First child (p1) - not last
+	p1Prefix := childIndent + "├─ "
+	p1Lines := ijp.p1.Explain(p1Prefix, false)
+	result += p1Lines + "\n"
+
+	// Second child (p2) - last
+	p2Prefix := childIndent + "└─ "
+	p2Lines := ijp.p2.Explain(p2Prefix, true)
+	result += p2Lines
+
+	return result
+}

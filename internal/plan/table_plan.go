@@ -63,3 +63,8 @@ func (p *TablePlan) DistinctValues(fldname string) (int, error) {
 func (p *TablePlan) Schema() *record.Schema {
 	return p.layout.GetSchema()
 }
+
+// Explain returns a string representation of the plan tree.
+func (p *TablePlan) Explain(indent string, lastChild bool) string {
+	return indent + "TablePlan(" + p.tableName + ")"
+}

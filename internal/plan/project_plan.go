@@ -54,3 +54,28 @@ func (pp *ProjectPlan) DistinctValues(fldname string) (int, error) {
 func (pp *ProjectPlan) Schema() *record.Schema {
 	return pp.schema
 }
+
+// Explain returns a string representation of the plan tree.
+func (pp *ProjectPlan) Explain(indent string, lastChild bool) string {
+	fields := pp.schema.Fields()
+	fieldsStr := "["
+	for i, f := range fields {
+		if i > 0 {
+			fieldsStr += ", "
+		}
+		fieldsStr += f
+	}
+	fieldsStr += "]"
+	result := indent + "ProjectPlan(fields: " + fieldsStr + ")\n"
+
+	// Determine child indent
+	childIndent := indent
+	if lastChild {
+		childIndent += "    "
+	} else {
+		childIndent += "│   "
+	}
+	childLines := pp.p.Explain(childIndent+"└─ ", true)
+	result += childLines
+	return result
+}
