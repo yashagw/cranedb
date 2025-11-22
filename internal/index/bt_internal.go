@@ -9,7 +9,15 @@ import (
 )
 
 // InternalNodeEntry represents an entry in an internal node
-// It contains a key value and a block number pointing to a child node
+// This is what gets passed up the tree when a node splits
+//
+// Structure:
+//   - DataValue: The key value that acts as a separator/routing value
+//   - BlockNumber: The block number of the child node (leaf or internal)
+//
+// Example: InternalNodeEntry{DataValue: 30, BlockNumber: 5}
+//
+//	Meaning: "For keys >= 30, navigate to block 5"
 type InternalNodeEntry struct {
 	DataValue   any
 	BlockNumber int
@@ -28,26 +36,32 @@ func NewInternalNodeEntry(dataValue any, blockNumber int) *InternalNodeEntry {
 // IMPORTANT: Internal nodes are used ONLY for navigation - they do NOT contain actual data.
 // Actual data is ALWAYS stored in leaf nodes.
 //
-// Internal nodes contain:
-//   - Keys: Act as separators/routing values to navigate down the tree
-//   - Block pointers: Point to child nodes (either other internal nodes or leaf nodes)
+// INTERNAL NODE STRUCTURE:
+//
+//	Each entry in an internal node contains:
+//	- "dataval": The key value that acts as a separator/routing value
+//	- "block": The block number of the child node (leaf or internal) to navigate to
+//	- "id": UNUSED (always 0, kept for layout compatibility with leaf nodes)
+//
+//	Example internal entry: [dataval=25, block=5, id=0]
+//	  Meaning: "For keys >= 25, navigate to block 5 (which may be a leaf or another internal node)"
+//
+// Flag semantics for internal pages (directory table):
+//   - flag >= 1: Internal node level
+//   - flag = 1: Points to leaf pages (leaf-level directory)
+//   - flag = 2: Points to internal pages at level 1
+//   - flag = 3: Points to internal pages at level 2
+//   - etc.
+//
+// IMPORTANT: Internal pages are ALWAYS in the directory table and have flag >= 1.
+// When traversing down the tree, we encounter leaf pages (from the leaf table)
+// which have flag < 1 (flag = -1 for no overflow, or flag >= 0 for overflow block number).
+// The check "flag < 1" is used to distinguish leaf pages from internal pages.
 //
 // Example internal node with entries [10→block5, 20→block8, 30→block12]:
-//   - Entry at slot 0 (key 10→block5): block5 contains data for keys < 20
-//     → This includes keys < 10, keys == 10, and keys >= 10 and < 20
+//   - Entry at slot 0 (key 10→block5): block5 contains data for keys >= 10 and < 20
 //   - Entry at slot 1 (key 20→block8): block8 contains data for keys >= 20 and < 30
 //   - Entry at slot 2 (key 30→block12): block12 contains data for keys >= 30
-//
-// Navigation rules (how findChildBlock routes keys):
-//   - Keys < 20: FindSlotBefore returns slot 0 → use block5
-//   - Keys == 20: FindSlotBefore returns slot 0, but slot+1 has exact match → increment to slot 1 → use block8
-//   - Keys > 20 and < 30: FindSlotBefore returns slot 1 → use block8
-//   - Keys >= 30: FindSlotBefore returns slot 2 (or higher) → use block12
-//
-// The keys (10, 20, 30) act as separators/routing values - they don't contain data themselves,
-// they just tell us which child block to navigate to find the actual data.
-//
-// The flag field stores the level: 0 = leaf, 1+ = internal node level
 type Internal struct {
 	page     *BTPage
 	filename string
@@ -76,10 +90,23 @@ func (in *Internal) Close() error {
 
 // findChildBlock finds which child block to follow for the given search key
 // This is the core navigation method for traversing down the B-tree.
-// Logic:
-//   - Find the slot before the search key using FindSlotBefore
-//   - If the next slot (slot+1) has an exact match with searchKey, use that slot instead
-//   - Return the block number stored at that slot
+//
+// HOW IT WORKS:
+//  1. Use FindSlotBefore to find the slot position before searchKey
+//  2. If slot is -1 (searchKey < all entries), use slot 0 (first entry)
+//  3. Check if the next slot (slot+1) has an exact match with searchKey
+//     → If yes, use that slot (exact match takes precedence)
+//  4. Return the block number stored at the selected slot
+//
+// Example: Internal node with entries [10→blk5, 20→blk8, 30→blk12]
+//   - findChildBlock(15): FindSlotBefore(15)=0, slot+1=1 has key 20 (no match)
+//     → Use slot 0 → return blk5
+//   - findChildBlock(20): FindSlotBefore(20)=0, slot+1=1 has key 20 (exact match!)
+//     → Use slot 1 → return blk8
+//   - findChildBlock(25): FindSlotBefore(25)=1, slot+1=2 has key 30 (no match)
+//     → Use slot 1 → return blk8
+//   - findChildBlock(5): FindSlotBefore(5)=-1 (less than all)
+//     → Use slot 0 → return blk5
 func (in *Internal) findChildBlock(searchKey any) (*file.BlockID, error) {
 	slot, err := in.page.FindSlotBefore(searchKey)
 	if err != nil {
@@ -113,7 +140,7 @@ func (in *Internal) findChildBlock(searchKey any) (*file.BlockID, error) {
 	}
 
 	// Get the block number at this slot
-	blkNum, err := in.page.GetBlockNum(slot)
+	blkNum, err := in.page.GetChildBlockNum(slot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get child number: %w", err)
 	}
@@ -122,20 +149,58 @@ func (in *Internal) findChildBlock(searchKey any) (*file.BlockID, error) {
 }
 
 // Search traverses down the B-tree to find the leaf block containing the search key
-// Returns the block number of the leaf node
+// Returns the block number of the leaf node (in the leaf table)
 //
-// Process:
-//  1. Find which child block to follow using findChildBlock
-//  2. Move to that child block
-//  3. Check if the child is an internal node (flag > 0) or leaf node (flag == 0)
-//  4. If internal node, repeat from step 1
-//  5. If leaf node, return the block number
+// FILE/BLOCK CONTEXT:
+//   - This method operates on blocks in the DIRECTORY file
+//   - When we read a block, we know it's from the directory file
+//   - At level 1, child blocks are in the LEAF file
+//   - At level 2+, child blocks are also in the DIRECTORY file
 //
-// Example: Searching for key 25 in a 3-level tree:
+// HOW IT WORKS:
+//  1. Check current page's flag:
+//     - If flag == 1: This is a leaf-level directory (points directly to leaves)
+//     → Find child block number, return immediately (child is in leaf file)
+//     - If flag > 1: This points to other internal nodes
+//     → Need to traverse deeper (children are also in directory file)
+//  2. Enter loop to traverse down:
+//     a. Move to child block (in directory file)
+//     b. Check child's flag:
+//     - If flag == 1: Level 1 internal → children are in LEAF file
+//     → Find child block number, return it (caller creates leaf BlockID)
+//     - If flag < 1: Unexpected (shouldn't happen in directory file)
+//     → Treat as leaf, return block number
+//     - If flag > 1: Higher level internal → children are in directory file
+//     → Continue loop, find next child block
 //
-//	Level 2 (root): [10→blk1, 30→blk2] → findChildBlock(25) → blk1
-//	Level 1: Move to blk1, findChildBlock(25) → blk4
-//	Level 0 (leaf): Move to blk4, flag==0 → Return blk4
+// FLAG INTERPRETATION:
+//   - In directory file: flag >= 1 means internal page (level number)
+//   - In directory file: flag < 1 is unexpected (shouldn't happen)
+//   - When we reach level 1, we know children are in leaf file, so we return block number
+//     and the caller creates a BlockID with the leaf file name
+//
+// DRY RUN: Searching for key 25 in a 3-level tree
+//
+//	Tree Structure:
+//	  Directory Block 0 (root, flag=2): [10→1, 30→2]
+//	  Directory Block 1 (level 1, flag=1): [15→4, 25→5]  ← children 4,5 are LEAF blocks
+//	  Leaf Block 5: [25→RID1, 25→RID2, 30→RID3]
+//
+//	Step 1: Start at Directory Block 0
+//	  → flag = 2 (not level 1)
+//	  → findChildBlock(25) → BlockID(dirFile, 1)
+//	  → Enter loop
+//
+//	Step 2: Move to Directory Block 1
+//	  → flag = 1 (level 1!)
+//	  → IsLevel1Internal(1) = true → Special case!
+//	  → findChildBlock(25) → BlockID(dirFile, 5)
+//	  → Return 5 (this is a leaf file block number)
+//
+//	Step 3: Caller creates Leaf BlockID(leafFile, 5)
+//	  → Search complete!
+//
+// Note: The returned block number is in the LEAF table, not the directory table.
 func (in *Internal) Search(searchKey any) (int, error) {
 	// Check the flag of the current page first
 	flag, err := in.page.GetFlag()
@@ -143,8 +208,9 @@ func (in *Internal) Search(searchKey any) (int, error) {
 		return 0, fmt.Errorf("failed to get flag: %w", err)
 	}
 
-	// If current page is a leaf-level directory (flag == 0), find child and return immediately
-	if flag <= 0 {
+	// Internal pages start at level 1 (flag >= 1)
+	// If current page is level 1 (points to leaf nodes), find child and return immediately
+	if IsLevel1Internal(flag) {
 		childBlk, err := in.findChildBlock(searchKey)
 		if err != nil {
 			return 0, fmt.Errorf("failed to find child block: %w", err)
@@ -152,7 +218,7 @@ func (in *Internal) Search(searchKey any) (int, error) {
 		return childBlk.Number(), nil
 	}
 
-	// Current page is an internal node (flag > 0), traverse down
+	// Current page is an internal node (flag > 1), traverse down
 	childBlk, err := in.findChildBlock(searchKey)
 	if err != nil {
 		return 0, fmt.Errorf("failed to find child block: %w", err)
@@ -160,7 +226,6 @@ func (in *Internal) Search(searchKey any) (int, error) {
 
 	// Keep traversing down while we're still in internal nodes
 	for {
-		// Save transaction and layout before closing current page
 		tx := in.page.GetTransaction()
 		layout := in.page.GetLayout()
 		in.page.Close()
@@ -172,18 +237,32 @@ func (in *Internal) Search(searchKey any) (int, error) {
 		}
 		in.page = page
 
-		// Check if the child we moved to is a leaf node
+		// Check the flag of the child we moved to
 		childFlag, err := in.page.GetFlag()
 		if err != nil {
 			return 0, fmt.Errorf("failed to get child flag: %w", err)
 		}
 
-		// If child is a leaf node, return its block number
-		if childFlag <= 0 {
+		// If child is level 1, it points to leaf nodes (in leaf file)
+		// We need to handle this specially because findChildBlock returns
+		// a BlockID with directory filename, but children are in leaf file
+		if IsLevel1Internal(childFlag) {
+			childBlk, err := in.findChildBlock(searchKey)
+			if err != nil {
+				return 0, fmt.Errorf("failed to find child block: %w", err)
+			}
+			// Return the block number (caller will create BlockID with leaf file name)
+			return childBlk.Number(), nil
+		}
+
+		// If child is a leaf node (flag < 1), we're done traversing
+		// This shouldn't normally happen in directory file, but we handle it
+		if IsLeafPage(childFlag) {
 			return in.page.GetCurrentBlock().Number(), nil
 		}
 
-		// Child is also an internal node, find its child block
+		// Child is also an internal node (flag > 1), find its child block
+		// and continue traversing
 		childBlk, err = in.findChildBlock(searchKey)
 		if err != nil {
 			return 0, fmt.Errorf("failed to find child block: %w", err)
@@ -194,17 +273,26 @@ func (in *Internal) Search(searchKey any) (int, error) {
 // insertEntry inserts a new entry into the current internal node page
 // Returns an InternalNodeEntry if the page was split, nil otherwise
 //
-// Process:
+// HOW IT WORKS:
 //  1. Find the correct sorted position using FindSlotBefore
-//  2. Insert the entry at that position
-//  3. If page is full, split it at the middle and return the new entry for parent
-//  4. If not full, return nil (no split needed)
+//     → This maintains the sorted order of entries
+//  2. Insert the entry at that position (shifts existing entries)
+//  3. Check if page is full:
+//     - If NOT full: Return nil (no split, done)
+//     - If full: Split at middle position
+//     → Split the page, keeping same level/flag
+//     → Return InternalNodeEntry(splitKey, newBlockNumber) for parent
 //
-// Example: Insert entry (25, block10) into page [10→blk1, 20→blk2, 30→blk3]
+// Example: Insert entry (25, blk10) into page [10→blk1, 20→blk2, 30→blk3]
 //
-//	FindSlotBefore(25) returns slot=1 (after 20, before 30)
-//	Insert at slot 2 → [10→blk1, 20→blk2, 25→blk10, 30→blk3]
-//	If full, split at middle → return entry for parent
+//	→ FindSlotBefore(25) = 1 (after 20, before 30)
+//	→ Insert at slot 2 → [10→blk1, 20→blk2, 25→blk10, 30→blk3]
+//	→ If not full, return nil
+//	→ If full, split at middle (slot 2), return InternalNodeEntry(25, newBlk)
+//
+// Note: The split key is the first key in the new (right) page.
+//
+//	This key is used by the parent to route searches to the new block.
 func (in *Internal) insertEntry(e *InternalNodeEntry) (*InternalNodeEntry, error) {
 	// Find the insertion position (slot after the position returned by FindSlotBefore)
 	newSlot, err := in.page.FindSlotBefore(e.DataValue)
@@ -258,18 +346,38 @@ func (in *Internal) insertEntry(e *InternalNodeEntry) (*InternalNodeEntry, error
 // MakeNewRoot creates a new root when the current root splits
 // This increases the tree height by one level
 //
-// Process:
-//  1. Get the first value and level from current root
-//  2. Split current root at position 0 (transfer ALL records to new block)
-//  3. Create two entries: old root entry and new entry
-//  4. Insert both entries into current (now empty) root
-//  5. Increment the level flag
+// IMPORTANT: This method does NOT change the block number of the root!
+// The root always stays at the same block (directory block 0), but:
+//   - Its contents change (old entries moved out, new entries inserted)
+//   - Its flag changes (level increases: 1 → 2, 2 → 3, etc.)
 //
-// Example: Root [10→blk1, 20→blk2, 30→blk3] splits, new entry is (25, blk4)
+// HOW IT WORKS:
+//  1. Get the first key value from current root (needed for the old root entry)
+//  2. Get the current level (flag value)
+//  3. Split at position 0: This transfers ALL records to a new block
+//     → Current root block becomes empty (ready for new entries)
+//     → New block contains all the old root's entries
+//  4. Create entry for the old root: (firstKey, newBlockNumber)
+//  5. Insert both entries into the now-empty root block:
+//     → Old root entry: points to the block containing old root's entries
+//     → New entry: the entry that caused the split
+//  6. Increment the level flag (root is now one level higher)
 //
-//	Split(0) → Current: [], New: [10→blk1, 20→blk2, 30→blk3]
-//	Insert (10, newBlk) and (25, blk4) → Current: [10→newBlk, 25→blk4]
-//	Set flag to level+1 → Now level 2 root
+// Example: Root at level 1 [10→blk1, 20→blk2, 30→blk3] splits, new entry is (25, blk4)
+//
+//	Before:
+//	  Directory Block 0: [10→blk1, 20→blk2, 30→blk3] (flag=1, FULL!)
+//
+//	After Split(0):
+//	  Directory Block 0: [] (empty, flag still 1)
+//	  Directory Block 1: [10→blk1, 20→blk2, 30→blk3] (old root moved here)
+//
+//	After Insert entries:
+//	  Directory Block 0: [10→blk1, 25→blk4] (flag=2, now level 2!)
+//	  Directory Block 1: [10→blk1, 20→blk2, 30→blk3] (unchanged)
+//
+// Result: Tree height increased by 1. Old root entries are now one level down.
+// Root block number stays the same (block 0), but its contents and level changed.
 func (in *Internal) MakeNewRoot(e *InternalNodeEntry) error {
 	// Get the first value from current root
 	firstVal, err := in.page.GetVal(0, "dataval")
@@ -308,38 +416,57 @@ func (in *Internal) MakeNewRoot(e *InternalNodeEntry) error {
 // Insert inserts a new entry into the B-tree
 // Returns an InternalNodeEntry if the current node was split, nil otherwise
 //
-// Process:
-//  1. If this is a leaf node (flag == 0), delegate to leaf insertion
-//     (Note: Internal nodes typically don't have flag == 0, but this handles edge cases)
-//  2. Otherwise, find the appropriate child internal node
-//  3. Recursively insert into that child
-//  4. If child split, insert the returned entry into this node
+// IMPORTANT: This method is called with a split entry from a CHILD node.
+// The entry e represents a new block that was created when a child split.
 //
-// Example: Insert (25, blk10) into internal node at level 1
+// HOW IT WORKS:
+//  1. Check the flag to determine what this node points to:
+//     - If flag == 1: Points to LEAF nodes
+//     → Insert the entry directly into this node (no recursion)
+//     → The entry came from a leaf split, so we just add it here
+//     - If flag > 1: Points to INTERNAL nodes
+//     → Find which child internal node to insert into
+//     → Recursively call Insert on that child
+//     → If child split, insert the returned entry into this node
+//  2. If this node becomes full and splits, return entry for parent
 //
-//	Find child block for 25 → blk3 (level 0 leaf)
-//	Insert into leaf → returns (30, blk5) if leaf split
-//	Insert (30, blk5) into this internal node
+// Example: Insert InternalNodeEntry(30, blk5) into level 1 internal node
+//
+//	(This entry came from a leaf split)
+//	→ flag == 1, so insert directly: [10→blk1, 20→blk2, 30→blk5]
+//	→ If this node splits, return entry for parent (level 2)
+//
+// Example: Insert InternalNodeEntry(50, blk10) into level 2 internal node
+//
+//	→ flag == 2, so find child: findChildBlock(50) → blk3 (level 1 internal)
+//	→ Recursively insert into blk3
+//	→ If blk3 splits, insert the returned entry into this node
 func (in *Internal) Insert(e *InternalNodeEntry) (*InternalNodeEntry, error) {
 	flag, err := in.page.GetFlag()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get flag: %w", err)
 	}
 
-	// If this is a leaf node (flag == 0), we shouldn't be in Internal
-	// This case is typically handled by the caller (BTreeIndex)
-	// But we handle it here for completeness
-	if flag == 0 {
+	// Internal pages start at level 1 (flag >= 1)
+	// If flag < 1, this is not an internal page (should not happen)
+	if !IsInternalPage(flag) {
+		return nil, fmt.Errorf("invalid internal page flag: %d (expected >= 1)", flag)
+	}
+
+	// If flag == 1, this internal node points to leaf nodes
+	// The entry e is a split entry from a leaf, so insert it directly into this node
+	if IsLevel1Internal(flag) {
 		return in.insertEntry(e)
 	}
 
+	// Flag > 1: This internal node points to other internal nodes
 	// Find which child internal node to insert into
 	childBlk, err := in.findChildBlock(e.DataValue)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find child block: %w", err)
 	}
 
-	// Recursively insert into the child
+	// Recursively insert into the child internal node
 	child, err := NewInternal(in.page.GetTransaction(), childBlk, in.page.GetLayout())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create child internal: %w", err)

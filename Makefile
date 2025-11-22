@@ -33,7 +33,8 @@ build-client:
 clean:
 	@echo "Cleaning up..."
 	@rm -rf bin/
-	@rm -rf cranedb_data/*.tbl cranedb_data/*.log
+	@rm -rf cranedb_data2/**
+	@rm -rf cranedb_data/**
 	@echo "✓ Clean complete"
 
 # Test targets

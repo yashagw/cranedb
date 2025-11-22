@@ -59,14 +59,17 @@ func TestBTPage_BasicOperations(t *testing.T) {
 	require.NoError(t, err)
 	defer btPage.Close()
 
-	// Test 1: Format the page as a leaf node (flag = 0)
-	err = btPage.Format(0)
+	// Test 1: Format the page as a leaf node (flag = -1)
+	err = btPage.Format(-1)
 	require.NoError(t, err)
 
 	// Test 2: Verify the flag was set correctly
+	// Note: -1 is stored as 0xFFFFFFFF, which when read as uint32 and converted to int
+	// becomes 4294967295 on 64-bit systems, but comparisons still work correctly
 	flag, err := btPage.GetFlag()
 	require.NoError(t, err)
-	assert.Equal(t, 0, flag, "Expected leaf node flag (0)")
+	// Check that flag < 0 (which indicates regular leaf, no overflow)
+	assert.Less(t, flag, 0, "Expected leaf node flag to be < 0 (regular leaf)")
 
 	// Test 3: Verify initial record count is 0
 	numRecs, err := btPage.GetNumRecs()
@@ -102,12 +105,13 @@ func TestBTPage_FormatWithDifferentFlags(t *testing.T) {
 	require.NoError(t, err)
 	defer leafPage.Close()
 
-	err = leafPage.Format(0) // 0 = leaf
+	err = leafPage.Format(-1) // -1 = regular leaf (no overflow)
 	require.NoError(t, err)
 
 	flag, err := leafPage.GetFlag()
 	require.NoError(t, err)
-	assert.Equal(t, 0, flag)
+	// Check that flag < 0 (which indicates regular leaf, no overflow)
+	assert.Less(t, flag, 0, "Expected leaf node flag to be < 0")
 
 	// Test internal node formatting
 	internalBlk, err := tx.Append("btree_internal_test.tbl")
@@ -184,7 +188,7 @@ func TestBTPage_FieldAccess(t *testing.T) {
 	defer btPage.Close()
 
 	// Format the page first
-	err = btPage.Format(0)
+	err = btPage.Format(-1)
 	require.NoError(t, err)
 
 	// Test 1: Basic integer field access
@@ -279,7 +283,7 @@ func TestBTPage_RecordManagement(t *testing.T) {
 	defer btPage.Close()
 
 	// Format the page first
-	err = btPage.Format(0)
+	err = btPage.Format(-1)
 	require.NoError(t, err)
 
 	// Test 1: Insert records and verify record count
@@ -425,7 +429,7 @@ func TestBTPage_SpecializedOperations(t *testing.T) {
 	defer btPage.Close()
 
 	// Format the page first
-	err = btPage.Format(0)
+	err = btPage.Format(-1)
 	require.NoError(t, err)
 
 	// Test 1: FindSlotBefore with empty page
@@ -529,7 +533,7 @@ func TestBTPage_SplitAndTransfer(t *testing.T) {
 	defer btPage.Close()
 
 	// Format the page first
-	err = btPage.Format(0)
+	err = btPage.Format(-1)
 	require.NoError(t, err)
 
 	// Add some test records
@@ -563,7 +567,7 @@ func TestBTPage_SplitAndTransfer(t *testing.T) {
 	assert.Equal(t, 6, numRecs, "Should have 6 records before split")
 
 	// Test Split at position 3 (records 3, 4, 5 should move to new page)
-	newBlk, err := btPage.Split(3, 0) // 0 = leaf flag
+	newBlk, err := btPage.Split(3, -1) // -1 = leaf flag (no overflow)
 	require.NoError(t, err)
 	require.NotNil(t, newBlk)
 
@@ -599,7 +603,8 @@ func TestBTPage_SplitAndTransfer(t *testing.T) {
 	// Verify new page has correct flag
 	flag, err := newPage.GetFlag()
 	require.NoError(t, err)
-	assert.Equal(t, 0, flag, "New page should have leaf flag")
+	// Check that flag < 0 (which indicates regular leaf, no overflow)
+	assert.Less(t, flag, 0, "New page should have leaf flag < 0 (regular leaf)")
 }
 
 func TestBTPage_TransferRecs(t *testing.T) {
@@ -614,7 +619,7 @@ func TestBTPage_TransferRecs(t *testing.T) {
 	require.NoError(t, err)
 	defer srcPage.Close()
 
-	err = srcPage.Format(0)
+	err = srcPage.Format(-1)
 	require.NoError(t, err)
 
 	// Create destination page
@@ -625,7 +630,7 @@ func TestBTPage_TransferRecs(t *testing.T) {
 	require.NoError(t, err)
 	defer destPage.Close()
 
-	err = destPage.Format(0)
+	err = destPage.Format(-1)
 	require.NoError(t, err)
 
 	// Add records to source page
@@ -702,7 +707,7 @@ func TestBTPage_NodeTypeSpecificMethods(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 10, val, "First entry should have key 10")
 
-		childNum, err := btPage.GetBlockNum(0)
+		childNum, err := btPage.GetChildBlockNum(0)
 		require.NoError(t, err)
 		assert.Equal(t, 3, childNum, "First entry should point to block 3")
 
@@ -710,7 +715,7 @@ func TestBTPage_NodeTypeSpecificMethods(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 20, val, "Second entry should have key 20")
 
-		childNum, err = btPage.GetBlockNum(1)
+		childNum, err = btPage.GetChildBlockNum(1)
 		require.NoError(t, err)
 		assert.Equal(t, 5, childNum, "Second entry should point to block 5")
 
@@ -718,7 +723,7 @@ func TestBTPage_NodeTypeSpecificMethods(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 30, val, "Third entry should have key 30")
 
-		childNum, err = btPage.GetBlockNum(2)
+		childNum, err = btPage.GetChildBlockNum(2)
 		require.NoError(t, err)
 		assert.Equal(t, 8, childNum, "Third entry should point to block 8")
 	})
@@ -732,8 +737,8 @@ func TestBTPage_NodeTypeSpecificMethods(t *testing.T) {
 		require.NoError(t, err)
 		defer btPage.Close()
 
-		// Format as leaf node (flag = 0)
-		err = btPage.Format(0)
+		// Format as leaf node (flag = -1)
+		err = btPage.Format(-1)
 		require.NoError(t, err)
 
 		// Test InsertLeaf

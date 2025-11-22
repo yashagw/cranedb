@@ -97,7 +97,7 @@ func setupIndexSelectScanTest(t *testing.T, testDir string) (*transaction.Transa
 	indexLayout := record.NewLayoutFromSchema(indexSchema)
 
 	// Create hash index
-	hashIndex, err := index.NewHashIndex(tx, indexName, indexLayout)
+	hashIndex, err := index.NewBTreeIndex(tx, indexName, indexLayout)
 	require.NoError(t, err)
 
 	// Populate the index with data from the table
@@ -362,7 +362,7 @@ func TestIndexSelectScanWithEmptyTable(t *testing.T) {
 	indexSchema.AddIntField("dataval")
 	indexLayout := record.NewLayoutFromSchema(indexSchema)
 
-	hashIndex, err := index.NewHashIndex(tx, indexName, indexLayout)
+	hashIndex, err := index.NewBTreeIndex(tx, indexName, indexLayout)
 	require.NoError(t, err)
 
 	// Test IndexSelectScan on empty table

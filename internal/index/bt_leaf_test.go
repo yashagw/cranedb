@@ -57,7 +57,7 @@ func getPageCapacity(t *testing.T, tx *transaction.Transaction, layout *record.L
 
 	page, err := NewBTPage(tx, blk, layout)
 	require.NoError(t, err)
-	err = page.Format(0)
+	err = page.Format(-1)
 	require.NoError(t, err)
 
 	// Insert records until page is full
@@ -96,7 +96,7 @@ func TestLeaf_Next_Scenarios(t *testing.T) {
 
 		page, err := NewBTPage(tx, blk, layout)
 		require.NoError(t, err)
-		err = page.Format(0)
+		err = page.Format(-1) // Regular leaf page (no overflow)
 		require.NoError(t, err)
 		page.Close()
 
@@ -120,7 +120,7 @@ func TestLeaf_Next_Scenarios(t *testing.T) {
 
 		page, err := NewBTPage(tx, blk, layout)
 		require.NoError(t, err)
-		err = page.Format(0)
+		err = page.Format(-1) // Regular leaf page (no overflow)
 		require.NoError(t, err)
 
 		// Insert some test records
@@ -188,7 +188,7 @@ func TestLeaf_Next_Scenarios(t *testing.T) {
 
 		page, err := NewBTPage(tx, blk, layout)
 		require.NoError(t, err)
-		err = page.Format(0)
+		err = page.Format(-1) // Regular leaf page (no overflow)
 		require.NoError(t, err)
 
 		// Fill page with same key to trigger overflow
@@ -215,7 +215,7 @@ func TestLeaf_Next_Scenarios(t *testing.T) {
 
 			overflowPage, err := NewBTPage(tx, overflowBlk, layout)
 			require.NoError(t, err)
-			err = overflowPage.Format(0)
+			err = overflowPage.Format(-1)
 			require.NoError(t, err)
 
 			// Add one more record to overflow
@@ -284,7 +284,7 @@ func TestLeaf_Insert_Scenarios(t *testing.T) {
 
 		page, err := NewBTPage(tx, blk, layout)
 		require.NoError(t, err)
-		err = page.Format(0)
+		err = page.Format(-1) // Regular leaf page (no overflow)
 		require.NoError(t, err)
 		page.Close()
 
@@ -333,7 +333,7 @@ func TestLeaf_Insert_Scenarios(t *testing.T) {
 
 		page, err := NewBTPage(tx, blk, layout)
 		require.NoError(t, err)
-		err = page.Format(0)
+		err = page.Format(-1) // Regular leaf page (no overflow)
 		require.NoError(t, err)
 		page.Close()
 
@@ -374,7 +374,7 @@ func TestLeaf_Insert_Scenarios(t *testing.T) {
 
 		page, err := NewBTPage(tx, blk, layout)
 		require.NoError(t, err)
-		err = page.Format(0)
+		err = page.Format(-1) // Regular leaf page (no overflow)
 		require.NoError(t, err)
 		page.Close()
 
@@ -450,7 +450,7 @@ func TestLeaf_Insert_Scenarios(t *testing.T) {
 
 		page, err := NewBTPage(tx, blk, layout)
 		require.NoError(t, err)
-		err = page.Format(0)
+		err = page.Format(-1) // Regular leaf page (will set overflow flag later)
 		require.NoError(t, err)
 
 		// Create a page with records and simulate overflow
@@ -470,7 +470,7 @@ func TestLeaf_Insert_Scenarios(t *testing.T) {
 		require.NoError(t, err)
 		overflowPage, err := NewBTPage(tx, overflowBlk, layout)
 		require.NoError(t, err)
-		err = overflowPage.Format(0)
+		err = overflowPage.Format(-1) // Regular leaf page (overflow flag will be set by parent)
 		require.NoError(t, err)
 
 		// Add some records to overflow
@@ -528,7 +528,7 @@ func TestLeaf_Insert_Scenarios(t *testing.T) {
 
 		page, err := NewBTPage(tx, blk, layout)
 		require.NoError(t, err)
-		err = page.Format(0)
+		err = page.Format(-1) // Regular leaf page (no overflow)
 		require.NoError(t, err)
 		page.Close()
 
@@ -573,7 +573,7 @@ func TestLeaf_Delete(t *testing.T) {
 
 	page, err := NewBTPage(tx, blk, layout)
 	require.NoError(t, err)
-	err = page.Format(0)
+	err = page.Format(-1)
 	require.NoError(t, err)
 	page.Close()
 

@@ -11,25 +11,38 @@ import (
 // Leaf represents a B-tree leaf node that stores key-value pairs
 // Each entry contains a key (dataval) and a record identifier (RID)
 //
+// Flag semantics for leaf pages:
+//   - flag = -1: Regular leaf page with no overflow
+//   - flag >= 0: Leaf page with overflow (flag contains the block number of the overflow block)
+//
 // Overflow Handling:
 //   - When a leaf page is full and all records have the same key, we create an "overflow" block
-//   - The flag field stores the block number of the overflow block (if flag >= 0, it's an overflow block number)
+//   - The flag field stores the block number of the overflow block
 //   - This allows us to handle many duplicate keys efficiently
+//   - Overflow blocks are also leaf pages (flag = -1 or flag >= 0 for chained overflow)
 type Leaf struct {
-	searchKey     any
-	page          *BTPage // The B-tree page containing the leaf node data
-	currentSlot   int
-	filename      string
-	overflowDepth int // Track depth of overflow traversal to prevent infinite loops
+	searchKey   any
+	page        *BTPage // The B-tree page containing the leaf node data
+	currentSlot int
+	filename    string
 }
 
 // NewLeaf creates a new B-tree leaf node for the specified block
 // It positions the cursor immediately before the first record that matches the search key
 //
+// HOW IT WORKS:
+//  1. Opens the leaf page at the specified block
+//  2. Uses FindSlotBefore to locate the position before the first record >= searchKey
+//  3. Sets currentSlot to that position (so Next() will find the first matching record)
+//
 // Example: NewLeaf(tx, blk, layout, 25) on a leaf page with keys [10, 20, 30, 40]:
 //
-//	The leaf node is created and currentSlot is set to 1 (position before key 30)
-//	This allows Next() to find the first record >= 25
+//	FindSlotBefore(25) returns 1 (position after 20, before 30)
+//	The leaf node is created and currentSlot is set to 1
+//	Next() will increment to slot 2 and find key 30 (first record >= 25)
+//
+// Note: If searchKey matches existing records, currentSlot points before them,
+// so Next() will find all matching records in order.
 func NewLeaf(tx *transaction.Transaction, blk *file.BlockID, layout *record.Layout, searchKey any) (*Leaf, error) {
 	page, err := NewBTPage(tx, blk, layout)
 	if err != nil {
@@ -62,8 +75,23 @@ func (ln *Leaf) Close() error {
 // Next moves to the next record with the same search key
 // Returns true if a matching record is found, false otherwise
 //
-// This method handles overflow blocks: if we reach the end of the current page
-// and there's an overflow block (flag >= 0), we move to that block and continue searching.
+// HOW IT WORKS:
+//  1. Increments currentSlot to check the next record
+//  2. If we've reached the end of the page, tries to move to overflow block (if exists)
+//  3. Checks if the current record's key matches searchKey
+//  4. Returns true if match found, false if no more matches
+//
+// Overflow Handling:
+//   - If we reach the end of the current page and flag >= 0, there's an overflow block
+//   - We only follow overflow if searchKey matches the first key in the current page
+//   - This ensures we only follow overflow for the correct key
+//   - Overflow blocks can chain (overflow block can have its own overflow)
+//
+// Example: Searching for key 25 in a page with [25, 25, 30, 40] and overflow block 5:
+//   - currentSlot starts at 1 (before first 25)
+//   - Next() → currentSlot=2, finds key 25, returns true
+//   - Next() → currentSlot=3, finds key 30 (different), returns false
+//   - If overflow exists and first key is 25, we'd move to overflow and continue
 func (ln *Leaf) Next() (bool, error) {
 	for {
 		ln.currentSlot++
@@ -110,25 +138,19 @@ func (ln *Leaf) Next() (bool, error) {
 //
 // Logic:
 //   - If flag >= 0, it contains the block number of the overflow block
+//   - Regular leaf pages have flag = -1 (no overflow)
 //   - We only follow overflow if searchKey matches the first key in the current page
 //   - This ensures we only follow overflow for the correct key
-//   - Maximum depth check prevents infinite loops (shouldn't need more than 1000 overflow blocks)
 func (ln *Leaf) tryOverflow() (bool, error) {
-	// Safety check: prevent infinite loops by limiting overflow depth
-	// With only 3 records in the test, we shouldn't need any overflow blocks
-	// If we're hitting this limit, something is wrong with the overflow chain
-	const maxOverflowDepth = 10
-	if ln.overflowDepth >= maxOverflowDepth {
-		flag, _ := ln.page.GetFlag()
-		return false, fmt.Errorf("overflow depth exceeded %d (current: %d), possible infinite loop - flag=%d", maxOverflowDepth, ln.overflowDepth, flag)
-	}
 	flag, err := ln.page.GetFlag()
 	if err != nil {
 		return false, fmt.Errorf("failed to get flag: %w", err)
 	}
 
-	// Check if there's an overflow block (flag >= 0 means overflow block number)
-	if flag < 0 {
+	// Check if there's an overflow block
+	// Regular leaf pages have flag = -1 (no overflow)
+	// Leaf pages with overflow have flag >= 0 (flag contains overflow block number)
+	if !HasOverflow(flag) {
 		return false, nil // No overflow block
 	}
 
@@ -152,30 +174,32 @@ func (ln *Leaf) tryOverflow() (bool, error) {
 	}
 
 	// Move to overflow block
-	// Save transaction and layout before closing page
 	tx := ln.page.GetTransaction()
 	layout := ln.page.GetLayout()
 	ln.page.Close()
 
-	nextBlk := file.NewBlockID(ln.filename, flag)
+	// Get overflow block number from flag
+	overflowBlockNum, err := GetOverflowBlock(flag)
+	if err != nil {
+		return false, fmt.Errorf("failed to get overflow block number: %w", err)
+	}
+	overflowBlk := file.NewBlockID(ln.filename, overflowBlockNum)
 
 	// Check if the overflow block actually exists in the file
 	fileSize, err := tx.Size(ln.filename)
 	if err != nil {
 		return false, fmt.Errorf("failed to get file size: %w", err)
 	}
-	if nextBlk.Number() >= fileSize {
-		// Overflow block doesn't exist - this shouldn't happen, but handle gracefully
-		return false, nil
+	if overflowBlk.Number() >= fileSize {
+		return false, fmt.Errorf("overflow block %s does not exist in file %s", overflowBlk.String(), ln.filename)
 	}
 
-	page, err := NewBTPage(tx, nextBlk, layout)
+	page, err := NewBTPage(tx, overflowBlk, layout)
 	if err != nil {
 		return false, fmt.Errorf("failed to create overflow page: %w", err)
 	}
 	ln.page = page
 	ln.currentSlot = -1 // Set to -1 so next Next() will check slot 0
-	ln.overflowDepth++  // Increment depth counter
 
 	return true, nil
 }
@@ -188,12 +212,35 @@ func (ln *Leaf) GetDataRid() (*record.RID, error) {
 // Insert inserts a new record into the leaf node
 // Returns an InternalNodeEntry if the page was split, nil otherwise
 //
-// Complex splitting logic:
-//  1. If inserting before first record and page has overflow, split at position 0
-//  2. Otherwise, insert at correct sorted position
-//  3. If page becomes full, split it:
-//     a. If all keys are the same, create overflow block
-//     b. Otherwise, split in middle and return entry for parent
+// HOW IT WORKS:
+//  1. Special case: If page has overflow and inserting before first record
+//     → Split at position 0 to maintain order, clear overflow flag
+//  2. Normal insertion: Find correct sorted position using FindSlotBefore
+//     → Insert the new entry at that position
+//  3. Check if page is full:
+//     a. If NOT full: Return nil (no split, done)
+//     b. If full AND all keys are the same: Create overflow block
+//     → Split at position 1, keep first record, move rest to overflow
+//     → Set flag to overflow block number, return nil (no parent update)
+//     c. If full AND keys are different: Split in middle
+//     → Split page, return InternalNodeEntry for parent to update
+//
+// SPLIT BEHAVIOR:
+//   - Overflow split: All records have same key → create overflow, no parent update
+//   - Regular split: Different keys → split in middle, return entry for parent
+//   - Split entry contains: (splitKey, newBlockNumber)
+//     → Parent uses this to route future searches to the new block
+//
+// Example: Insert(25, RID{100,5}) into page [10, 20, 30, 40] (not full)
+//
+//	→ FindSlotBefore(25) = 1, insert at slot 2
+//	→ Result: [10, 20, 25, 30, 40], return nil (no split)
+//
+// Example: Insert(35, RID{200,10}) makes page full [10, 20, 30, 35, 40]
+//
+//	→ Split at position 2 (middle), splitKey = 30
+//	→ Current: [10, 20], New: [30, 35, 40]
+//	→ Return InternalNodeEntry(30, newBlockNumber) for parent
 func (ln *Leaf) Insert(dataVal any, dataRid *record.RID) (*InternalNodeEntry, error) {
 	flag, err := ln.page.GetFlag()
 	if err != nil {
@@ -205,14 +252,15 @@ func (ln *Leaf) Insert(dataVal any, dataRid *record.RID) (*InternalNodeEntry, er
 		return nil, fmt.Errorf("failed to get record count: %w", err)
 	}
 
-	// Special case: If page has overflow (flag >= 0) and inserting before first record
+	// Special case: If page has overflow and inserting before first record
 	// We need to split at position 0 to maintain order
 	//
 	// Example: Current page has overflow (flag=5, pointing to block 5):
 	// [30, 35, 40, _, _] with overflow block 5: [30, 30, 30, 30]
 	// Insert(25): 25 < 30 (first record), so split at position 0
 	// Result: Current page: [25] (flag=-1), New block: [30, 35, 40] (inherits overflow)
-	if flag >= 0 && numRecs > 0 {
+	// Regular leaf pages have flag = -1 (no overflow), flag >= 0 means overflow exists
+	if HasOverflow(flag) && numRecs > 0 {
 		firstVal, err := ln.page.GetVal(0, "dataval")
 		if err != nil {
 			return nil, fmt.Errorf("failed to get first value: %w", err)

@@ -29,8 +29,9 @@ func (p *Page) Bytes() []byte {
 }
 
 // GetInt reads an integer from the specified offset
+// Properly handles signed integers by converting through int32 to preserve sign
 func (p *Page) GetInt(offset int) int {
-	return int(binary.BigEndian.Uint32(p.bytes[offset : offset+4]))
+	return int(int32(binary.BigEndian.Uint32(p.bytes[offset : offset+4])))
 }
 
 // SetInt writes an integer at the specified offset

@@ -17,7 +17,6 @@ type BTPage struct {
 
 // NewBTPage creates a new B-tree page for the specified block
 func NewBTPage(tx *transaction.Transaction, blk *file.BlockID, layout *record.Layout) (*BTPage, error) {
-	// Pin the block in the buffer pool
 	_, err := tx.Pin(blk)
 	if err != nil {
 		return nil, fmt.Errorf("failed to pin block %s: %w", blk.String(), err)
@@ -55,7 +54,18 @@ func (bp *BTPage) GetCurrentBlock() *file.BlockID {
 }
 
 // GetFlag returns the flag value stored at the beginning of the page
-// Flag indicates the page type: 0 = leaf node, 1 = internal node
+//
+// Flag semantics depend on page type:
+//   - Leaf pages (leaf table):
+//   - flag = -1: Regular leaf page (no overflow)
+//   - flag >= 0: Leaf page with overflow (flag contains overflow block number)
+//   - Internal pages (directory table):
+//   - flag >= 1: Internal node level (1 = points to leaf pages, 2+ = points to internal pages at level flag-1)
+//
+// IMPORTANT: The flag value has different meanings depending on which table the page is in:
+//   - In leaf table: flag < 1 means leaf page (flag = -1 for no overflow, flag >= 0 for overflow block number)
+//   - In directory table: flag >= 1 means internal page (flag = level number)
+//   - The check "flag < 1" is used to distinguish leaves from internals when traversing
 func (bp *BTPage) GetFlag() (int, error) {
 	return bp.tx.GetInt(bp.currentBlk, 0)
 }
@@ -63,6 +73,51 @@ func (bp *BTPage) GetFlag() (int, error) {
 // SetFlag sets the flag value at the beginning of the page
 func (bp *BTPage) SetFlag(flag int) error {
 	return bp.tx.SetInt(bp.currentBlk, 0, flag, true)
+}
+
+// IsLeafPage checks if a flag value represents a leaf page
+// Leaf pages have flag < 1 (either -1 for no overflow, or >= 0 for overflow block number)
+// This is used when traversing the tree to distinguish leaf pages from internal pages
+func IsLeafPage(flag int) bool {
+	return flag < 1
+}
+
+// IsInternalPage checks if a flag value represents an internal page
+// Internal pages have flag >= 1 (flag = level number: 1 = points to leaves, 2+ = points to internals)
+func IsInternalPage(flag int) bool {
+	return flag >= 1
+}
+
+// GetInternalLevel returns the level of an internal page
+// Returns the flag value (which is the level number) and an error if flag < 1
+// Level 1 = points to leaf pages, Level 2+ = points to internal pages at level (flag-1)
+func GetInternalLevel(flag int) (int, error) {
+	if flag < 1 {
+		return 0, fmt.Errorf("flag %d does not represent an internal page (expected >= 1)", flag)
+	}
+	return flag, nil
+}
+
+// IsLevel1Internal checks if an internal page is at level 1 (points directly to leaf pages)
+// Level 1 internal pages have flag == 1
+func IsLevel1Internal(flag int) bool {
+	return flag == 1
+}
+
+// GetOverflowBlock returns the overflow block number for a leaf page
+// Returns the flag value (which is the overflow block number) and an error if flag < 0
+// flag = -1 means no overflow, flag >= 0 means overflow block number
+func GetOverflowBlock(flag int) (int, error) {
+	if flag < 0 {
+		return 0, fmt.Errorf("flag %d does not represent a leaf with overflow (expected >= 0, -1 means no overflow)", flag)
+	}
+	return flag, nil
+}
+
+// HasOverflow checks if a leaf page has an overflow block
+// Returns true if flag >= 0 (overflow exists), false if flag == -1 (no overflow)
+func HasOverflow(flag int) bool {
+	return flag >= 0
 }
 
 // GetNumRecs returns the number of records stored in this page
@@ -513,11 +568,6 @@ func compareValues(a, b any) int {
 	return 0 // Default to equal if types don't match
 }
 
-// GetBlockNum returns the block number at the specified slot
-func (bp *BTPage) GetBlockNum(slot int) (int, error) {
-	return bp.GetInt(slot, "block")
-}
-
 // InsertInternalNode inserts a new entry in an internal node page
 func (bp *BTPage) InsertInternalNode(slot int, val any, blockNum int) error {
 	if err := bp.Insert(slot); err != nil {
@@ -529,20 +579,9 @@ func (bp *BTPage) InsertInternalNode(slot int, val any, blockNum int) error {
 	if err := bp.SetInt(slot, "block", blockNum); err != nil {
 		return fmt.Errorf("failed to set block number: %w", err)
 	}
+	// Note: "id" field is unused in internal nodes, but we don't need to set it
+	// as it's already initialized to 0 by Format()
 	return nil
-}
-
-// GetDataRid returns the record identifier (RID) at the specified slot
-func (bp *BTPage) GetDataRid(slot int) (*record.RID, error) {
-	blockNum, err := bp.GetInt(slot, "block")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get block number: %w", err)
-	}
-	slotNum, err := bp.GetInt(slot, "id")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get slot number: %w", err)
-	}
-	return record.NewRID(blockNum, slotNum), nil
 }
 
 // InsertLeaf inserts a new entry in a leaf node page
@@ -560,4 +599,31 @@ func (bp *BTPage) InsertLeaf(slot int, val any, rid *record.RID) error {
 		return fmt.Errorf("failed to set slot number: %w", err)
 	}
 	return nil
+}
+
+// GetBlockNum returns the block number at the specified slot
+// Used for INTERNAL nodes: returns the child block number
+func (bp *BTPage) GetBlockNum(slot int) (int, error) {
+	return bp.GetInt(slot, "block")
+}
+
+// GetChildBlockNum is an alias for GetBlockNum
+// Returns the child block number for internal node entries
+func (bp *BTPage) GetChildBlockNum(slot int) (int, error) {
+	return bp.GetBlockNum(slot)
+}
+
+// GetDataRid returns the record identifier (RID) at the specified slot
+// Used for LEAF nodes: combines "block" and "id" fields to form a RID
+// Returns a RID pointing to the actual data record in the indexed table
+func (bp *BTPage) GetDataRid(slot int) (*record.RID, error) {
+	blockNum, err := bp.GetInt(slot, "block")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get block number: %w", err)
+	}
+	slotNum, err := bp.GetInt(slot, "id")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get slot number: %w", err)
+	}
+	return record.NewRID(blockNum, slotNum), nil
 }

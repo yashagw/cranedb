@@ -30,8 +30,8 @@ func NewIndexInfo(indexName string, fieldName string, tableSchema *record.Schema
 	return ii
 }
 
-func (ii *IndexInfo) Open() (*index.HashIndex, error) {
-	index, err := index.NewHashIndex(ii.transaction, ii.indexName, ii.indexLayout)
+func (ii *IndexInfo) Open() (*index.BTreeIndex, error) {
+	index, err := index.NewBTreeIndex(ii.transaction, ii.indexName, ii.indexLayout)
 	if err != nil {
 		return nil, err
 	}

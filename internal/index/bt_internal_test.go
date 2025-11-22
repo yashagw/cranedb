@@ -217,7 +217,7 @@ func TestInternal_Search(t *testing.T) {
 		require.NoError(t, err)
 		leaf1Page, err := NewBTPage(tx, leaf1Blk, layout)
 		require.NoError(t, err)
-		err = leaf1Page.Format(0) // Leaf node
+		err = leaf1Page.Format(-1) // Leaf node
 		require.NoError(t, err)
 		// Add some data to leaf1
 		rid1 := record.NewRID(100, 1)
@@ -232,7 +232,7 @@ func TestInternal_Search(t *testing.T) {
 		require.NoError(t, err)
 		leaf2Page, err := NewBTPage(tx, leaf2Blk, layout)
 		require.NoError(t, err)
-		err = leaf2Page.Format(0) // Leaf node
+		err = leaf2Page.Format(-1) // Leaf node
 		require.NoError(t, err)
 		// Add some data to leaf2
 		rid3 := record.NewRID(100, 3)
@@ -244,7 +244,7 @@ func TestInternal_Search(t *testing.T) {
 		require.NoError(t, err)
 		leaf3Page, err := NewBTPage(tx, leaf3Blk, layout)
 		require.NoError(t, err)
-		err = leaf3Page.Format(0) // Leaf node
+		err = leaf3Page.Format(-1) // Leaf node
 		require.NoError(t, err)
 		// Add some data to leaf3
 		rid4 := record.NewRID(100, 4)
@@ -300,6 +300,133 @@ func TestInternal_Search(t *testing.T) {
 		leafBlkNum, err = internal4.Search(35)
 		require.NoError(t, err)
 		assert.Equal(t, leaf3Blk.Number(), leafBlkNum, "Key 35 should point to leaf3")
+		internal4.Close()
+	})
+
+	t.Run("3-level tree - search through multiple levels", func(t *testing.T) {
+		tx, layout, cleanup := setupInternalTest(t)
+		defer cleanup()
+
+		// Create a 3-level B-tree:
+		// Root (level 2, flag=2): [10→blk1, 30→blk2]
+		//   Block 1 (level 1, flag=1): [15→blk4, 25→blk5]  ← points to LEAF blocks
+		//   Block 2 (level 1, flag=1): [35→blk6, 45→blk7]  ← points to LEAF blocks
+		//   Leaf blocks 4,5,6,7 contain actual data
+
+		// Create leaf blocks (in "leaf" file)
+		leaf4Blk, err := tx.Append("btree_search_3level_leaf.tbl")
+		require.NoError(t, err)
+		leaf4Page, err := NewBTPage(tx, leaf4Blk, layout)
+		require.NoError(t, err)
+		err = leaf4Page.Format(-1)
+		require.NoError(t, err)
+		err = leaf4Page.InsertLeaf(0, 12, record.NewRID(100, 1))
+		require.NoError(t, err)
+		leaf4Page.Close()
+
+		leaf5Blk, err := tx.Append("btree_search_3level_leaf.tbl")
+		require.NoError(t, err)
+		leaf5Page, err := NewBTPage(tx, leaf5Blk, layout)
+		require.NoError(t, err)
+		err = leaf5Page.Format(-1)
+		require.NoError(t, err)
+		err = leaf5Page.InsertLeaf(0, 25, record.NewRID(100, 2))
+		require.NoError(t, err)
+		leaf5Page.Close()
+
+		leaf6Blk, err := tx.Append("btree_search_3level_leaf.tbl")
+		require.NoError(t, err)
+		leaf6Page, err := NewBTPage(tx, leaf6Blk, layout)
+		require.NoError(t, err)
+		err = leaf6Page.Format(-1)
+		require.NoError(t, err)
+		err = leaf6Page.InsertLeaf(0, 35, record.NewRID(100, 3))
+		require.NoError(t, err)
+		leaf6Page.Close()
+
+		leaf7Blk, err := tx.Append("btree_search_3level_leaf.tbl")
+		require.NoError(t, err)
+		leaf7Page, err := NewBTPage(tx, leaf7Blk, layout)
+		require.NoError(t, err)
+		err = leaf7Page.Format(-1)
+		require.NoError(t, err)
+		err = leaf7Page.InsertLeaf(0, 45, record.NewRID(100, 4))
+		require.NoError(t, err)
+		leaf7Page.Close()
+
+		// Create level 1 internal nodes (in "dir" file)
+		level1Blk1, err := tx.Append("btree_search_3level_dir.tbl")
+		require.NoError(t, err)
+		level1Page1, err := NewBTPage(tx, level1Blk1, layout)
+		require.NoError(t, err)
+		err = level1Page1.Format(1) // Level 1
+		require.NoError(t, err)
+		err = level1Page1.InsertInternalNode(0, 15, leaf4Blk.Number())
+		require.NoError(t, err)
+		err = level1Page1.InsertInternalNode(1, 25, leaf5Blk.Number())
+		require.NoError(t, err)
+		level1Page1.Close()
+
+		level1Blk2, err := tx.Append("btree_search_3level_dir.tbl")
+		require.NoError(t, err)
+		level1Page2, err := NewBTPage(tx, level1Blk2, layout)
+		require.NoError(t, err)
+		err = level1Page2.Format(1) // Level 1
+		require.NoError(t, err)
+		err = level1Page2.InsertInternalNode(0, 35, leaf6Blk.Number())
+		require.NoError(t, err)
+		err = level1Page2.InsertInternalNode(1, 45, leaf7Blk.Number())
+		require.NoError(t, err)
+		level1Page2.Close()
+
+		// Create root (level 2, in "dir" file)
+		rootBlk, err := tx.Append("btree_search_3level_dir.tbl")
+		require.NoError(t, err)
+		rootPage, err := NewBTPage(tx, rootBlk, layout)
+		require.NoError(t, err)
+		err = rootPage.Format(2) // Level 2
+		require.NoError(t, err)
+		err = rootPage.InsertInternalNode(0, 10, level1Blk1.Number())
+		require.NoError(t, err)
+		err = rootPage.InsertInternalNode(1, 30, level1Blk2.Number())
+		require.NoError(t, err)
+		rootPage.Close()
+
+		// Test Search - this will traverse through level 2 → level 1 → leaf
+		// The bug would manifest here if we didn't check for level 1 in the loop
+		internal, err := NewInternal(tx, rootBlk, layout)
+		require.NoError(t, err)
+		defer internal.Close()
+
+		// Search for key 25 - should go: root(blk0) → level1(blk1) → leaf(blk5)
+		leafBlkNum, err := internal.Search(25)
+		require.NoError(t, err)
+		assert.Equal(t, leaf5Blk.Number(), leafBlkNum, "Key 25 should point to leaf5")
+
+		// Search for key 12 - should go: root(blk0) → level1(blk1) → leaf(blk4)
+		internal2, err := NewInternal(tx, rootBlk, layout)
+		require.NoError(t, err)
+		leafBlkNum, err = internal2.Search(12)
+		require.NoError(t, err)
+		assert.Equal(t, leaf4Blk.Number(), leafBlkNum, "Key 12 should point to leaf4")
+		internal2.Close()
+
+		// Search for key 40 - should go: root(blk0) → level1(blk2) → leaf(blk6)
+		// Key 40 is between 35 and 45, so it goes to the entry [35→blk6]
+		internal3, err := NewInternal(tx, rootBlk, layout)
+		require.NoError(t, err)
+		leafBlkNum, err = internal3.Search(40)
+		require.NoError(t, err)
+		assert.Equal(t, leaf6Blk.Number(), leafBlkNum, "Key 40 should point to leaf6 (between 35 and 45)")
+		internal3.Close()
+
+		// Search for key 45 - should go: root(blk0) → level1(blk2) → leaf(blk7)
+		// Key 45 matches exactly, so it goes to the entry [45→blk7]
+		internal4, err := NewInternal(tx, rootBlk, layout)
+		require.NoError(t, err)
+		leafBlkNum, err = internal4.Search(45)
+		require.NoError(t, err)
+		assert.Equal(t, leaf7Blk.Number(), leafBlkNum, "Key 45 should point to leaf7 (exact match)")
 		internal4.Close()
 	})
 }
@@ -358,15 +485,15 @@ func TestInternal_insertEntry(t *testing.T) {
 		assert.Equal(t, 30, val2, "Third entry should be 30")
 
 		// Verify block numbers
-		blk0, err := verifyPage.GetBlockNum(0)
+		blk0, err := verifyPage.GetChildBlockNum(0)
 		require.NoError(t, err)
 		assert.Equal(t, 1, blk0, "First entry should point to block 1")
 
-		blk1, err := verifyPage.GetBlockNum(1)
+		blk1, err := verifyPage.GetChildBlockNum(1)
 		require.NoError(t, err)
 		assert.Equal(t, 2, blk1, "Second entry should point to block 2")
 
-		blk2, err := verifyPage.GetBlockNum(2)
+		blk2, err := verifyPage.GetChildBlockNum(2)
 		require.NoError(t, err)
 		assert.Equal(t, 3, blk2, "Third entry should point to block 3")
 
@@ -522,18 +649,18 @@ func TestInternal_insertEntry(t *testing.T) {
 }
 
 func TestInternal_Insert(t *testing.T) {
-	t.Run("Basic insertion with flag == 0 (delegates to insertEntry)", func(t *testing.T) {
+	t.Run("Basic insertion (delegates to insertEntry)", func(t *testing.T) {
 		tx, layout, cleanup := setupInternalTest(t)
 		defer cleanup()
 
-		// Create a page formatted as internal node but with flag 0
+		// Create a page formatted as internal node at level 1
 		// This tests the case where Insert delegates to insertEntry
 		blk, err := tx.Append("btree_insert_basic_test.tbl")
 		require.NoError(t, err)
 
 		page, err := NewBTPage(tx, blk, layout)
 		require.NoError(t, err)
-		err = page.Format(0) // Flag 0 - will delegate to insertEntry
+		err = page.Format(1) // Level 1 internal node - will delegate to insertEntry
 		require.NoError(t, err)
 
 		// Insert initial entries: [10→block1, 30→block3]
@@ -568,7 +695,7 @@ func TestInternal_Insert(t *testing.T) {
 		verifyPage.Close()
 	})
 
-	t.Run("Insertion causing split with flag == 0", func(t *testing.T) {
+	t.Run("Insertion causing split", func(t *testing.T) {
 		tx, layout, cleanup := setupInternalTest(t)
 		defer cleanup()
 
@@ -578,7 +705,7 @@ func TestInternal_Insert(t *testing.T) {
 
 		page, err := NewBTPage(tx, blk, layout)
 		require.NoError(t, err)
-		err = page.Format(0) // Flag 0 - will delegate to insertEntry
+		err = page.Format(1) // Level 1 internal node - will delegate to insertEntry
 		require.NoError(t, err)
 
 		// Determine page capacity
@@ -601,7 +728,7 @@ func TestInternal_Insert(t *testing.T) {
 		// Recreate page with entries just before full
 		page, err = NewBTPage(tx, blk, layout)
 		require.NoError(t, err)
-		err = page.Format(0)
+		err = page.Format(1)
 		require.NoError(t, err)
 
 		// Insert entries up to capacity-1
@@ -702,40 +829,4 @@ func TestInternal_Insert(t *testing.T) {
 		}
 	})
 
-	t.Run("Insert with flag == 0 (leaf node case)", func(t *testing.T) {
-		tx, layout, cleanup := setupInternalTest(t)
-		defer cleanup()
-
-		// Create a page formatted as leaf (flag == 0)
-		// This tests the edge case where Insert is called on what appears to be a leaf
-		blk, err := tx.Append("btree_insert_leaf_test.tbl")
-		require.NoError(t, err)
-
-		page, err := NewBTPage(tx, blk, layout)
-		require.NoError(t, err)
-		err = page.Format(0) // Leaf node (flag == 0)
-		require.NoError(t, err)
-		page.Close()
-
-		// Create Internal node (even though it's formatted as leaf)
-		internal, err := NewInternal(tx, blk, layout)
-		require.NoError(t, err)
-		defer internal.Close()
-
-		// Insert entry - should delegate to insertEntry
-		entry := NewInternalNodeEntry(10, 1)
-		result, err := internal.Insert(entry)
-		require.NoError(t, err)
-		// Result depends on whether page is full
-		// For empty page, should be nil (no split)
-		if result == nil {
-			// Verify entry was inserted
-			verifyPage, err := NewBTPage(tx, blk, layout)
-			require.NoError(t, err)
-			numRecs, err := verifyPage.GetNumRecs()
-			require.NoError(t, err)
-			assert.Equal(t, 1, numRecs, "Should have 1 entry")
-			verifyPage.Close()
-		}
-	})
 }
