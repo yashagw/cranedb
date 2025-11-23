@@ -6,7 +6,6 @@ import (
 	"github.com/yashagw/cranedb/internal/metadata"
 	"github.com/yashagw/cranedb/internal/parse/parserdata"
 	"github.com/yashagw/cranedb/internal/query"
-	"github.com/yashagw/cranedb/internal/record"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -59,7 +58,7 @@ func (p *BasicQueryPlanner) CreatePlan(queryData *parserdata.QueryData, tx *tran
 	}
 
 	// Phase 2: Optimize join order
-	plan := p.optimizeJoinOrder(tablePlans, predicate)
+	plan := p.optimizeJoinOrder(tablePlans, predicate, tx)
 
 	// Phase 3: Apply remaining predicates (both table-specific and join predicates)
 	// TODO: apply only the join predicates
@@ -134,8 +133,9 @@ func (p *BasicQueryPlanner) optimizeTableWithIndex(tablePlan Plan, tableName str
 	return bestPlan, nil
 }
 
-// optimizeJoinOrder sorts tables by estimated cost and builds optimal join tree
-func (p *BasicQueryPlanner) optimizeJoinOrder(tablePlans []Plan, predicate *query.Predicate) Plan {
+// optimizeJoinOrder sorts tables by estimated cost and builds optimal join tree.
+// It considers materializing the inner relation in nested loop joins when beneficial.
+func (p *BasicQueryPlanner) optimizeJoinOrder(tablePlans []Plan, predicate *query.Predicate, tx *transaction.Transaction) Plan {
 	if len(tablePlans) == 1 {
 		return tablePlans[0]
 	}
@@ -148,10 +148,21 @@ func (p *BasicQueryPlanner) optimizeJoinOrder(tablePlans []Plan, predicate *quer
 	// Build join tree starting with most selective table
 	result := tablePlans[0]
 	for i := 1; i < len(tablePlans); i++ {
-		// Try both join orders and pick the better one
 		p1 := NewProductPlan(result, tablePlans[i])
 		p2 := NewProductPlan(tablePlans[i], result)
 
+		// Check if materializing inner relation helps
+		if p.shouldMaterializeForJoin(result, tablePlans[i], tx) {
+			materialized := NewMaterializePlan(tx, tablePlans[i])
+			p1 = NewProductPlan(result, materialized)
+		}
+
+		if p.shouldMaterializeForJoin(tablePlans[i], result, tx) {
+			materialized := NewMaterializePlan(tx, result)
+			p2 = NewProductPlan(tablePlans[i], materialized)
+		}
+
+		// Pick better option
 		if p1.BlocksAccessed() < p2.BlocksAccessed() {
 			result = p1
 		} else {
@@ -162,43 +173,15 @@ func (p *BasicQueryPlanner) optimizeJoinOrder(tablePlans []Plan, predicate *quer
 	return result
 }
 
-// extractJoinPredicate extracts join conditions from the overall predicate
-func (p *BasicQueryPlanner) extractJoinPredicate(predicate *query.Predicate, tablePlans []Plan) *query.Predicate {
-	if len(tablePlans) <= 1 {
-		return nil
-	}
+// shouldMaterializeForJoin determines if materializing the inner plan in a join
+// would reduce total cost.
+func (p *BasicQueryPlanner) shouldMaterializeForJoin(outer Plan, inner Plan, tx *transaction.Transaction) bool {
+	noMaterializeCost := outer.BlocksAccessed() + (outer.RecordsOutput() * inner.BlocksAccessed())
 
-	// For now, return the full predicate for join conditions
-	// In a more sophisticated implementation, we would extract only
-	// the terms that involve fields from multiple tables
-	combinedSchema := record.NewSchema()
-	for _, plan := range tablePlans {
-		combinedSchema.CopyAll(plan.Schema())
-	}
+	materializePlan := NewMaterializePlan(tx, inner)
+	withMaterializeCost := materializePlan.BlocksAccessed() + (outer.RecordsOutput() * materializePlan.BlocksAccessed())
 
-	// Return predicate terms that apply to the combined schema
-	// but weren't already handled by individual table optimizations
-	return predicate.SelectSubPred(combinedSchema)
-}
-
-// extractRemainingPredicate determines what predicate terms still need to be applied
-// after index optimization for single-table queries
-func (p *BasicQueryPlanner) extractRemainingPredicate(predicate *query.Predicate, tablePlan Plan) *query.Predicate {
-	// Get the table schema to extract relevant predicate terms
-	tableSchema := tablePlan.Schema()
-	tablePredicate := predicate.SelectSubPred(tableSchema)
-
-	// For now, we use a simple heuristic:
-	// - If this is an IndexSelectPlan, assume the index handles the predicate
-	// - If this is a TablePlan, we need to apply the full predicate
-	switch tablePlan.(type) {
-	case *IndexSelectPlan:
-		// Index already handles filtering, no additional predicate needed
-		return nil
-	default:
-		// No index used, apply the full table predicate
-		return tablePredicate
-	}
+	return withMaterializeCost < noMaterializeCost
 }
 
 // removeIndexedTerm creates a new predicate without the term that uses the indexed field
