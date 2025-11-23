@@ -12,7 +12,7 @@ This project is an educational implementation of a relational database managemen
 - Transaction management
 - Metadata management
 - Query processing
-- Indexing and optimization (planned)
+- Indexing
 
 ## Current Implementation
 
@@ -26,10 +26,9 @@ The database has implemented the following core components:
 - **Concurrency Manager**: Manages shared and exclusive locks with deadlock prevention
 - **Record Manager**: Handles record storage, schema management, and table scanning
 - **Metadata Manager**: Manages database metadata including tables, views, indexes, and statistics
-- **Parser**: SQL parser and lexer for parsing SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, and CREATE VIEW statements
-- **Query Planner**: Generates execution plans for SELECT queries with support for joins, predicates, and projections
-- **Update Planner**: Executes INSERT, UPDATE, DELETE, CREATE TABLE, and CREATE VIEW statements
-- **Query Execution**: Iterator-based query execution with product scans (joins), select scans (filtering), and project scans (field selection)
+- **Parser**: SQL parser and lexer for parsing SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, CREATE VIEW, and CREATE INDEX statements
+- **Query Planner**: Generates execution plans for SELECT queries with support for joins, predicates, projections, and index-aware optimization
+- **Update Planner**: Executes INSERT, UPDATE, DELETE, CREATE TABLE, CREATE VIEW, and CREATE INDEX statements
 
 ## Features
 
@@ -59,17 +58,18 @@ The database has implemented the following core components:
 ### Metadata Management
 - **Table Management**: Create, drop, and query table metadata
 - **View Management**: Virtual table support with view definition storage
-- **Index Management**: Index metadata tracking (no actual index data structures implemented)
+- **Index Management**: Index metadata tracking and index creation
 - **Statistics**: Table statistics collection for cost estimation
 
 ### Query Processing
 - **SQL Parser**: Lexical analysis and parsing of SQL statements
-- **Query Planning**: Execution plan generation with cost estimation
-- **Relational Algebra**: Support for product (join), select (filter), and project (field selection) operations
+- **Query Planning**: Execution plan generation with cost estimation and index-aware optimization
+- **Relational Algebra**: Support for product (join), select (filter), project (field selection), and materialization operations
 - **Query Execution**: Iterator-based query execution with lazy evaluation
 - **Expression Evaluation**: Support for field references and constant values in expressions
 - **Predicate Evaluation**: WHERE clause filtering with support for equality comparisons and AND conditions
-- **Update Operations**: Execution of INSERT, UPDATE, and DELETE statements with predicate support
+- **Update Operations**: Execution of INSERT, UPDATE, and DELETE statements with predicate support and automatic index maintenance
+- **Materialization**: Temporary table materialization for query optimization, especially beneficial for nested loop joins
 
 ## Status
 
@@ -83,15 +83,16 @@ The database has implemented the following core components:
 - ✅ Metadata management for tables, views, and indexes
 - ✅ SQL parsing and lexing
 - ✅ Query planning and execution
-- ✅ Relational algebra operations (product, select, project)
+- ✅ Relational algebra operations (product, select, project, materialize)
 - ✅ Client-server architecture
+- ✅ B-tree indexes
+- ✅ Materialization for query optimization
 
 🚧 **Future Development**
-- **Indexing**: B-tree indexes, hash indexes, and index-aware query operations
-- **Materialization & Sorting**: Temporary tables, external sorting, grouping, and merge joins
+- **Sorting & Grouping**: External sorting, grouping operations, and merge joins
+- **Additional SQL Features**: OR conditions, comparison operators (>, <, >=, <=), aggregation functions, GROUP BY, ORDER BY
 - **Buffer Optimization**: Multibuffer algorithms for sorting and joins
-- **Query Optimization**: Equivalent query trees, cost-based optimization, and advanced plan selection
-- **Additional SQL Features**: OR conditions, comparison operators, aggregation, GROUP BY, ORDER BY
+- **Advanced Query Optimization**: Equivalent query trees, more sophisticated cost-based optimization, and advanced plan selection
 ---
 
 **Note**: This project is not intended for production use and serves as an educational implementation of database internals.
