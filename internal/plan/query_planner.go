@@ -111,7 +111,7 @@ func (p *BasicQueryPlanner) optimizeTableWithIndex(tablePlan Plan, tableName str
 			indexCost := indexPlan.BlocksAccessed()
 
 			// Use index if it's more efficient
-			if indexCost < bestCost {
+			if indexCost <= bestCost {
 				bestPlan = indexPlan
 				bestCost = indexCost
 				indexedField = fieldName

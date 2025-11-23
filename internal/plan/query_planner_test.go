@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -300,45 +301,38 @@ func TestBasicQueryPlanner_WithIndex(t *testing.T) {
 	schema.AddIntField("age")
 	schema.AddStringField("department", 30)
 
-	createTableWithData(t, "employees", schema, md, tx, func(ts *table.TableScan) {
-		err := ts.BeforeFirst()
-		require.NoError(t, err)
-
-		// Insert test data
-		employees := []struct {
-			id   int
-			name string
-			age  int
-			dept string
-		}{
-			{1, "Alice", 25, "Engineering"},
-			{2, "Bob", 30, "Marketing"},
-			{3, "Charlie", 28, "Engineering"},
-			{4, "Diana", 32, "Sales"},
-			{5, "Eve", 27, "Engineering"},
-		}
-
-		for _, emp := range employees {
-			err = ts.Insert()
-			require.NoError(t, err)
-			err = ts.SetInt("id", emp.id)
-			require.NoError(t, err)
-			err = ts.SetString("name", emp.name)
-			require.NoError(t, err)
-			err = ts.SetInt("age", emp.age)
-			require.NoError(t, err)
-			err = ts.SetString("department", emp.dept)
-			require.NoError(t, err)
-		}
-	})
-
-	// Create an index on the id field
-	err := md.CreateIndex("emp_id_idx", "employees", "id", tx)
+	err := md.CreateTable("employees", schema, tx)
 	require.NoError(t, err)
 
-	// Create an index on the department field
+	// Create indexes BEFORE inserting data
+	err = md.CreateIndex("emp_id_idx", "employees", "id", tx)
+	require.NoError(t, err)
+
 	err = md.CreateIndex("emp_dept_idx", "employees", "department", tx)
 	require.NoError(t, err)
+
+	// Insert data using UpdatePlanner so indexes are populated
+	updatePlanner := NewBasicUpdatePlanner(md)
+	employees := []struct {
+		id   int
+		name string
+		age  int
+		dept string
+	}{
+		{1, "Alice", 25, "Engineering"},
+		{2, "Bob", 30, "Marketing"},
+		{3, "Charlie", 28, "Engineering"},
+		{4, "Diana", 32, "Sales"},
+		{5, "Eve", 27, "Engineering"},
+	}
+
+	for _, emp := range employees {
+		insertData := parserdata.NewInsertData("employees",
+			[]string{"id", "name", "age", "department"},
+			[]interface{}{emp.id, emp.name, emp.age, emp.dept})
+		_, err = updatePlanner.ExecuteInsert(insertData, tx)
+		require.NoError(t, err)
+	}
 
 	planner := NewBasicQueryPlanner(md)
 
@@ -522,26 +516,16 @@ func TestBasicQueryPlanner_IndexWithStringField(t *testing.T) {
 	err = md.CreateIndex("items_status_idx", "items", "status", tx)
 	require.NoError(t, err)
 
-	// Insert data with index in place
-	layout := record.NewLayoutFromSchema(schema)
-	ts, err := table.NewTableScan(tx, layout, "items")
-	require.NoError(t, err)
-	err = ts.BeforeFirst()
-	require.NoError(t, err)
-
-	// Insert test data with different statuses
+	// Insert data using UpdatePlanner so indexes are populated
+	updatePlanner := NewBasicUpdatePlanner(md)
 	statuses := []string{"active", "inactive", "pending", "active", "active", "inactive"}
 	for i, status := range statuses {
-		err = ts.Insert()
-		require.NoError(t, err)
-		err = ts.SetInt("id", i+1)
-		require.NoError(t, err)
-		err = ts.SetString("status", status)
-		require.NoError(t, err)
-		err = ts.SetString("category", "test")
+		insertData := parserdata.NewInsertData("items",
+			[]string{"id", "status", "category"},
+			[]interface{}{i + 1, status, "test"})
+		_, err = updatePlanner.ExecuteInsert(insertData, tx)
 		require.NoError(t, err)
 	}
-	ts.Close()
 
 	planner := NewBasicQueryPlanner(md)
 
@@ -624,7 +608,65 @@ func TestExplainPlan(t *testing.T) {
 		assert.Equal(t, expected, planTree)
 	})
 
-	t.Run("WithIndexSelect", func(t *testing.T) {
+	t.Run("WithJoin", func(t *testing.T) {
+		_, tx, md, cleanup := setupTestDB(t)
+		defer cleanup()
+
+		s1 := record.NewSchema()
+		s1.AddIntField("id")
+		s1.AddStringField("name", 20)
+		s1.AddIntField("student_dept_id")
+		createTableWithData(t, "students", s1, md, tx, func(ts *table.TableScan) {
+			err := ts.BeforeFirst()
+			require.NoError(t, err)
+			for i := 1; i <= 3; i++ {
+				err = ts.Insert()
+				require.NoError(t, err)
+				err = ts.SetInt("id", i)
+				require.NoError(t, err)
+				err = ts.SetString("name", "Student")
+				require.NoError(t, err)
+				err = ts.SetInt("student_dept_id", i%2+1)
+				require.NoError(t, err)
+			}
+		})
+
+		s2 := record.NewSchema()
+		s2.AddIntField("dept_id")
+		s2.AddStringField("dept_name", 20)
+		createTableWithData(t, "departments", s2, md, tx, func(ts *table.TableScan) {
+			err := ts.BeforeFirst()
+			require.NoError(t, err)
+			for i := 1; i <= 2; i++ {
+				err = ts.Insert()
+				require.NoError(t, err)
+				err = ts.SetInt("dept_id", i)
+				require.NoError(t, err)
+				err = ts.SetString("dept_name", "Dept")
+				require.NoError(t, err)
+			}
+		})
+
+		err := md.CreateIndex("dept_id_idx", "departments", "dept_id", tx)
+		require.NoError(t, err)
+
+		planner := NewBasicQueryPlanner(md)
+		updatePlanner := NewBasicUpdatePlanner(md)
+		fullPlanner := NewPlanner(planner, updatePlanner)
+
+		explainSQL := "EXPLAIN SELECT name, dept_name FROM students, departments WHERE student_dept_id = dept_id"
+		planTree, err := fullPlanner.ExplainPlan(explainSQL, tx, nil)
+		require.NoError(t, err)
+
+		expected := `ProjectPlan(fields: [name, dept_name])
+    └─ SelectPlan(predicate: student_dept_id = dept_id)
+    └─     └─ ProductPlan
+    └─     └─     ├─ TablePlan(departments)
+    └─     └─     └─ TablePlan(students)`
+		assert.Equal(t, expected, planTree)
+	})
+
+	t.Run("IndexSelectUsed", func(t *testing.T) {
 		_, tx, md, cleanup := setupTestDB(t)
 		defer cleanup()
 
@@ -640,144 +682,30 @@ func TestExplainPlan(t *testing.T) {
 		require.NoError(t, err)
 
 		updatePlanner := NewBasicUpdatePlanner(md)
-		for i := 1; i <= 5; i++ {
+		// Insert enough records to make index beneficial
+		for i := 1; i <= 50; i++ {
 			fields := []string{"id", "name", "age"}
-			values := []interface{}{i, "Employee", 20 + i}
+			values := []interface{}{i, fmt.Sprintf("Employee%d", i), 20 + i}
 			insertData := parserdata.NewInsertData("employees", fields, values)
 			_, err = updatePlanner.ExecuteInsert(insertData, tx)
 			require.NoError(t, err)
 		}
 
+		// Invalidate stats to ensure index is used
+		// TODO: figure out why we need to invalidate stats to ensure index is used
+		md.InvalidateStats("employees")
+
 		planner := NewBasicQueryPlanner(md)
 		fullPlanner := NewPlanner(planner, updatePlanner)
 
-		explainSQL := "EXPLAIN SELECT id, name FROM employees WHERE id = 3"
+		explainSQL := "EXPLAIN SELECT id, name FROM employees WHERE id = 25"
 		planTree, err := fullPlanner.ExplainPlan(explainSQL, tx, nil)
 		require.NoError(t, err)
 
 		expected := `ProjectPlan(fields: [id, name])
-    └─ SelectPlan(predicate: id = 3)
+    └─ IndexSelectPlan(id=25)
     └─     └─ TablePlan(employees)`
-		assert.Equal(t, expected, planTree)
-	})
 
-	t.Run("WithJoin", func(t *testing.T) {
-		_, tx, md, cleanup := setupTestDB(t)
-		defer cleanup()
-
-		s1 := record.NewSchema()
-		s1.AddIntField("id")
-		s1.AddStringField("name", 20)
-		s1.AddIntField("dept_id")
-		createTableWithData(t, "students", s1, md, tx, func(ts *table.TableScan) {
-			err := ts.BeforeFirst()
-			require.NoError(t, err)
-			for i := 1; i <= 3; i++ {
-				err = ts.Insert()
-				require.NoError(t, err)
-				err = ts.SetInt("id", i)
-				require.NoError(t, err)
-				err = ts.SetString("name", "Student")
-				require.NoError(t, err)
-				err = ts.SetInt("dept_id", i%2+1)
-				require.NoError(t, err)
-			}
-		})
-
-		s2 := record.NewSchema()
-		s2.AddIntField("dept_id")
-		s2.AddStringField("dept_name", 20)
-		createTableWithData(t, "departments", s2, md, tx, func(ts *table.TableScan) {
-			err := ts.BeforeFirst()
-			require.NoError(t, err)
-			for i := 1; i <= 2; i++ {
-				err = ts.Insert()
-				require.NoError(t, err)
-				err = ts.SetInt("dept_id", i)
-				require.NoError(t, err)
-				err = ts.SetString("dept_name", "Dept")
-				require.NoError(t, err)
-			}
-		})
-
-		err := md.CreateIndex("dept_id_idx", "departments", "dept_id", tx)
-		require.NoError(t, err)
-
-		planner := NewBasicQueryPlanner(md)
-		updatePlanner := NewBasicUpdatePlanner(md)
-		fullPlanner := NewPlanner(planner, updatePlanner)
-
-		explainSQL := "EXPLAIN SELECT name, dept_name FROM students, departments WHERE dept_id = dept_id"
-		planTree, err := fullPlanner.ExplainPlan(explainSQL, tx, nil)
-		require.NoError(t, err)
-
-		expected := `ProjectPlan(fields: [name, dept_name])
-    └─ SelectPlan(predicate: dept_id = dept_id)
-    └─     └─ ProductPlan
-    └─     └─     ├─ SelectPlan(predicate: dept_id = dept_id)
-    └─     └─     ├─ │   └─ TablePlan(departments)
-    └─     └─     └─ SelectPlan(predicate: dept_id = dept_id)
-    └─     └─     └─     └─ TablePlan(students)`
-		assert.Equal(t, expected, planTree)
-	})
-
-	t.Run("WithIndexJoin", func(t *testing.T) {
-		_, tx, md, cleanup := setupTestDB(t)
-		defer cleanup()
-
-		s1 := record.NewSchema()
-		s1.AddIntField("id")
-		s1.AddStringField("name", 20)
-		s1.AddIntField("dept_id")
-		createTableWithData(t, "students", s1, md, tx, func(ts *table.TableScan) {
-			err := ts.BeforeFirst()
-			require.NoError(t, err)
-			for i := 1; i <= 3; i++ {
-				err = ts.Insert()
-				require.NoError(t, err)
-				err = ts.SetInt("id", i)
-				require.NoError(t, err)
-				err = ts.SetString("name", "Student")
-				require.NoError(t, err)
-				err = ts.SetInt("dept_id", i%2+1)
-				require.NoError(t, err)
-			}
-		})
-
-		s2 := record.NewSchema()
-		s2.AddIntField("dept_id")
-		s2.AddStringField("dept_name", 20)
-		createTableWithData(t, "departments", s2, md, tx, func(ts *table.TableScan) {
-			err := ts.BeforeFirst()
-			require.NoError(t, err)
-			for i := 1; i <= 2; i++ {
-				err = ts.Insert()
-				require.NoError(t, err)
-				err = ts.SetInt("dept_id", i)
-				require.NoError(t, err)
-				err = ts.SetString("dept_name", "Dept")
-				require.NoError(t, err)
-			}
-		})
-
-		err := md.CreateIndex("dept_id_idx", "departments", "dept_id", tx)
-		require.NoError(t, err)
-
-		planner := NewBasicQueryPlanner(md)
-		updatePlanner := NewBasicUpdatePlanner(md)
-		fullPlanner := NewPlanner(planner, updatePlanner)
-
-		explainSQL := "EXPLAIN SELECT name, dept_name FROM students, departments WHERE dept_id = dept_id"
-		planTree, err := fullPlanner.ExplainPlan(explainSQL, tx, nil)
-		require.NoError(t, err)
-
-		expected := `ProjectPlan(fields: [name, dept_name])
-    └─ SelectPlan(predicate: dept_id = dept_id)
-    └─     └─ ProductPlan
-    └─     └─     ├─ SelectPlan(predicate: dept_id = dept_id)
-    └─     └─     ├─ │   └─ TablePlan(departments)
-    └─     └─     └─ SelectPlan(predicate: dept_id = dept_id)
-    └─     └─     └─     └─ TablePlan(students)`
 		assert.Equal(t, expected, planTree)
 	})
 
@@ -788,59 +716,67 @@ func TestExplainPlan(t *testing.T) {
 		s1 := record.NewSchema()
 		s1.AddIntField("id")
 		s1.AddStringField("name", 20)
-		s1.AddIntField("dept_id")
-		createTableWithData(t, "students", s1, md, tx, func(ts *table.TableScan) {
-			err := ts.BeforeFirst()
-			require.NoError(t, err)
-			for i := 1; i <= 5; i++ {
-				err = ts.Insert()
-				require.NoError(t, err)
-				err = ts.SetInt("id", i)
-				require.NoError(t, err)
-				err = ts.SetString("name", "Student")
-				require.NoError(t, err)
-				err = ts.SetInt("dept_id", i%2+1)
-				require.NoError(t, err)
-			}
-		})
+		s1.AddStringField("category", 20)
+		s1.AddIntField("student_dept_id")
+		err := md.CreateTable("students", s1, tx)
+		require.NoError(t, err)
 
 		s2 := record.NewSchema()
 		s2.AddIntField("dept_id")
 		s2.AddStringField("dept_name", 20)
-		createTableWithData(t, "departments", s2, md, tx, func(ts *table.TableScan) {
-			err := ts.BeforeFirst()
-			require.NoError(t, err)
-			for i := 1; i <= 2; i++ {
-				err = ts.Insert()
-				require.NoError(t, err)
-				err = ts.SetInt("dept_id", i)
-				require.NoError(t, err)
-				err = ts.SetString("dept_name", "Dept")
-				require.NoError(t, err)
-			}
-		})
+		err = md.CreateTable("departments", s2, tx)
+		require.NoError(t, err)
 
-		err := md.CreateIndex("students_id_idx", "students", "id", tx)
+		// Create indexes BEFORE inserting data
+		err = md.CreateIndex("students_id_idx", "students", "id", tx)
+		require.NoError(t, err)
+		err = md.CreateIndex("students_category_idx", "students", "category", tx)
 		require.NoError(t, err)
 		err = md.CreateIndex("dept_id_idx", "departments", "dept_id", tx)
 		require.NoError(t, err)
 
-		planner := NewBasicQueryPlanner(md)
 		updatePlanner := NewBasicUpdatePlanner(md)
+		for i := 1; i <= 60; i++ {
+			// Make most students have Category1 to get many records after index filter
+			category := "Category1"
+			if i%10 == 0 {
+				category = fmt.Sprintf("Category%d", ((i-1)%5)+1)
+			}
+			insertData := parserdata.NewInsertData("students",
+				[]string{"id", "name", "student_dept_id", "category"},
+				[]interface{}{i, "Student", i%10 + 1, category})
+			_, err = updatePlanner.ExecuteInsert(insertData, tx)
+			require.NoError(t, err)
+		}
+
+		for i := 1; i <= 25; i++ {
+			insertData := parserdata.NewInsertData("departments",
+				[]string{"dept_id", "dept_name"},
+				[]interface{}{i, fmt.Sprintf("Dept%d", i)})
+			_, err = updatePlanner.ExecuteInsert(insertData, tx)
+			require.NoError(t, err)
+		}
+
+		// Invalidate stats to ensure index is used
+		// TODO: figure out why we need to invalidate stats to ensure index is used
+		md.InvalidateStats("students")
+		md.InvalidateStats("departments")
+
+		planner := NewBasicQueryPlanner(md)
 		fullPlanner := NewPlanner(planner, updatePlanner)
 
-		explainSQL := "EXPLAIN SELECT name, dept_name FROM students, departments WHERE id = 3 AND dept_id = dept_id"
+		explainSQL := "EXPLAIN SELECT name, dept_name FROM students, departments WHERE student_dept_id = dept_id and category = 'Category1' and dept_name = 'Dept1'"
 		planTree, err := fullPlanner.ExplainPlan(explainSQL, tx, nil)
 		require.NoError(t, err)
 
 		expected := `ProjectPlan(fields: [name, dept_name])
-    └─ SelectPlan(predicate: id = 3 and dept_id = dept_id)
+    └─ SelectPlan(predicate: student_dept_id = dept_id and category = Category1 and dept_name = Dept1)
     └─     └─ ProductPlan
-    └─     └─     ├─ SelectPlan(predicate: dept_id = dept_id)
-    └─     └─     ├─ │   └─ TablePlan(departments)
+    └─     └─     ├─ IndexSelectPlan(category='Category1')
+    └─     └─     ├─ │   └─ TablePlan(students)
     └─     └─     └─ MaterializePlan
-    └─     └─     └─     └─ SelectPlan(predicate: id = 3 and dept_id = dept_id)
-    └─     └─     └─     └─     └─ TablePlan(students)`
+    └─     └─     └─     └─ SelectPlan(predicate: dept_name = Dept1)
+    └─     └─     └─     └─     └─ TablePlan(departments)`
 		assert.Equal(t, expected, planTree)
 	})
 

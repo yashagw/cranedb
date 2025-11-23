@@ -53,3 +53,8 @@ func (m *Manager) GetIndexInfo(tableName string, tx *transaction.Transaction) (m
 func (m *Manager) GetStatInfo(tableName string, layout *record.Layout, tx *transaction.Transaction) (*StatInfo, error) {
 	return m.statsManager.GetStatInfo(tableName, layout, tx)
 }
+
+// InvalidateStats clears cached stats for a specific table
+func (m *Manager) InvalidateStats(tableName string) {
+	m.statsManager.InvalidateStats(tableName)
+}

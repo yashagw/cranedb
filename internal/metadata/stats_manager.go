@@ -26,6 +26,13 @@ func NewStatsManager(tblMgr *TableManager, tx *transaction.Transaction) *StatsMa
 	}
 }
 
+// InvalidateStats clears cached stats for a specific table
+func (sm *StatsManager) InvalidateStats(tblName string) {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+	delete(sm.tableStats, tblName)
+}
+
 // GetStatInfo returns statistical information for a given table
 func (sm *StatsManager) GetStatInfo(tblName string, layout *record.Layout, tx *transaction.Transaction) (*StatInfo, error) {
 	log.Printf("[STATS] GetStatInfo: table %s", tblName)
@@ -57,6 +64,7 @@ func (sm *StatsManager) GetStatInfo(tblName string, layout *record.Layout, tx *t
 		log.Printf("[STATS] GetStatInfo: Recalculating stats for %s", tblName)
 		calculated, err := sm.calcTableStats(tblName, layout, tx)
 		if err != nil {
+			sm.mutex.Unlock()
 			return nil, err
 		}
 		sm.tableStats[tblName] = calculated
@@ -82,6 +90,11 @@ func (sm *StatsManager) calcTableStats(tblName string, layout *record.Layout, tx
 		return nil, err
 	}
 	defer ts.Close()
+
+	err = ts.BeforeFirst()
+	if err != nil {
+		return nil, err
+	}
 
 	for {
 		hasNext, err := ts.Next()
