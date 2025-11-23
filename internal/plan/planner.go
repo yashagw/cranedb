@@ -5,12 +5,13 @@ import (
 
 	"github.com/yashagw/cranedb/internal/parse"
 	"github.com/yashagw/cranedb/internal/parse/parserdata"
+	"github.com/yashagw/cranedb/internal/session"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
 type QueryPlanner interface {
-	CreatePlan(queryData *parserdata.QueryData, tx *transaction.Transaction) (Plan, error)
-	ExplainPlan(explainData *parserdata.ExplainData, tx *transaction.Transaction) (string, error)
+	CreatePlan(queryData *parserdata.QueryData, tx *transaction.Transaction, sess *session.Session) (Plan, error)
+	ExplainPlan(explainData *parserdata.ExplainData, tx *transaction.Transaction, sess *session.Session) (string, error)
 }
 
 type UpdatePlanner interface {
@@ -34,24 +35,24 @@ func NewPlanner(queryPlanner QueryPlanner, updatePlanner UpdatePlanner) *Planner
 	}
 }
 
-func (p *Planner) CreatePlan(sql string, tx *transaction.Transaction) (Plan, error) {
+func (p *Planner) CreatePlan(sql string, tx *transaction.Transaction, sess *session.Session) (Plan, error) {
 	parser := parse.NewParserFromString(sql)
 	queryData, err := parser.Query()
 	if err != nil {
 		return nil, err
 	}
-	return p.queryPlanner.CreatePlan(queryData, tx)
+	return p.queryPlanner.CreatePlan(queryData, tx, sess)
 }
 
 // ExplainPlan parses the EXPLAIN SQL statement and delegates to the query planner's ExplainPlan method.
-func (p *Planner) ExplainPlan(sql string, tx *transaction.Transaction) (string, error) {
+func (p *Planner) ExplainPlan(sql string, tx *transaction.Transaction, sess *session.Session) (string, error) {
 	parser := parse.NewParserFromString(sql)
 	explainData, err := parser.Explain()
 	if err != nil {
 		return "", err
 	}
 
-	return p.queryPlanner.ExplainPlan(explainData, tx)
+	return p.queryPlanner.ExplainPlan(explainData, tx, sess)
 }
 
 func (p *Planner) ExecuteUpdate(sql string, tx *transaction.Transaction) (int, error) {

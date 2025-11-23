@@ -172,6 +172,9 @@ func (p *Parser) UpdateCmd() (interface{}, error) {
 	if p.lexer.MatchKeyword("delete") {
 		return p.delete()
 	}
+	if p.lexer.MatchKeyword("set") {
+		return p.set()
+	}
 	return p.CreateCmd()
 }
 
@@ -431,6 +434,49 @@ func (p *Parser) modify() (*parserdata.ModifyData, error) {
 	}
 
 	return parserdata.NewModifyData(table, field, value, predicate), nil
+}
+
+func (p *Parser) set() (*parserdata.SetData, error) {
+	// Set
+	err := p.lexer.EatKeyword("set")
+	if err != nil {
+		return nil, err
+	}
+	// Variable name
+	variableName, err := p.field()
+	if err != nil {
+		return nil, err
+	}
+	// =
+	err = p.lexer.EatDelim('=')
+	if err != nil {
+		return nil, err
+	}
+	// Value - can be boolean (true/false), string, or int
+	var value interface{}
+	if p.lexer.MatchKeyword("true") {
+		p.lexer.EatKeyword("true")
+		value = true
+	} else if p.lexer.MatchKeyword("false") {
+		p.lexer.EatKeyword("false")
+		value = false
+	} else if p.lexer.MatchStringConstant() {
+		val, err := p.lexer.EatStringConstant()
+		if err != nil {
+			return nil, err
+		}
+		value = val
+	} else if p.lexer.MatchIntConstant() {
+		val, err := p.lexer.EatIntConstant()
+		if err != nil {
+			return nil, err
+		}
+		value = val
+	} else {
+		return nil, ErrBadSyntax
+	}
+
+	return parserdata.NewSetData(variableName, value), nil
 }
 
 func (p *Parser) fieldList() ([]string, error) {

@@ -15,7 +15,10 @@ import (
 	"github.com/yashagw/cranedb/internal/file"
 	dblog "github.com/yashagw/cranedb/internal/log"
 	"github.com/yashagw/cranedb/internal/metadata"
+	"github.com/yashagw/cranedb/internal/parse"
+	"github.com/yashagw/cranedb/internal/parse/parserdata"
 	"github.com/yashagw/cranedb/internal/plan"
+	"github.com/yashagw/cranedb/internal/session"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -41,6 +44,7 @@ type QueryResponse struct {
 	Columns  []string                 `json:"columns,omitempty"`
 	Affected int                      `json:"affected,omitempty"`
 	Error    string                   `json:"error,omitempty"`
+	Message  string                   `json:"message,omitempty"`
 }
 
 func NewServer(dbDir string) (*Server, error) {
@@ -104,6 +108,9 @@ func (s *Server) handleConnection(conn net.Conn) {
 		log.Printf("Connection closed from %s", remoteAddr)
 	}()
 
+	// Create a session for this connection
+	sess := session.NewSession()
+
 	scanner := bufio.NewScanner(conn)
 	writer := bufio.NewWriter(conn)
 
@@ -126,7 +133,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 			break
 		}
 
-		response := s.executeQuery(query)
+		response := s.executeQuery(query, sess)
 
 		jsonData, err := json.Marshal(response)
 		if err != nil {
@@ -143,12 +150,55 @@ func (s *Server) handleConnection(conn net.Conn) {
 	}
 }
 
-func (s *Server) executeQuery(sql string) QueryResponse {
+func (s *Server) executeQuery(sql string, sess *session.Session) QueryResponse {
 	queryPreview := sql
 	if len(queryPreview) > 100 {
 		queryPreview = queryPreview[:100] + "..."
 	}
 	log.Printf("Executing query: %s", queryPreview)
+
+	// Check if it's a SET command first
+	trimmedSQL := strings.TrimSpace(strings.ToLower(sql))
+	if strings.HasPrefix(trimmedSQL, "set ") {
+		parser := parse.NewParserFromString(sql)
+		setData, err := parser.UpdateCmd()
+		if err != nil {
+			return QueryResponse{
+				Type:  "error",
+				Error: fmt.Sprintf("Failed to parse SET command: %v", err),
+			}
+		}
+
+		setCmd, ok := setData.(*parserdata.SetData)
+		if !ok {
+			return QueryResponse{
+				Type:  "error",
+				Error: "Invalid SET command",
+			}
+		}
+
+		// Set the session variable
+		sess.SetVariable(setCmd.VariableName(), setCmd.Value())
+
+		// Format the value for display
+		var valueStr string
+		switch v := setCmd.Value().(type) {
+		case bool:
+			valueStr = fmt.Sprintf("%t", v)
+		case string:
+			valueStr = fmt.Sprintf("'%s'", v)
+		case int:
+			valueStr = fmt.Sprintf("%d", v)
+		default:
+			valueStr = fmt.Sprintf("%v", v)
+		}
+
+		return QueryResponse{
+			Type:    "set",
+			Message: fmt.Sprintf("%s = %s", setCmd.VariableName(), valueStr),
+		}
+	}
+
 	tx := transaction.NewTransaction(s.fileManager, s.logManager, s.bufferManager, s.lockTable)
 	committed := false
 	defer func() {
@@ -164,12 +214,11 @@ func (s *Server) executeQuery(sql string) QueryResponse {
 
 	// Check if it's a SELECT query or EXPLAIN by looking at the first keyword
 	// This avoids parsing the SQL twice (once here, once in planner methods)
-	trimmedSQL := strings.TrimSpace(strings.ToLower(sql))
 	isQuery := strings.HasPrefix(trimmedSQL, "select")
 	isExplain := strings.HasPrefix(trimmedSQL, "explain")
 
 	if isExplain {
-		planTree, err := s.planner.ExplainPlan(sql, tx)
+		planTree, err := s.planner.ExplainPlan(sql, tx, sess)
 		if err != nil {
 			return QueryResponse{
 				Type:  "error",
@@ -194,7 +243,7 @@ func (s *Server) executeQuery(sql string) QueryResponse {
 	}
 
 	if isQuery {
-		queryPlan, err := s.planner.CreatePlan(sql, tx)
+		queryPlan, err := s.planner.CreatePlan(sql, tx, sess)
 		if err != nil {
 			return QueryResponse{
 				Type:  "error",

@@ -40,7 +40,7 @@ func TestPlanner_E2E(t *testing.T) {
 
 	// 3. QUERY all records
 	querySQL := "SELECT id, name, age FROM students"
-	plan, err := planner.CreatePlan(querySQL, tx)
+	plan, err := planner.CreatePlan(querySQL, tx, nil)
 	require.NoError(t, err)
 
 	scan, err := plan.Open()
@@ -89,7 +89,7 @@ func TestPlanner_E2E(t *testing.T) {
 
 	// 4. QUERY with WHERE clause
 	querySQL2 := "SELECT name FROM students WHERE id = 2"
-	plan, err = planner.CreatePlan(querySQL2, tx)
+	plan, err = planner.CreatePlan(querySQL2, tx, nil)
 	require.NoError(t, err)
 
 	scan, err = plan.Open()
@@ -119,7 +119,7 @@ func TestPlanner_E2E(t *testing.T) {
 	assert.Equal(t, 1, count)
 
 	// Verify the update
-	plan, err = planner.CreatePlan("SELECT age FROM students WHERE name = 'Bob'", tx)
+	plan, err = planner.CreatePlan("SELECT age FROM students WHERE name = 'Bob'", tx, nil)
 	require.NoError(t, err)
 	scan, err = plan.Open()
 	require.NoError(t, err)
@@ -145,7 +145,7 @@ func TestPlanner_E2E(t *testing.T) {
 	assert.Equal(t, 1, count)
 
 	// Verify deletion - should have 2 records left
-	plan, err = planner.CreatePlan("SELECT id FROM students", tx)
+	plan, err = planner.CreatePlan("SELECT id FROM students", tx, nil)
 	require.NoError(t, err)
 	scan, err = plan.Open()
 	require.NoError(t, err)
@@ -217,7 +217,7 @@ func TestPlanner_ComplexJoinQuery(t *testing.T) {
 
 	// Query with join
 	querySQL := "SELECT name, course FROM students, courses WHERE id = student_id AND name = 'Alice'"
-	plan, err := planner.CreatePlan(querySQL, tx)
+	plan, err := planner.CreatePlan(querySQL, tx, nil)
 	require.NoError(t, err)
 
 	scan, err := plan.Open()
@@ -306,7 +306,7 @@ func TestPlanner_ComplexPredicateScenario(t *testing.T) {
 	             FROM students, courses 
 	             WHERE age = 25 AND status = 'active' AND credits = 4 AND id = student_id`
 
-	plan, err := planner.CreatePlan(querySQL, tx)
+	plan, err := planner.CreatePlan(querySQL, tx, nil)
 	require.NoError(t, err)
 
 	// Execute and collect results

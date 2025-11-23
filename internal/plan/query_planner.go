@@ -6,6 +6,7 @@ import (
 	"github.com/yashagw/cranedb/internal/metadata"
 	"github.com/yashagw/cranedb/internal/parse/parserdata"
 	"github.com/yashagw/cranedb/internal/query"
+	"github.com/yashagw/cranedb/internal/session"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
 
@@ -24,8 +25,8 @@ func NewBasicQueryPlanner(metadataManager *metadata.Manager) *BasicQueryPlanner 
 }
 
 // ExplainPlan creates a query plan and returns its string representation for EXPLAIN statements.
-func (p *BasicQueryPlanner) ExplainPlan(explainData *parserdata.ExplainData, tx *transaction.Transaction) (string, error) {
-	queryPlan, err := p.CreatePlan(explainData.QueryData(), tx)
+func (p *BasicQueryPlanner) ExplainPlan(explainData *parserdata.ExplainData, tx *transaction.Transaction, sess *session.Session) (string, error) {
+	queryPlan, err := p.CreatePlan(explainData.QueryData(), tx, sess)
 	if err != nil {
 		return "", err
 	}
@@ -33,7 +34,7 @@ func (p *BasicQueryPlanner) ExplainPlan(explainData *parserdata.ExplainData, tx 
 	return queryPlan.Explain("", true), nil
 }
 
-func (p *BasicQueryPlanner) CreatePlan(queryData *parserdata.QueryData, tx *transaction.Transaction) (Plan, error) {
+func (p *BasicQueryPlanner) CreatePlan(queryData *parserdata.QueryData, tx *transaction.Transaction, sess *session.Session) (Plan, error) {
 	tables := queryData.Tables()
 	predicate := queryData.Predicate()
 
@@ -58,7 +59,7 @@ func (p *BasicQueryPlanner) CreatePlan(queryData *parserdata.QueryData, tx *tran
 	}
 
 	// Phase 2: Optimize join order
-	plan := p.optimizeJoinOrder(tablePlans, predicate, tx)
+	plan := p.optimizeJoinOrder(tablePlans, predicate, tx, sess)
 
 	// Phase 3: Apply remaining predicates (both table-specific and join predicates)
 	// TODO: apply only the join predicates
@@ -135,7 +136,7 @@ func (p *BasicQueryPlanner) optimizeTableWithIndex(tablePlan Plan, tableName str
 
 // optimizeJoinOrder sorts tables by estimated cost and builds optimal join tree.
 // It considers materializing the inner relation in nested loop joins when beneficial.
-func (p *BasicQueryPlanner) optimizeJoinOrder(tablePlans []Plan, predicate *query.Predicate, tx *transaction.Transaction) Plan {
+func (p *BasicQueryPlanner) optimizeJoinOrder(tablePlans []Plan, predicate *query.Predicate, tx *transaction.Transaction, sess *session.Session) Plan {
 	if len(tablePlans) == 1 {
 		return tablePlans[0]
 	}
@@ -145,19 +146,22 @@ func (p *BasicQueryPlanner) optimizeJoinOrder(tablePlans []Plan, predicate *quer
 		return tablePlans[i].BlocksAccessed() < tablePlans[j].BlocksAccessed()
 	})
 
+	// Check if materialization is disabled via session variable
+	noMaterialize := sess != nil && sess.GetBoolVariable("no_materialize")
+
 	// Build join tree starting with most selective table
 	result := tablePlans[0]
 	for i := 1; i < len(tablePlans); i++ {
 		p1 := NewProductPlan(result, tablePlans[i])
 		p2 := NewProductPlan(tablePlans[i], result)
 
-		// Check if materializing inner relation helps
-		if p.shouldMaterializeForJoin(result, tablePlans[i], tx) {
+		// Check if materializing inner relation helps (only if not disabled)
+		if !noMaterialize && p.shouldMaterializeForJoin(result, tablePlans[i], tx) {
 			materialized := NewMaterializePlan(tx, tablePlans[i])
 			p1 = NewProductPlan(result, materialized)
 		}
 
-		if p.shouldMaterializeForJoin(tablePlans[i], result, tx) {
+		if !noMaterialize && p.shouldMaterializeForJoin(tablePlans[i], result, tx) {
 			materialized := NewMaterializePlan(tx, result)
 			p2 = NewProductPlan(tablePlans[i], materialized)
 		}

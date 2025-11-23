@@ -10,6 +10,8 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"github.com/chzyer/readline"
 )
 
 const (
@@ -23,6 +25,7 @@ type QueryResponse struct {
 	Columns  []string                 `json:"columns,omitempty"`
 	Affected int                      `json:"affected,omitempty"`
 	Error    string                   `json:"error,omitempty"`
+	Message  string                   `json:"message,omitempty"`
 }
 
 type Client struct {
@@ -83,7 +86,14 @@ func printQueryResults(response *QueryResponse, duration time.Duration) {
 		return
 	}
 
-	if response.Type == "explain" {
+	if response.Type == "set" {
+		if response.Message != "" {
+			fmt.Printf("✓ %s\n", response.Message)
+		} else {
+			fmt.Printf("✓ Session variable set successfully\n")
+		}
+		fmt.Printf("⏱️  Time: %v\n\n", duration)
+	} else if response.Type == "explain" {
 		// Print the plan tree directly as a multiline string
 		if len(response.Rows) > 0 && len(response.Columns) > 0 {
 			if plan, ok := response.Rows[0]["plan"].(string); ok {
@@ -182,44 +192,96 @@ func main() {
 	fmt.Println("🐦 CraneDB Client")
 	fmt.Printf("Connected to %s:%s\n", host, port)
 	fmt.Println("Type 'QUIT' or 'EXIT' to exit, or enter SQL queries")
+	fmt.Println("Use 'SET variable_name = value' to set session variables (e.g., SET no_materialize = true)")
+	fmt.Println("Use ↑/↓ arrow keys to navigate command history")
 	fmt.Println()
 
-	scanner := bufio.NewScanner(os.Stdin)
+	// Create readline instance with history support
+	historyFile := ""
+	if home := os.Getenv("HOME"); home != "" {
+		historyFile = home + "/.cranedb_history"
+	} else if home := os.Getenv("USERPROFILE"); home != "" {
+		// Windows
+		historyFile = home + "\\.cranedb_history"
+	}
+
+	rl, err := readline.NewEx(&readline.Config{
+		Prompt:          "cranedb> ",
+		HistoryFile:     historyFile,
+		HistoryLimit:    1000,
+		AutoComplete:    nil,
+		InterruptPrompt: "^C",
+		EOFPrompt:       "exit",
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing readline: %v\n", err)
+		os.Exit(1)
+	}
+	defer rl.Close()
+
 	var queryBuilder strings.Builder
 
 	for {
+		// Update prompt based on whether we're building a multi-line query
 		if queryBuilder.Len() == 0 {
-			fmt.Print("cranedb> ")
+			rl.SetPrompt("cranedb> ")
 		} else {
-			fmt.Print("      -> ")
+			rl.SetPrompt("      -> ")
 		}
 
-		if !scanner.Scan() {
+		line, err := rl.Readline()
+		if err != nil {
+			if err == readline.ErrInterrupt {
+				// Ctrl+C - clear current query builder
+				queryBuilder.Reset()
+				fmt.Println()
+				continue
+			} else if err == io.EOF {
+				// Ctrl+D - exit
+				break
+			}
+			fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
 			break
 		}
 
-		line := strings.TrimSpace(scanner.Text())
+		line = strings.TrimSpace(line)
 
 		if line == "" {
 			continue
 		}
 
+		// Check for QUIT/EXIT commands
+		upperLine := strings.ToUpper(line)
+		if upperLine == "QUIT" || upperLine == "EXIT" {
+			fmt.Println("Goodbye!")
+			break
+		}
+
+		// Build multi-line query
+		if queryBuilder.Len() > 0 {
+			queryBuilder.WriteString(" ")
+		}
+		queryBuilder.WriteString(line)
+
+		// If line ends with semicolon, execute the query
 		if strings.HasSuffix(line, ";") {
-			queryBuilder.WriteString(" " + strings.TrimSuffix(line, ";"))
-			query := queryBuilder.String()
+			query := strings.TrimSpace(queryBuilder.String())
 			queryBuilder.Reset()
+
+			// Remove trailing semicolon
+			query = strings.TrimSuffix(query, ";")
+			query = strings.TrimSpace(query)
+
+			if query == "" {
+				continue
+			}
+
+			// Add to history (readline will handle this, but we add it explicitly for multi-line queries)
+			rl.SaveHistory(query)
+
 			if processQuery(query, client) {
 				break
 			}
-		} else {
-			if queryBuilder.Len() > 0 {
-				queryBuilder.WriteString(" ")
-			}
-			queryBuilder.WriteString(line)
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
 	}
 }

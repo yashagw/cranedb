@@ -23,7 +23,7 @@ func NewLexer(input string) *Lexer {
 		"delete": true, "update": true, "set": true,
 		"create": true, "table": true, "varchar": true, "int": true,
 		"view": true, "as": true, "index": true, "on": true,
-		"explain": true,
+		"explain": true, "true": true, "false": true,
 	}
 
 	l := &Lexer{

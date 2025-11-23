@@ -78,7 +78,7 @@ func TestBasicQueryPlanner_SingleTableWithPredicate(t *testing.T) {
 
 	plan, err := planner.CreatePlan(parserdata.NewQueryData(
 		[]string{"id", "name"}, []string{"students"}, pred,
-	), tx)
+	), tx, nil)
 	require.NoError(t, err)
 
 	// Verify schema projection
@@ -130,7 +130,7 @@ func TestBasicQueryPlanner_NoPredicate(t *testing.T) {
 	planner := NewBasicQueryPlanner(md)
 	plan, err := planner.CreatePlan(parserdata.NewQueryData(
 		[]string{"id", "name"}, []string{"products"}, nil,
-	), tx)
+	), tx, nil)
 	require.NoError(t, err)
 
 	scan, err := plan.Open()
@@ -174,7 +174,7 @@ func TestBasicQueryPlanner_CartesianProduct(t *testing.T) {
 	planner := NewBasicQueryPlanner(md)
 	plan, err := planner.CreatePlan(parserdata.NewQueryData(
 		[]string{"sid", "cid"}, []string{"students", "courses"}, nil,
-	), tx)
+	), tx, nil)
 	require.NoError(t, err)
 
 	scan, err := plan.Open()
@@ -259,7 +259,7 @@ func TestBasicQueryPlanner_JoinWithPredicate(t *testing.T) {
 
 	plan, _ := planner.CreatePlan(parserdata.NewQueryData(
 		[]string{"name", "course"}, []string{"students", "enrollments"}, pred,
-	), tx)
+	), tx, nil)
 
 	// Should return 2 records: Bob enrolled in Physics and Chemistry
 	scan, err := plan.Open()
@@ -350,7 +350,7 @@ func TestBasicQueryPlanner_WithIndex(t *testing.T) {
 
 	plan1, err := planner.CreatePlan(parserdata.NewQueryData(
 		[]string{"id", "name", "department"}, []string{"employees"}, pred1,
-	), tx)
+	), tx, nil)
 	require.NoError(t, err)
 
 	// Verify the plan uses index (should have lower cost than table scan)
@@ -393,7 +393,7 @@ func TestBasicQueryPlanner_WithIndex(t *testing.T) {
 
 	plan2, err := planner.CreatePlan(parserdata.NewQueryData(
 		[]string{"name", "age"}, []string{"employees"}, pred2,
-	), tx)
+	), tx, nil)
 	require.NoError(t, err)
 
 	// Verify results - should find 3 engineering employees
@@ -467,7 +467,7 @@ func TestBasicQueryPlanner_MultipleIndexes(t *testing.T) {
 
 	plan1, err := planner.CreatePlan(parserdata.NewQueryData(
 		[]string{"id", "name"}, []string{"products"}, pred1,
-	), tx)
+	), tx, nil)
 	require.NoError(t, err)
 
 	// Verify it returns correct result
@@ -489,7 +489,7 @@ func TestBasicQueryPlanner_MultipleIndexes(t *testing.T) {
 
 	plan2, err := planner.CreatePlan(parserdata.NewQueryData(
 		[]string{"id", "category_id"}, []string{"products"}, pred2,
-	), tx)
+	), tx, nil)
 	require.NoError(t, err)
 
 	// Should return 4 products (20/5 = 4 products per category)
@@ -553,7 +553,7 @@ func TestBasicQueryPlanner_IndexWithStringField(t *testing.T) {
 
 	plan, err := planner.CreatePlan(parserdata.NewQueryData(
 		[]string{"id", "status", "category"}, []string{"items"}, pred,
-	), tx)
+	), tx, nil)
 	require.NoError(t, err)
 
 	// Verify results - should find 3 "active" items
@@ -616,7 +616,7 @@ func TestExplainPlan(t *testing.T) {
 		fullPlanner := NewPlanner(planner, updatePlanner)
 
 		explainSQL := "EXPLAIN SELECT id, name FROM products"
-		planTree, err := fullPlanner.ExplainPlan(explainSQL, tx)
+		planTree, err := fullPlanner.ExplainPlan(explainSQL, tx, nil)
 		require.NoError(t, err)
 
 		expected := `ProjectPlan(fields: [id, name])
@@ -652,7 +652,7 @@ func TestExplainPlan(t *testing.T) {
 		fullPlanner := NewPlanner(planner, updatePlanner)
 
 		explainSQL := "EXPLAIN SELECT id, name FROM employees WHERE id = 3"
-		planTree, err := fullPlanner.ExplainPlan(explainSQL, tx)
+		planTree, err := fullPlanner.ExplainPlan(explainSQL, tx, nil)
 		require.NoError(t, err)
 
 		expected := `ProjectPlan(fields: [id, name])
@@ -708,7 +708,7 @@ func TestExplainPlan(t *testing.T) {
 		fullPlanner := NewPlanner(planner, updatePlanner)
 
 		explainSQL := "EXPLAIN SELECT name, dept_name FROM students, departments WHERE dept_id = dept_id"
-		planTree, err := fullPlanner.ExplainPlan(explainSQL, tx)
+		planTree, err := fullPlanner.ExplainPlan(explainSQL, tx, nil)
 		require.NoError(t, err)
 
 		expected := `ProjectPlan(fields: [name, dept_name])
@@ -768,7 +768,7 @@ func TestExplainPlan(t *testing.T) {
 		fullPlanner := NewPlanner(planner, updatePlanner)
 
 		explainSQL := "EXPLAIN SELECT name, dept_name FROM students, departments WHERE dept_id = dept_id"
-		planTree, err := fullPlanner.ExplainPlan(explainSQL, tx)
+		planTree, err := fullPlanner.ExplainPlan(explainSQL, tx, nil)
 		require.NoError(t, err)
 
 		expected := `ProjectPlan(fields: [name, dept_name])
@@ -830,16 +830,17 @@ func TestExplainPlan(t *testing.T) {
 		fullPlanner := NewPlanner(planner, updatePlanner)
 
 		explainSQL := "EXPLAIN SELECT name, dept_name FROM students, departments WHERE id = 3 AND dept_id = dept_id"
-		planTree, err := fullPlanner.ExplainPlan(explainSQL, tx)
+		planTree, err := fullPlanner.ExplainPlan(explainSQL, tx, nil)
 		require.NoError(t, err)
 
 		expected := `ProjectPlan(fields: [name, dept_name])
     └─ SelectPlan(predicate: id = 3 and dept_id = dept_id)
     └─     └─ ProductPlan
-    └─     └─     ├─ SelectPlan(predicate: id = 3 and dept_id = dept_id)
-    └─     └─     ├─ │   └─ TablePlan(students)
-    └─     └─     └─ SelectPlan(predicate: dept_id = dept_id)
-    └─     └─     └─     └─ TablePlan(departments)`
+    └─     └─     ├─ SelectPlan(predicate: dept_id = dept_id)
+    └─     └─     ├─ │   └─ TablePlan(departments)
+    └─     └─     └─ MaterializePlan
+    └─     └─     └─     └─ SelectPlan(predicate: id = 3 and dept_id = dept_id)
+    └─     └─     └─     └─     └─ TablePlan(students)`
 		assert.Equal(t, expected, planTree)
 	})
 
@@ -852,7 +853,7 @@ func TestExplainPlan(t *testing.T) {
 		fullPlanner := NewPlanner(planner, updatePlanner)
 
 		explainSQL := "EXPLAIN SELECT * FROM nonexistent"
-		_, err := fullPlanner.ExplainPlan(explainSQL, tx)
+		_, err := fullPlanner.ExplainPlan(explainSQL, tx, nil)
 		require.Error(t, err, "Should return error for invalid query")
 	})
 
@@ -865,7 +866,7 @@ func TestExplainPlan(t *testing.T) {
 		fullPlanner := NewPlanner(planner, updatePlanner)
 
 		selectSQL := "SELECT * FROM products"
-		_, err := fullPlanner.ExplainPlan(selectSQL, tx)
+		_, err := fullPlanner.ExplainPlan(selectSQL, tx, nil)
 		require.Error(t, err, "Should return error for non-EXPLAIN statement")
 		assert.True(t, err.Error() == "not an EXPLAIN statement" || err.Error() == "bad syntax",
 			"Error should indicate it's not an EXPLAIN statement or bad syntax, got: %s", err.Error())
