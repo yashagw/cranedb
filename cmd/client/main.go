@@ -265,19 +265,19 @@ func main() {
 
 		// If line ends with semicolon, execute the query
 		if strings.HasSuffix(line, ";") {
-			query := strings.TrimSpace(queryBuilder.String())
+			fullQuery := strings.TrimSpace(queryBuilder.String())
 			queryBuilder.Reset()
 
-			// Remove trailing semicolon
-			query = strings.TrimSuffix(query, ";")
+			// Save to history with semicolon so it's preserved when navigating history
+			rl.SaveHistory(fullQuery)
+
+			// Remove trailing semicolon for execution
+			query := strings.TrimSuffix(fullQuery, ";")
 			query = strings.TrimSpace(query)
 
 			if query == "" {
 				continue
 			}
-
-			// Add to history (readline will handle this, but we add it explicitly for multi-line queries)
-			rl.SaveHistory(query)
 
 			if processQuery(query, client) {
 				break

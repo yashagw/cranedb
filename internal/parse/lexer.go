@@ -24,6 +24,7 @@ func NewLexer(input string) *Lexer {
 		"create": true, "table": true, "varchar": true, "int": true,
 		"view": true, "as": true, "index": true, "on": true,
 		"explain": true, "true": true, "false": true,
+		"order": true, "by": true,
 	}
 
 	l := &Lexer{

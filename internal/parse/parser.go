@@ -130,23 +130,38 @@ func (p *Parser) Query() (*parserdata.QueryData, error) {
 		return nil, err
 	}
 
-	if !p.lexer.MatchKeyword("where") {
-		return parserdata.NewQueryData(fields, tableNames, nil), nil
+	var predicate *query.Predicate
+	var sortFields []string
+
+	// Parse WHERE clause if present
+	if p.lexer.MatchKeyword("where") {
+		err = p.lexer.EatKeyword("where")
+		if err != nil {
+			return nil, err
+		}
+		predicate, err = p.predicate()
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// Where
-	err = p.lexer.EatKeyword("where")
-	if err != nil {
-		return nil, err
+	// Parse ORDER BY clause if present
+	if p.lexer.MatchKeyword("order") {
+		err = p.lexer.EatKeyword("order")
+		if err != nil {
+			return nil, err
+		}
+		err = p.lexer.EatKeyword("by")
+		if err != nil {
+			return nil, err
+		}
+		sortFields, err = p.sortFieldList()
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// Predicate
-	predicate, err := p.predicate()
-	if err != nil {
-		return nil, err
-	}
-
-	return parserdata.NewQueryData(fields, tableNames, predicate), nil
+	return parserdata.NewQueryDataWithSort(fields, tableNames, predicate, sortFields), nil
 }
 
 // Explain parses EXPLAIN <query> and returns the query data wrapped in ExplainData
@@ -480,6 +495,31 @@ func (p *Parser) set() (*parserdata.SetData, error) {
 }
 
 func (p *Parser) fieldList() ([]string, error) {
+	fields := []string{}
+
+	firstField, err := p.field()
+	if err != nil {
+		return nil, err
+	}
+	fields = append(fields, firstField)
+
+	// Now look for ", field" patterns.
+	for p.lexer.MatchDelim(',') {
+		err = p.lexer.EatDelim(',')
+		if err != nil {
+			return nil, err
+		}
+		field, err := p.field()
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, field)
+	}
+
+	return fields, nil
+}
+
+func (p *Parser) sortFieldList() ([]string, error) {
 	fields := []string{}
 
 	firstField, err := p.field()

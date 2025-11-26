@@ -148,6 +148,53 @@ func TestParserQuery(t *testing.T) {
 		assert.Error(t, err)
 		assert.Equal(t, ErrBadSyntax, err)
 	})
+
+	t.Run("WithOrderBy", func(t *testing.T) {
+		q := "select name, age from students order by age"
+		p := NewParser(NewLexer(q))
+		require.NotNil(t, p)
+		qd, err := p.Query()
+		require.NoError(t, err)
+		require.NotNil(t, qd)
+		assert.Equal(t, []string{"name", "age"}, qd.Fields())
+		assert.Equal(t, []string{"students"}, qd.Tables())
+		assert.Nil(t, qd.Predicate())
+		assert.Equal(t, []string{"age"}, qd.SortFields())
+	})
+
+	t.Run("WithWhereAndOrderBy", func(t *testing.T) {
+		q := "select name from students where age = 25 order by name"
+		p := NewParser(NewLexer(q))
+		require.NotNil(t, p)
+		qd, err := p.Query()
+		require.NoError(t, err)
+		require.NotNil(t, qd)
+		assert.Equal(t, []string{"name"}, qd.Fields())
+		assert.Equal(t, []string{"students"}, qd.Tables())
+		require.NotNil(t, qd.Predicate())
+		assert.Equal(t, "age = 25", qd.Predicate().String())
+		assert.Equal(t, []string{"name"}, qd.SortFields())
+	})
+
+	t.Run("WithMultipleSortFields", func(t *testing.T) {
+		q := "select name, age from students order by age, name"
+		p := NewParser(NewLexer(q))
+		require.NotNil(t, p)
+		qd, err := p.Query()
+		require.NoError(t, err)
+		require.NotNil(t, qd)
+		assert.Equal(t, []string{"age", "name"}, qd.SortFields())
+	})
+
+	t.Run("OrderByCaseInsensitive", func(t *testing.T) {
+		q := "SELECT name FROM students ORDER BY name"
+		p := NewParser(NewLexer(q))
+		require.NotNil(t, p)
+		qd, err := p.Query()
+		require.NoError(t, err)
+		require.NotNil(t, qd)
+		assert.Equal(t, []string{"name"}, qd.SortFields())
+	})
 }
 
 func TestParserInsert(t *testing.T) {

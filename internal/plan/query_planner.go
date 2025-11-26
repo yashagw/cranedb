@@ -71,6 +71,12 @@ func (p *BasicQueryPlanner) CreatePlan(queryData *parserdata.QueryData, tx *tran
 	// Phase 4: Project the required fields
 	plan = NewProjectPlan(plan, queryData.Fields())
 
+	// Phase 5: Apply sorting if ORDER BY is present
+	sortFields := queryData.SortFields()
+	if len(sortFields) > 0 {
+		plan = NewSortPlan(plan, sortFields, tx)
+	}
+
 	return plan, nil
 }
 

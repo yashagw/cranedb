@@ -808,3 +808,78 @@ func TestExplainPlan(t *testing.T) {
 			"Error should indicate it's not an EXPLAIN statement or bad syntax, got: %s", err.Error())
 	})
 }
+
+func TestBasicQueryPlanner_WithWhereAndOrderBy(t *testing.T) {
+	_, tx, md, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	schema := record.NewSchema()
+	schema.AddIntField("id")
+	schema.AddStringField("name", 20)
+	schema.AddIntField("age")
+
+	createTableWithData(t, "students", schema, md, tx, func(ts *table.TableScan) {
+		err := ts.BeforeFirst()
+		require.NoError(t, err)
+		// Insert data in unsorted order
+		testData := []struct {
+			id   int
+			name string
+			age  int
+		}{
+			{3, "Charlie", 25},
+			{1, "Alice", 20},
+			{4, "David", 30},
+			{2, "Bob", 22},
+			{5, "Eve", 28},
+		}
+		for _, data := range testData {
+			err = ts.Insert()
+			require.NoError(t, err)
+			err = ts.SetInt("id", data.id)
+			require.NoError(t, err)
+			err = ts.SetString("name", data.name)
+			require.NoError(t, err)
+			err = ts.SetInt("age", data.age)
+			require.NoError(t, err)
+		}
+	})
+
+	planner := NewBasicQueryPlanner(md)
+	pred := query.NewPredicate(*query.NewTerm(
+		*query.NewFieldNameExpression("age"),
+		*query.NewConstantExpression(*query.NewIntConstant(22)),
+	))
+
+	// Test WHERE age = 22 ORDER BY id
+	plan, err := planner.CreatePlan(parserdata.NewQueryDataWithSort(
+		[]string{"id", "name", "age"}, []string{"students"}, pred, []string{"id"},
+	), tx, nil)
+	require.NoError(t, err)
+
+	queryScan, err := plan.Open()
+	require.NoError(t, err)
+	defer queryScan.Close()
+
+	err = queryScan.BeforeFirst()
+	require.NoError(t, err)
+
+	lastId := 0
+	count := 0
+	for {
+		hasNext, err := queryScan.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		id, err := queryScan.GetInt("id")
+		require.NoError(t, err)
+		age, err := queryScan.GetInt("age")
+		require.NoError(t, err)
+		assert.Equal(t, 22, age, "Should only have records with age = 22")
+		assert.True(t, id > lastId, "Records should be sorted by id")
+		lastId = id
+		count++
+	}
+	assert.True(t, count > 0, "Should have some filtered records")
+}
