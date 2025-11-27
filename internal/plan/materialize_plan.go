@@ -45,6 +45,18 @@ func (mp *MaterializePlan) Open() (scan.Scan, error) {
 		return nil, err
 	}
 
+	// Position source scan before the first record before iterating
+	// This ensures we get all records in a deterministic order
+	// CRITICAL: We must call BeforeFirst() to ensure the source scan starts from the beginning
+	// Some scans (like TableScan) may be created in an already-positioned state, so this
+	// explicit reset is necessary for determinism.
+	err = src.BeforeFirst()
+	if err != nil {
+		src.Close()
+		dest.Close()
+		return nil, err
+	}
+
 	// Copy all records from source to destination
 	for {
 		hasNext, err := src.Next()

@@ -52,6 +52,10 @@ func NewServer(dbDir string) (*Server, error) {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
 
+	if err := removeTempTables(dbDir); err != nil {
+		return nil, fmt.Errorf("failed to clean temp tables: %w", err)
+	}
+
 	fm, err := file.NewManager(dbDir, DefaultBlockSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create file manager: %w", err)
@@ -98,6 +102,28 @@ func NewServer(dbDir string) (*Server, error) {
 		metadataManager: md,
 		planner:         planner,
 	}, nil
+}
+
+// removeTempTables deletes stale temporary table files (temp*.tbl) left from previous runs.
+func removeTempTables(dbDir string) error {
+	entries, err := os.ReadDir(dbDir)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, "temp") && strings.HasSuffix(name, ".tbl") {
+			fullPath := filepath.Join(dbDir, name)
+			if err := os.Remove(fullPath); err != nil {
+				log.Printf("Failed to remove temp table %s: %v", fullPath, err)
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Server) handleConnection(conn net.Conn) {
