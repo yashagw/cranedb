@@ -26,8 +26,8 @@ The database has implemented the following core components:
 - **Concurrency Manager**: Manages shared and exclusive locks with deadlock prevention
 - **Record Manager**: Handles record storage, schema management, and table scanning
 - **Metadata Manager**: Manages database metadata including tables, views, indexes, and statistics
-- **Parser**: SQL parser and lexer for parsing SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, CREATE VIEW, and CREATE INDEX statements
-- **Query Planner**: Generates execution plans for SELECT queries with support for joins, predicates, projections, and index-aware optimization
+- **Parser**: SQL parser and lexer for parsing SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, CREATE VIEW, and CREATE INDEX statements with support for ORDER BY and GROUP BY clauses
+- **Query Planner**: Generates execution plans for SELECT queries with support for joins, predicates, projections, sorting, grouping, aggregation functions, and index-aware optimization
 - **Update Planner**: Executes INSERT, UPDATE, DELETE, CREATE TABLE, CREATE VIEW, and CREATE INDEX statements
 
 ## Features
@@ -64,10 +64,13 @@ The database has implemented the following core components:
 ### Query Processing
 - **SQL Parser**: Lexical analysis and parsing of SQL statements
 - **Query Planning**: Execution plan generation with cost estimation and index-aware optimization
-- **Relational Algebra**: Support for product (join), select (filter), project (field selection), and materialization operations
+- **Relational Algebra**: Support for product (join), select (filter), project (field selection), sort, group, and materialization operations
 - **Query Execution**: Iterator-based query execution with lazy evaluation
 - **Expression Evaluation**: Support for field references and constant values in expressions
 - **Predicate Evaluation**: WHERE clause filtering with support for equality comparisons and AND conditions
+- **Sorting**: ORDER BY clause support for sorting query results by one or more fields
+- **Grouping**: GROUP BY clause support for grouping records by specified fields
+- **Aggregation Functions**: Support for MAX and MIN aggregation functions in GROUP BY queries
 - **Update Operations**: Execution of INSERT, UPDATE, and DELETE statements with predicate support and automatic index maintenance
 - **Materialization**: Temporary table materialization for query optimization, especially beneficial for nested loop joins
 
@@ -83,16 +86,16 @@ The database has implemented the following core components:
 - ✅ Metadata management for tables, views, and indexes
 - ✅ SQL parsing and lexing
 - ✅ Query planning and execution
-- ✅ Relational algebra operations (product, select, project, materialize)
+- ✅ Relational algebra operations (product, select, project, sort, group, materialize)
 - ✅ Client-server architecture
 - ✅ B-tree indexes
 - ✅ Materialization for query optimization
+- ✅ Sorting (ORDER BY) support
+- ✅ Grouping (GROUP BY) with MAX and MIN aggregation functions
 
 🚧 **Future Development**
-- **Sorting & Grouping**: External sorting, grouping operations, and merge joins
-- **Additional SQL Features**: OR conditions, comparison operators (>, <, >=, <=), aggregation functions, GROUP BY, ORDER BY
-- **Buffer Optimization**: Multibuffer algorithms for sorting and joins
-- **Advanced Query Optimization**: Equivalent query trees, more sophisticated cost-based optimization, and advanced plan selection
+- **Additional SQL Features**: OR conditions, comparison operators (>, <, >=, <=), additional aggregation functions (COUNT, SUM, AVG)
+- **Merge Joins**: Merge join algorithms
 ---
 
 **Note**: This project is not intended for production use and serves as an educational implementation of database internals.
