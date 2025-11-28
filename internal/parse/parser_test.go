@@ -195,6 +195,34 @@ func TestParserQuery(t *testing.T) {
 		require.NotNil(t, qd)
 		assert.Equal(t, []string{"name"}, qd.SortFields())
 	})
+
+	t.Run("WithGroupBy", func(t *testing.T) {
+		q := "select dept, max(salary), min(salary) from employees group by dept"
+		p := NewParser(NewLexer(q))
+		require.NotNil(t, p)
+		qd, err := p.Query()
+		require.NoError(t, err)
+		require.NotNil(t, qd)
+		assert.Equal(t, []string{"dept"}, qd.Fields())
+		assert.Equal(t, []string{"dept"}, qd.GroupFields())
+		assert.Equal(t, 2, len(qd.AggregationFns()))
+		assert.Equal(t, parserdata.AggMax, qd.AggregationFns()[0].Type)
+		assert.Equal(t, "salary", qd.AggregationFns()[0].FieldName)
+		assert.Equal(t, parserdata.AggMin, qd.AggregationFns()[1].Type)
+		assert.Equal(t, "salary", qd.AggregationFns()[1].FieldName)
+	})
+
+	t.Run("WithGroupByAndOrderBy", func(t *testing.T) {
+		q := "select dept, max(salary) from employees group by dept order by dept"
+		p := NewParser(NewLexer(q))
+		require.NotNil(t, p)
+		qd, err := p.Query()
+		require.NoError(t, err)
+		require.NotNil(t, qd)
+		assert.Equal(t, []string{"dept"}, qd.GroupFields())
+		assert.Equal(t, []string{"dept"}, qd.SortFields())
+		assert.Equal(t, 1, len(qd.AggregationFns()))
+	})
 }
 
 func TestParserInsert(t *testing.T) {

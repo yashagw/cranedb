@@ -114,8 +114,8 @@ func (p *Parser) Query() (*parserdata.QueryData, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Field List
-	fields, err := p.fieldList()
+	// Field List (may include aggregation functions)
+	fields, aggregationFns, err := p.selectFieldList()
 	if err != nil {
 		return nil, err
 	}
@@ -132,6 +132,7 @@ func (p *Parser) Query() (*parserdata.QueryData, error) {
 
 	var predicate *query.Predicate
 	var sortFields []string
+	var groupFields []string
 
 	// Parse WHERE clause if present
 	if p.lexer.MatchKeyword("where") {
@@ -140,6 +141,22 @@ func (p *Parser) Query() (*parserdata.QueryData, error) {
 			return nil, err
 		}
 		predicate, err = p.predicate()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Parse GROUP BY clause if present
+	if p.lexer.MatchKeyword("group") {
+		err = p.lexer.EatKeyword("group")
+		if err != nil {
+			return nil, err
+		}
+		err = p.lexer.EatKeyword("by")
+		if err != nil {
+			return nil, err
+		}
+		groupFields, err = p.sortFieldList()
 		if err != nil {
 			return nil, err
 		}
@@ -161,7 +178,7 @@ func (p *Parser) Query() (*parserdata.QueryData, error) {
 		}
 	}
 
-	return parserdata.NewQueryDataWithSort(fields, tableNames, predicate, sortFields), nil
+	return parserdata.NewQueryDataWithGroupBy(fields, tableNames, predicate, sortFields, groupFields, aggregationFns), nil
 }
 
 // Explain parses EXPLAIN <query> and returns the query data wrapped in ExplainData
@@ -517,6 +534,105 @@ func (p *Parser) fieldList() ([]string, error) {
 	}
 
 	return fields, nil
+}
+
+// selectFieldList parses a SELECT field list that may include aggregation functions.
+// Returns: (regular fields, aggregation functions, error)
+func (p *Parser) selectFieldList() ([]string, []parserdata.AggregationFn, error) {
+	fields := []string{}
+	aggFns := []parserdata.AggregationFn{}
+
+	// Parse first field (may be aggregation or regular field)
+	field, aggFn, err := p.selectField()
+	if err != nil {
+		return nil, nil, err
+	}
+	if aggFn != nil {
+		aggFns = append(aggFns, *aggFn)
+	} else {
+		fields = append(fields, field)
+	}
+
+	// Now look for ", field" patterns.
+	for p.lexer.MatchDelim(',') {
+		err = p.lexer.EatDelim(',')
+		if err != nil {
+			return nil, nil, err
+		}
+		field, aggFn, err := p.selectField()
+		if err != nil {
+			return nil, nil, err
+		}
+		if aggFn != nil {
+			aggFns = append(aggFns, *aggFn)
+		} else {
+			fields = append(fields, field)
+		}
+	}
+
+	return fields, aggFns, nil
+}
+
+// selectField parses a single SELECT field, which may be:
+// - A regular field: fieldname
+// - An aggregation function: max(fieldname) or min(fieldname)
+// Returns: (field name or empty if aggregation, aggregation function or nil, error)
+func (p *Parser) selectField() (string, *parserdata.AggregationFn, error) {
+	// Check if it's an aggregation function: max(...) or min(...)
+	if p.lexer.MatchKeyword("max") {
+		err := p.lexer.EatKeyword("max")
+		if err != nil {
+			return "", nil, err
+		}
+		err = p.lexer.EatDelim('(')
+		if err != nil {
+			return "", nil, err
+		}
+		fieldName, err := p.field()
+		if err != nil {
+			return "", nil, err
+		}
+		err = p.lexer.EatDelim(')')
+		if err != nil {
+			return "", nil, err
+		}
+		aggFn := parserdata.AggregationFn{
+			Type:      parserdata.AggMax,
+			FieldName: fieldName,
+		}
+		return "", &aggFn, nil
+	}
+
+	if p.lexer.MatchKeyword("min") {
+		err := p.lexer.EatKeyword("min")
+		if err != nil {
+			return "", nil, err
+		}
+		err = p.lexer.EatDelim('(')
+		if err != nil {
+			return "", nil, err
+		}
+		fieldName, err := p.field()
+		if err != nil {
+			return "", nil, err
+		}
+		err = p.lexer.EatDelim(')')
+		if err != nil {
+			return "", nil, err
+		}
+		aggFn := parserdata.AggregationFn{
+			Type:      parserdata.AggMin,
+			FieldName: fieldName,
+		}
+		return "", &aggFn, nil
+	}
+
+	// Regular field
+	field, err := p.field()
+	if err != nil {
+		return "", nil, err
+	}
+	return field, nil, nil
 }
 
 func (p *Parser) sortFieldList() ([]string, error) {

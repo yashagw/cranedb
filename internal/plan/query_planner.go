@@ -6,6 +6,7 @@ import (
 	"github.com/yashagw/cranedb/internal/metadata"
 	"github.com/yashagw/cranedb/internal/parse/parserdata"
 	"github.com/yashagw/cranedb/internal/query"
+	"github.com/yashagw/cranedb/internal/query/aggregations"
 	"github.com/yashagw/cranedb/internal/session"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
@@ -68,10 +69,67 @@ func (p *BasicQueryPlanner) CreatePlan(queryData *parserdata.QueryData, tx *tran
 		plan = NewSelectPlan(plan, predicate)
 	}
 
-	// Phase 4: Project the required fields
-	plan = NewProjectPlan(plan, queryData.Fields())
+	// Phase 4: Apply GROUP BY if present
+	groupFields := queryData.GroupFields()
+	aggFns := queryData.AggregationFns()
+	if len(groupFields) > 0 || len(aggFns) > 0 {
+		// Convert parser aggregation functions to query aggregation functions
+		queryAggFns := make([]aggregations.AggregationFunction, len(aggFns))
+		for i, aggFn := range aggFns {
+			switch aggFn.Type {
+			case parserdata.AggMax:
+				queryAggFns[i] = aggregations.NewMaxFn(aggFn.FieldName)
+			case parserdata.AggMin:
+				queryAggFns[i] = aggregations.NewMinFn(aggFn.FieldName)
+			}
+		}
+		plan = NewGroupByPlan(tx, plan, groupFields, queryAggFns)
+	}
 
-	// Phase 5: Apply sorting if ORDER BY is present
+	// Phase 5: Project the required fields
+	projectFields := queryData.Fields()
+	if len(groupFields) > 0 || len(aggFns) > 0 {
+		// For GROUP BY queries, build project fields from:
+		// - Group fields (from GROUP BY clause)
+		// - Aggregation field names (from SELECT like max(salary))
+		// - Regular fields from SELECT that exist in the GroupByPlan schema
+		projectFields = make([]string, 0, len(groupFields)+len(aggFns)+len(queryData.Fields()))
+
+		// Get the schema after GROUP BY to check which fields are available
+		groupBySchema := plan.Schema()
+
+		// Add group fields
+		projectFields = append(projectFields, groupFields...)
+
+		// Add aggregation field names
+		for _, aggFn := range aggFns {
+			switch aggFn.Type {
+			case parserdata.AggMax:
+				projectFields = append(projectFields, aggregations.NewMaxFn(aggFn.FieldName).FieldName())
+			case parserdata.AggMin:
+				projectFields = append(projectFields, aggregations.NewMinFn(aggFn.FieldName).FieldName())
+			}
+		}
+
+		// Only include regular fields from SELECT that exist in the GroupByPlan schema
+		for _, field := range queryData.Fields() {
+			if groupBySchema.HasField(field) {
+				alreadyAdded := false
+				for _, added := range projectFields {
+					if added == field {
+						alreadyAdded = true
+						break
+					}
+				}
+				if !alreadyAdded {
+					projectFields = append(projectFields, field)
+				}
+			}
+		}
+	}
+	plan = NewProjectPlan(plan, projectFields)
+
+	// Phase 6: Apply sorting if ORDER BY is present
 	sortFields := queryData.SortFields()
 	if len(sortFields) > 0 {
 		plan = NewSortPlan(plan, sortFields, tx)
