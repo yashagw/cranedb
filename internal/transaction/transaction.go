@@ -122,6 +122,13 @@ func (t *Transaction) SetInt(blk *file.BlockID, offset int, val int, log bool) e
 		return err
 	}
 	buff := t.bufferList.GetBuffer(blk)
+	if buff == nil {
+		// Buffer not pinned yet, pin it first
+		buff, err = t.bufferList.Pin(blk)
+		if err != nil {
+			return err
+		}
+	}
 	lsn := -1
 	if log {
 		lsn, err = t.recoveryManager.SetInt(buff, offset)
@@ -141,6 +148,13 @@ func (t *Transaction) SetString(blk *file.BlockID, offset int, val string, log b
 		return err
 	}
 	buff := t.bufferList.GetBuffer(blk)
+	if buff == nil {
+		// Buffer not pinned yet, pin it first
+		buff, err = t.bufferList.Pin(blk)
+		if err != nil {
+			return err
+		}
+	}
 	lsn := -1
 	if log {
 		lsn, err = t.recoveryManager.SetString(buff, offset)

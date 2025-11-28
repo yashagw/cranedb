@@ -145,6 +145,17 @@ func (rm *RecoveryManager) doRecovery() error {
 			if err != nil {
 				return err
 			}
+			// Unpin the buffer after undo to prevent buffer pool exhaustion during recovery
+			// Only unpin if this is a SetInt or SetString record (they have block info)
+			if record.Op() == LogRecordSetInt {
+				if setIntRecord, ok := record.(*SetIntLogRecord); ok {
+					rm.transaction.Unpin(setIntRecord.block)
+				}
+			} else if record.Op() == LogRecordSetString {
+				if setStringRecord, ok := record.(*SetStringLogRecord); ok {
+					rm.transaction.Unpin(setStringRecord.block)
+				}
+			}
 		}
 	}
 	return nil

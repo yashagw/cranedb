@@ -26,7 +26,7 @@ const (
 	DefaultPort       = "8080"
 	DefaultDBDir      = "./cranedb_data"
 	DefaultBlockSize  = 400
-	DefaultBufferSize = 20
+	DefaultBufferSize = 40
 )
 
 type Server struct {
