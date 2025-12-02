@@ -101,6 +101,18 @@ func (p *Predicate) EquatesWithField(fldname string) *string {
 	return nil
 }
 
+// ComparesWithConstant checks if any term compares the given field with a constant (any operator).
+// Returns the constant, operator, and true if found; nil, OpEQ, false otherwise.
+// This is used for estimating distinct values after filtering.
+func (p *Predicate) ComparesWithConstant(fldname string) (*Constant, Operator, bool) {
+	for _, t := range p.terms {
+		if c, op, found := t.ComparesWithConstant(fldname); found {
+			return c, op, true
+		}
+	}
+	return nil, OpEQ, false
+}
+
 // ReductionFactor estimates how much the predicate will reduce the result set.
 // It multiplies the reduction factors of all individual terms.
 // Each term's reduction factor is calculated based on the distinct values of the field it operates on.
@@ -138,4 +150,15 @@ func (p *Predicate) GetTerms() []Term {
 // IsEmpty returns true if the predicate has no terms
 func (p *Predicate) IsEmpty() bool {
 	return len(p.terms) == 0
+}
+
+// Validate checks if all terms in the predicate are valid for the given schema.
+// Returns an error if any term uses range operators with boolean fields.
+func (p *Predicate) Validate(sch *record.Schema) error {
+	for _, t := range p.terms {
+		if err := t.Validate(sch); err != nil {
+			return err
+		}
+	}
+	return nil
 }

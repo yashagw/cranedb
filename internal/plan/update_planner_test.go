@@ -202,6 +202,7 @@ func TestBasicUpdatePlanner_ExecuteDelete(t *testing.T) {
 	term := query.NewTerm(
 		*query.NewFieldNameExpression("name"),
 		*query.NewConstantExpression(*query.NewStringConstant("ToDelete")),
+		query.OpEQ,
 	)
 	pred := query.NewPredicate(*term)
 
@@ -266,6 +267,7 @@ func TestBasicUpdatePlanner_ExecuteModify(t *testing.T) {
 	term := query.NewTerm(
 		*query.NewFieldNameExpression("id"),
 		*query.NewConstantExpression(*query.NewIntConstant(2)),
+		query.OpEQ,
 	)
 	pred := query.NewPredicate(*term)
 

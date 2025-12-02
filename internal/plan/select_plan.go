@@ -26,6 +26,12 @@ func NewSelectPlan(p Plan, pred *query.Predicate) *SelectPlan {
 }
 
 func (sp *SelectPlan) Open() (scan.Scan, error) {
+	// Validate predicate before opening scan to catch errors early
+	// This prevents buffer/lock issues from occurring during query execution
+	if err := sp.pred.Validate(sp.p.Schema()); err != nil {
+		return nil, err
+	}
+
 	s, err := sp.p.Open()
 	if err != nil {
 		return nil, err
@@ -52,15 +58,44 @@ func (sp *SelectPlan) RecordsOutput() int {
 	return sp.p.RecordsOutput() / reductionFactor
 }
 
-// DistinctValues returns:
-// - 1 if the field is equated with a constant
-// - min of both fields if equated with another field
-// - underlying plan's value otherwise
+// DistinctValues returns the estimated number of distinct values for a field after applying the predicate.
 func (sp *SelectPlan) DistinctValues(fldname string) (int, error) {
+	// Check for field = constant (equality)
 	if sp.pred.EquatesWithConstant(fldname) != nil {
 		return 1, nil
 	}
 
+	// Check for field op constant (any operator)
+	if _, operator, found := sp.pred.ComparesWithConstant(fldname); found {
+		originalDistinct, err := sp.p.DistinctValues(fldname)
+		if err != nil {
+			return 0, err
+		}
+
+		switch operator {
+		case query.OpEQ:
+			return 1, nil
+		case query.OpNE:
+			// field != constant: exclude one value, so distinct - 1 values remain
+			reduced := originalDistinct - 1
+			if reduced < 1 {
+				reduced = 1
+			}
+			return reduced, nil
+		case query.OpGT, query.OpLT, query.OpGE, query.OpLE:
+			// Single-sided range: roughly half the distinct values
+			reduced := originalDistinct / 2
+			if reduced < 1 {
+				reduced = 1
+			}
+			return reduced, nil
+		default:
+			// Unknown operator, return original
+			return originalDistinct, nil
+		}
+	}
+
+	// Check for field = field
 	fldname2 := sp.pred.EquatesWithField(fldname)
 	if fldname2 != nil {
 		val1, err := sp.p.DistinctValues(fldname)
@@ -74,6 +109,7 @@ func (sp *SelectPlan) DistinctValues(fldname string) (int, error) {
 		return int(math.Min(float64(val1), float64(val2))), nil
 	}
 
+	// No specific comparison found, return underlying plan's value
 	return sp.p.DistinctValues(fldname)
 }
 

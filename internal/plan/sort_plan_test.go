@@ -235,7 +235,7 @@ func TestSortPlan(t *testing.T) {
 		// Create a predicate: age = 22
 		fieldExpr := query.NewFieldNameExpression("age")
 		constExpr := query.NewConstantExpression(*query.NewIntConstant(22))
-		term := query.NewTerm(*fieldExpr, *constExpr)
+		term := query.NewTerm(*fieldExpr, *constExpr, query.OpEQ)
 		pred := query.NewPredicate(*term)
 		selectPlan := NewSelectPlan(tablePlan, pred)
 		sortPlan := NewSortPlan(selectPlan, []string{"id"}, tx)

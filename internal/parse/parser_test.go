@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/yashagw/cranedb/internal/parse/parserdata"
+	"github.com/yashagw/cranedb/internal/query"
 	"github.com/yashagw/cranedb/internal/record"
 )
 
@@ -91,6 +92,72 @@ func TestParserTerm(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, tm)
 	assert.Equal(t, "age = 25", tm.String())
+}
+
+func TestParserTermComparisonOperators(t *testing.T) {
+	// Test equality (=)
+	p1 := NewParser(NewLexer("age = 25"))
+	tm1, err := p1.term()
+	require.NoError(t, err)
+	require.NotNil(t, tm1)
+	assert.Equal(t, "age = 25", tm1.String())
+	assert.Equal(t, query.OpEQ, tm1.GetOperator())
+
+	// Test not equal (!=)
+	p2 := NewParser(NewLexer("age != 25"))
+	tm2, err := p2.term()
+	require.NoError(t, err)
+	require.NotNil(t, tm2)
+	assert.Equal(t, "age != 25", tm2.String())
+	assert.Equal(t, query.OpNE, tm2.GetOperator())
+
+	// Test greater than (>)
+	p3 := NewParser(NewLexer("age > 25"))
+	tm3, err := p3.term()
+	require.NoError(t, err)
+	require.NotNil(t, tm3)
+	assert.Equal(t, "age > 25", tm3.String())
+	assert.Equal(t, query.OpGT, tm3.GetOperator())
+
+	// Test less than (<)
+	p4 := NewParser(NewLexer("age < 25"))
+	tm4, err := p4.term()
+	require.NoError(t, err)
+	require.NotNil(t, tm4)
+	assert.Equal(t, "age < 25", tm4.String())
+	assert.Equal(t, query.OpLT, tm4.GetOperator())
+
+	// Test greater than or equal (>=)
+	p5 := NewParser(NewLexer("age >= 25"))
+	tm5, err := p5.term()
+	require.NoError(t, err)
+	require.NotNil(t, tm5)
+	assert.Equal(t, "age >= 25", tm5.String())
+	assert.Equal(t, query.OpGE, tm5.GetOperator())
+
+	// Test less than or equal (<=)
+	p6 := NewParser(NewLexer("age <= 25"))
+	tm6, err := p6.term()
+	require.NoError(t, err)
+	require.NotNil(t, tm6)
+	assert.Equal(t, "age <= 25", tm6.String())
+	assert.Equal(t, query.OpLE, tm6.GetOperator())
+
+	// Test with string constants
+	p7 := NewParser(NewLexer("name > 'Alice'"))
+	tm7, err := p7.term()
+	require.NoError(t, err)
+	require.NotNil(t, tm7)
+	assert.Equal(t, "name > Alice", tm7.String())
+	assert.Equal(t, query.OpGT, tm7.GetOperator())
+
+	// Test with field = field
+	p8 := NewParser(NewLexer("id != user_id"))
+	tm8, err := p8.term()
+	require.NoError(t, err)
+	require.NotNil(t, tm8)
+	assert.Equal(t, "id != user_id", tm8.String())
+	assert.Equal(t, query.OpNE, tm8.GetOperator())
 }
 
 func TestParserPredicate(t *testing.T) {

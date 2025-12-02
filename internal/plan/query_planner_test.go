@@ -75,6 +75,7 @@ func TestBasicQueryPlanner_SingleTableWithPredicate(t *testing.T) {
 	pred := query.NewPredicate(*query.NewTerm(
 		*query.NewFieldNameExpression("id"),
 		*query.NewConstantExpression(*query.NewIntConstant(2)),
+		query.OpEQ,
 	))
 
 	plan, err := planner.CreatePlan(parserdata.NewQueryData(
@@ -250,10 +251,12 @@ func TestBasicQueryPlanner_JoinWithPredicate(t *testing.T) {
 	term1 := query.NewTerm(
 		*query.NewFieldNameExpression("id"),
 		*query.NewFieldNameExpression("student_id"),
+		query.OpEQ,
 	)
 	term2 := query.NewTerm(
 		*query.NewFieldNameExpression("name"),
 		*query.NewConstantExpression(*query.NewStringConstant("Bob")),
+		query.OpEQ,
 	)
 	pred := query.NewPredicate(*term1)
 	pred.ConjunctWith(*query.NewPredicate(*term2))
@@ -340,6 +343,7 @@ func TestBasicQueryPlanner_WithIndex(t *testing.T) {
 	pred1 := query.NewPredicate(*query.NewTerm(
 		*query.NewFieldNameExpression("id"),
 		*query.NewConstantExpression(*query.NewIntConstant(3)),
+		query.OpEQ,
 	))
 
 	plan1, err := planner.CreatePlan(parserdata.NewQueryData(
@@ -383,6 +387,7 @@ func TestBasicQueryPlanner_WithIndex(t *testing.T) {
 	pred2 := query.NewPredicate(*query.NewTerm(
 		*query.NewFieldNameExpression("department"),
 		*query.NewConstantExpression(*query.NewStringConstant("Engineering")),
+		query.OpEQ,
 	))
 
 	plan2, err := planner.CreatePlan(parserdata.NewQueryData(
@@ -457,6 +462,7 @@ func TestBasicQueryPlanner_MultipleIndexes(t *testing.T) {
 	pred1 := query.NewPredicate(*query.NewTerm(
 		*query.NewFieldNameExpression("id"),
 		*query.NewConstantExpression(*query.NewIntConstant(15)),
+		query.OpEQ,
 	))
 
 	plan1, err := planner.CreatePlan(parserdata.NewQueryData(
@@ -479,6 +485,7 @@ func TestBasicQueryPlanner_MultipleIndexes(t *testing.T) {
 	pred2 := query.NewPredicate(*query.NewTerm(
 		*query.NewFieldNameExpression("category_id"),
 		*query.NewConstantExpression(*query.NewIntConstant(2)),
+		query.OpEQ,
 	))
 
 	plan2, err := planner.CreatePlan(parserdata.NewQueryData(
@@ -533,6 +540,7 @@ func TestBasicQueryPlanner_IndexWithStringField(t *testing.T) {
 	pred := query.NewPredicate(*query.NewTerm(
 		*query.NewFieldNameExpression("status"),
 		*query.NewConstantExpression(*query.NewStringConstant("active")),
+		query.OpEQ,
 	))
 
 	plan, err := planner.CreatePlan(parserdata.NewQueryData(
@@ -849,6 +857,7 @@ func TestBasicQueryPlanner_WithWhereAndOrderBy(t *testing.T) {
 	pred := query.NewPredicate(*query.NewTerm(
 		*query.NewFieldNameExpression("age"),
 		*query.NewConstantExpression(*query.NewIntConstant(22)),
+		query.OpEQ,
 	))
 
 	// Test WHERE age = 22 ORDER BY id
@@ -882,4 +891,444 @@ func TestBasicQueryPlanner_WithWhereAndOrderBy(t *testing.T) {
 		count++
 	}
 	assert.True(t, count > 0, "Should have some filtered records")
+}
+
+func TestBasicQueryPlanner_ComparisonOperators(t *testing.T) {
+	_, tx, md, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Create a table with integer, string, and bool fields
+	schema := record.NewSchema()
+	schema.AddIntField("id")
+	schema.AddIntField("age")
+	schema.AddStringField("name", 20)
+	schema.AddIntField("score")
+	schema.AddBoolField("active")
+
+	createTableWithData(t, "students", schema, md, tx, func(ts *table.TableScan) {
+		err := ts.BeforeFirst()
+		require.NoError(t, err)
+		testData := []struct {
+			id     int
+			name   string
+			age    int
+			score  int
+			active bool
+		}{
+			{1, "Alice", 20, 85, true},
+			{2, "Bob", 25, 90, false},
+			{3, "Charlie", 30, 75, true},
+			{4, "Diana", 35, 95, true},
+			{5, "Eve", 40, 80, false},
+			{6, "Frank", 25, 88, true},
+			{7, "Grace", 30, 92, false},
+		}
+		for _, data := range testData {
+			err = ts.Insert()
+			require.NoError(t, err)
+			err = ts.SetInt("id", data.id)
+			require.NoError(t, err)
+			err = ts.SetString("name", data.name)
+			require.NoError(t, err)
+			err = ts.SetInt("age", data.age)
+			require.NoError(t, err)
+			err = ts.SetInt("score", data.score)
+			require.NoError(t, err)
+			err = ts.SetBool("active", data.active)
+			require.NoError(t, err)
+		}
+	})
+
+	planner := NewBasicQueryPlanner(md)
+
+	t.Run("GreaterThan", func(t *testing.T) {
+		// Test age > 25
+		pred := query.NewPredicate(*query.NewTerm(
+			*query.NewFieldNameExpression("age"),
+			*query.NewConstantExpression(*query.NewIntConstant(25)),
+			query.OpGT,
+		))
+
+		plan, err := planner.CreatePlan(parserdata.NewQueryData(
+			[]string{"id", "name", "age"}, []string{"students"}, pred,
+		), tx, nil)
+		require.NoError(t, err)
+
+		scan, err := plan.Open()
+		require.NoError(t, err)
+		defer scan.Close()
+		err = scan.BeforeFirst()
+		require.NoError(t, err)
+
+		count := 0
+		ages := []int{}
+		for {
+			hasNext, err := scan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
+			count++
+			age, err := scan.GetInt("age")
+			require.NoError(t, err)
+			assert.Greater(t, age, 25, "Age should be greater than 25")
+			ages = append(ages, age)
+		}
+		// Should find: 30, 35, 40, 30 = 4 records
+		assert.Equal(t, 4, count)
+		assert.Contains(t, ages, 30)
+		assert.Contains(t, ages, 35)
+		assert.Contains(t, ages, 40)
+	})
+
+	t.Run("LessThan", func(t *testing.T) {
+		// Test age < 30
+		pred := query.NewPredicate(*query.NewTerm(
+			*query.NewFieldNameExpression("age"),
+			*query.NewConstantExpression(*query.NewIntConstant(30)),
+			query.OpLT,
+		))
+
+		plan, err := planner.CreatePlan(parserdata.NewQueryData(
+			[]string{"id", "name", "age"}, []string{"students"}, pred,
+		), tx, nil)
+		require.NoError(t, err)
+
+		scan, err := plan.Open()
+		require.NoError(t, err)
+		defer scan.Close()
+		err = scan.BeforeFirst()
+		require.NoError(t, err)
+
+		count := 0
+		for {
+			hasNext, err := scan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
+			count++
+			age, err := scan.GetInt("age")
+			require.NoError(t, err)
+			assert.Less(t, age, 30, "Age should be less than 30")
+		}
+		// Should find: 20, 25, 25 = 3 records
+		assert.Equal(t, 3, count)
+	})
+
+	t.Run("GreaterThanOrEqual", func(t *testing.T) {
+		// Test score >= 90
+		pred := query.NewPredicate(*query.NewTerm(
+			*query.NewFieldNameExpression("score"),
+			*query.NewConstantExpression(*query.NewIntConstant(90)),
+			query.OpGE,
+		))
+
+		plan, err := planner.CreatePlan(parserdata.NewQueryData(
+			[]string{"id", "name", "score"}, []string{"students"}, pred,
+		), tx, nil)
+		require.NoError(t, err)
+
+		scan, err := plan.Open()
+		require.NoError(t, err)
+		defer scan.Close()
+		err = scan.BeforeFirst()
+		require.NoError(t, err)
+
+		count := 0
+		scores := []int{}
+		for {
+			hasNext, err := scan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
+			count++
+			score, err := scan.GetInt("score")
+			require.NoError(t, err)
+			assert.GreaterOrEqual(t, score, 90, "Score should be >= 90")
+			scores = append(scores, score)
+		}
+		// Should find: 90, 95, 92 = 3 records
+		assert.Equal(t, 3, count)
+		assert.Contains(t, scores, 90)
+		assert.Contains(t, scores, 95)
+		assert.Contains(t, scores, 92)
+	})
+
+	t.Run("LessThanOrEqual", func(t *testing.T) {
+		// Test score <= 85
+		pred := query.NewPredicate(*query.NewTerm(
+			*query.NewFieldNameExpression("score"),
+			*query.NewConstantExpression(*query.NewIntConstant(85)),
+			query.OpLE,
+		))
+
+		plan, err := planner.CreatePlan(parserdata.NewQueryData(
+			[]string{"id", "name", "score"}, []string{"students"}, pred,
+		), tx, nil)
+		require.NoError(t, err)
+
+		scan, err := plan.Open()
+		require.NoError(t, err)
+		defer scan.Close()
+		err = scan.BeforeFirst()
+		require.NoError(t, err)
+
+		count := 0
+		for {
+			hasNext, err := scan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
+			count++
+			score, err := scan.GetInt("score")
+			require.NoError(t, err)
+			assert.LessOrEqual(t, score, 85, "Score should be <= 85")
+		}
+		// Should find: 85, 75, 80 = 3 records
+		assert.Equal(t, 3, count)
+	})
+
+	t.Run("NotEqual", func(t *testing.T) {
+		// Test age != 25
+		pred := query.NewPredicate(*query.NewTerm(
+			*query.NewFieldNameExpression("age"),
+			*query.NewConstantExpression(*query.NewIntConstant(25)),
+			query.OpNE,
+		))
+
+		plan, err := planner.CreatePlan(parserdata.NewQueryData(
+			[]string{"id", "name", "age"}, []string{"students"}, pred,
+		), tx, nil)
+		require.NoError(t, err)
+
+		scan, err := plan.Open()
+		require.NoError(t, err)
+		defer scan.Close()
+		err = scan.BeforeFirst()
+		require.NoError(t, err)
+
+		count := 0
+		for {
+			hasNext, err := scan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
+			count++
+			age, err := scan.GetInt("age")
+			require.NoError(t, err)
+			assert.NotEqual(t, 25, age, "Age should not be 25")
+		}
+		// Should find all except age=25: 7 total - 2 with age=25 = 5 records
+		assert.Equal(t, 5, count)
+	})
+
+	t.Run("MultipleComparisonOperators", func(t *testing.T) {
+		// Test age > 25 AND score < 90
+		term1 := query.NewTerm(
+			*query.NewFieldNameExpression("age"),
+			*query.NewConstantExpression(*query.NewIntConstant(25)),
+			query.OpGT,
+		)
+		term2 := query.NewTerm(
+			*query.NewFieldNameExpression("score"),
+			*query.NewConstantExpression(*query.NewIntConstant(90)),
+			query.OpLT,
+		)
+		pred := query.NewPredicate(*term1)
+		pred.ConjunctWith(*query.NewPredicate(*term2))
+
+		plan, err := planner.CreatePlan(parserdata.NewQueryData(
+			[]string{"id", "name", "age", "score"}, []string{"students"}, pred,
+		), tx, nil)
+		require.NoError(t, err)
+
+		scan, err := plan.Open()
+		require.NoError(t, err)
+		defer scan.Close()
+		err = scan.BeforeFirst()
+		require.NoError(t, err)
+
+		count := 0
+		names := []string{}
+		for {
+			hasNext, err := scan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
+			count++
+			age, err := scan.GetInt("age")
+			require.NoError(t, err)
+			score, err := scan.GetInt("score")
+			require.NoError(t, err)
+			name, err := scan.GetString("name")
+			require.NoError(t, err)
+			assert.Greater(t, age, 25, "Age should be > 25")
+			assert.Less(t, score, 90, "Score should be < 90")
+			names = append(names, name)
+		}
+		// Should find: Charlie (30, 75) and Eve (40, 80) = 2 records
+		assert.Equal(t, 2, count)
+		assert.Contains(t, names, "Charlie")
+		assert.Contains(t, names, "Eve")
+	})
+
+	t.Run("ComparisonWithString", func(t *testing.T) {
+		// Test name > 'C' (string comparison)
+		pred := query.NewPredicate(*query.NewTerm(
+			*query.NewFieldNameExpression("name"),
+			*query.NewConstantExpression(*query.NewStringConstant("C")),
+			query.OpGT,
+		))
+
+		plan, err := planner.CreatePlan(parserdata.NewQueryData(
+			[]string{"id", "name"}, []string{"students"}, pred,
+		), tx, nil)
+		require.NoError(t, err)
+
+		scan, err := plan.Open()
+		require.NoError(t, err)
+		defer scan.Close()
+		err = scan.BeforeFirst()
+		require.NoError(t, err)
+
+		count := 0
+		names := []string{}
+		for {
+			hasNext, err := scan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
+			count++
+			name, err := scan.GetString("name")
+			require.NoError(t, err)
+			assert.Greater(t, name, "C", "Name should be > 'C'")
+			names = append(names, name)
+		}
+		// Should find names after 'C': Charlie, Diana, Eve, Frank, Grace
+		assert.GreaterOrEqual(t, count, 5)
+		assert.Contains(t, names, "Charlie")
+		assert.Contains(t, names, "Diana")
+	})
+
+	t.Run("ComparisonWithBool", func(t *testing.T) {
+		// Note: In this system, false < true (as per Constant.CompareTo implementation)
+		// So comparisons work as: false < true
+
+		t.Run("BoolEquality", func(t *testing.T) {
+			// Test active = true
+			pred := query.NewPredicate(*query.NewTerm(
+				*query.NewFieldNameExpression("active"),
+				*query.NewConstantExpression(*query.NewBoolConstant(true)),
+				query.OpEQ,
+			))
+
+			plan, err := planner.CreatePlan(parserdata.NewQueryData(
+				[]string{"id", "name", "active"}, []string{"students"}, pred,
+			), tx, nil)
+			require.NoError(t, err)
+
+			scan, err := plan.Open()
+			require.NoError(t, err)
+			defer scan.Close()
+			err = scan.BeforeFirst()
+			require.NoError(t, err)
+
+			count := 0
+			for {
+				hasNext, err := scan.Next()
+				require.NoError(t, err)
+				if !hasNext {
+					break
+				}
+				count++
+				active, err := scan.GetBool("active")
+				require.NoError(t, err)
+				assert.True(t, active, "Active should be true")
+			}
+			// Should find: Alice, Charlie, Diana, Frank = 4 records
+			assert.Equal(t, 4, count)
+		})
+
+		t.Run("BoolNotEqual", func(t *testing.T) {
+			// Test active != true (should find false values)
+			pred := query.NewPredicate(*query.NewTerm(
+				*query.NewFieldNameExpression("active"),
+				*query.NewConstantExpression(*query.NewBoolConstant(true)),
+				query.OpNE,
+			))
+
+			plan, err := planner.CreatePlan(parserdata.NewQueryData(
+				[]string{"id", "name", "active"}, []string{"students"}, pred,
+			), tx, nil)
+			require.NoError(t, err)
+
+			scan, err := plan.Open()
+			require.NoError(t, err)
+			defer scan.Close()
+			err = scan.BeforeFirst()
+			require.NoError(t, err)
+
+			count := 0
+			for {
+				hasNext, err := scan.Next()
+				require.NoError(t, err)
+				if !hasNext {
+					break
+				}
+				count++
+				active, err := scan.GetBool("active")
+				require.NoError(t, err)
+				assert.False(t, active, "Active should be false")
+			}
+			// Should find: Bob, Eve, Grace = 3 records
+			assert.Equal(t, 3, count)
+		})
+
+		t.Run("BoolGreaterThan", func(t *testing.T) {
+			// Range operators on bool fields should fail at Open() time
+			pred := query.NewPredicate(*query.NewTerm(
+				*query.NewFieldNameExpression("active"),
+				*query.NewConstantExpression(*query.NewBoolConstant(false)),
+				query.OpGT,
+			))
+
+			plan, err := planner.CreatePlan(parserdata.NewQueryData(
+				[]string{"id", "name", "active"}, []string{"students"}, pred,
+			), tx, nil)
+			require.NoError(t, err)
+
+			// Open() should return an error before any buffers are pinned
+			_, err = plan.Open()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "cannot be used with boolean field")
+		})
+
+		t.Run("BoolRangeOperatorsShouldFail", func(t *testing.T) {
+			// Test all range operators fail at Open() time
+			operators := []query.Operator{query.OpGT, query.OpLT, query.OpGE, query.OpLE}
+			for _, op := range operators {
+				pred := query.NewPredicate(*query.NewTerm(
+					*query.NewFieldNameExpression("active"),
+					*query.NewConstantExpression(*query.NewBoolConstant(false)),
+					op,
+				))
+
+				plan, err := planner.CreatePlan(parserdata.NewQueryData(
+					[]string{"id", "name", "active"}, []string{"students"}, pred,
+				), tx, nil)
+				require.NoError(t, err, "Plan creation should succeed")
+
+				// Open() should return an error before any buffers are pinned
+				_, err = plan.Open()
+				require.Error(t, err, "Range operator %s on bool field should return error", op.String())
+				assert.Contains(t, err.Error(), "cannot be used with boolean field")
+			}
+		})
+	})
 }

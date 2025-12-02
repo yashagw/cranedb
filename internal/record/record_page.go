@@ -84,10 +84,11 @@ func (rp *RecordPage) SetString(slot int, fieldName string, value string) error 
 
 	// Truncate the string to fit within the allocated field size
 	valueBytes := []byte(value)
-	if len(valueBytes) > maxLength {
+	originalLength := len(valueBytes)
+	if originalLength > maxLength {
 		valueBytes = valueBytes[:maxLength]
 		value = string(valueBytes)
-		log.Printf("Truncating string field '%s': length %d exceeds max length %d", fieldName, len(valueBytes), maxLength)
+		log.Printf("Truncating string field '%s': length %d exceeds max length %d", fieldName, originalLength, maxLength)
 	}
 
 	fieldOffset := rp.layout.GetOffset(fieldName)

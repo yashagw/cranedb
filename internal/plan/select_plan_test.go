@@ -50,7 +50,7 @@ func TestSelectPlanMethods(t *testing.T) {
 	// Create a predicate: age = 20
 	fieldExpr := query.NewFieldNameExpression("age")
 	constExpr := query.NewConstantExpression(*query.NewIntConstant(20))
-	term := query.NewTerm(*fieldExpr, *constExpr)
+	term := query.NewTerm(*fieldExpr, *constExpr, query.OpEQ)
 	pred := query.NewPredicate(*term)
 
 	// Create a SelectPlan
@@ -110,7 +110,7 @@ func TestSelectPlanDistinctValuesWithFieldEquality(t *testing.T) {
 	// Create a predicate: field1 = field2
 	fieldExpr1 := query.NewFieldNameExpression("field1")
 	fieldExpr2 := query.NewFieldNameExpression("field2")
-	term := query.NewTerm(*fieldExpr1, *fieldExpr2)
+	term := query.NewTerm(*fieldExpr1, *fieldExpr2, query.OpEQ)
 	pred := query.NewPredicate(*term)
 
 	// Create a SelectPlan
@@ -163,7 +163,7 @@ func TestSelectPlanRecordsOutputCalculation(t *testing.T) {
 	// Create a predicate: value = 0
 	fieldExpr := query.NewFieldNameExpression("value")
 	constExpr := query.NewConstantExpression(*query.NewIntConstant(0))
-	term := query.NewTerm(*fieldExpr, *constExpr)
+	term := query.NewTerm(*fieldExpr, *constExpr, query.OpEQ)
 	pred := query.NewPredicate(*term)
 
 	// Create a SelectPlan

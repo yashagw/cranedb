@@ -90,15 +90,59 @@ func (p *Parser) term() (*query.Term, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = p.lexer.EatDelim('=')
-	if err != nil {
-		return nil, err
+
+	var operator query.Operator
+	if p.lexer.MatchDelim('>') {
+		err = p.lexer.EatDelim('>')
+		if err != nil {
+			return nil, err
+		}
+		if p.lexer.MatchDelim('=') {
+			err = p.lexer.EatDelim('=')
+			if err != nil {
+				return nil, err
+			}
+			operator = query.OpGE
+		} else {
+			operator = query.OpGT
+		}
+	} else if p.lexer.MatchDelim('<') {
+		err = p.lexer.EatDelim('<')
+		if err != nil {
+			return nil, err
+		}
+		if p.lexer.MatchDelim('=') {
+			err = p.lexer.EatDelim('=')
+			if err != nil {
+				return nil, err
+			}
+			operator = query.OpLE
+		} else {
+			operator = query.OpLT
+		}
+	} else if p.lexer.MatchDelim('!') {
+		err = p.lexer.EatDelim('!')
+		if err != nil {
+			return nil, err
+		}
+		err = p.lexer.EatDelim('=')
+		if err != nil {
+			return nil, err
+		}
+		operator = query.OpNE
+	} else {
+		err = p.lexer.EatDelim('=')
+		if err != nil {
+			return nil, err
+		}
+		operator = query.OpEQ
 	}
+
 	right, err := p.expression()
 	if err != nil {
 		return nil, err
 	}
-	return query.NewTerm(*left, *right), nil
+	return query.NewTerm(*left, *right, operator), nil
 }
 
 func (p *Parser) predicate() (*query.Predicate, error) {

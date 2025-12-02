@@ -12,7 +12,7 @@ func TestPredicateBasic(t *testing.T) {
 	// Create a simple predicate with one term
 	fieldExpr := NewFieldNameExpression("age")
 	constExpr := NewConstantExpression(*NewIntConstant(25))
-	term := NewTerm(*fieldExpr, *constExpr)
+	term := NewTerm(*fieldExpr, *constExpr, OpEQ)
 	pred := NewPredicate(*term)
 	require.NotNil(t, pred)
 	assert.Equal(t, "age = 25", pred.String())
@@ -20,7 +20,7 @@ func TestPredicateBasic(t *testing.T) {
 	// Test ConjunctWith
 	fieldExpr2 := NewFieldNameExpression("name")
 	constExpr2 := NewConstantExpression(*NewStringConstant("John"))
-	term2 := NewTerm(*fieldExpr2, *constExpr2)
+	term2 := NewTerm(*fieldExpr2, *constExpr2, OpEQ)
 	pred2 := NewPredicate(*term2)
 	pred.ConjunctWith(*pred2)
 	assert.Equal(t, "age = 25 and name = John", pred.String())
@@ -37,8 +37,8 @@ func TestPredicateSelectSubPred(t *testing.T) {
 	schema.AddStringField("name", 20)
 
 	// Create predicate with terms that apply to schema
-	term1 := NewTerm(*NewFieldNameExpression("age"), *NewConstantExpression(*NewIntConstant(25)))
-	term2 := NewTerm(*NewFieldNameExpression("name"), *NewConstantExpression(*NewStringConstant("John")))
+	term1 := NewTerm(*NewFieldNameExpression("age"), *NewConstantExpression(*NewIntConstant(25)), OpEQ)
+	term2 := NewTerm(*NewFieldNameExpression("name"), *NewConstantExpression(*NewStringConstant("John")), OpEQ)
 	pred := NewPredicate(*term1)
 	pred.ConjunctWith(*NewPredicate(*term2))
 
@@ -48,7 +48,7 @@ func TestPredicateSelectSubPred(t *testing.T) {
 	assert.Equal(t, "age = 25 and name = John", result.String())
 
 	// Create predicate with term that doesn't apply
-	term3 := NewTerm(*NewFieldNameExpression("missing"), *NewConstantExpression(*NewIntConstant(10)))
+	term3 := NewTerm(*NewFieldNameExpression("missing"), *NewConstantExpression(*NewIntConstant(10)), OpEQ)
 	pred3 := NewPredicate(*term3)
 	result2 := pred3.SelectSubPred(schema)
 	assert.Nil(t, result2)
@@ -72,7 +72,7 @@ func TestPredicateJoinSubPred(t *testing.T) {
 	schema2.AddStringField("city", 20)
 
 	// Create join term: schema1.id = schema2.user_id
-	joinTerm := NewTerm(*NewFieldNameExpression("id"), *NewFieldNameExpression("user_id"))
+	joinTerm := NewTerm(*NewFieldNameExpression("id"), *NewFieldNameExpression("user_id"), OpEQ)
 	pred := NewPredicate(*joinTerm)
 
 	// JoinSubPred should return terms that don't apply to either schema individually
@@ -82,13 +82,13 @@ func TestPredicateJoinSubPred(t *testing.T) {
 	assert.Equal(t, "id = user_id", result.String())
 
 	// Term that applies to schema1 only should not be in join predicate
-	term1 := NewTerm(*NewFieldNameExpression("id"), *NewConstantExpression(*NewIntConstant(1)))
+	term1 := NewTerm(*NewFieldNameExpression("id"), *NewConstantExpression(*NewIntConstant(1)), OpEQ)
 	pred2 := NewPredicate(*term1)
 	result2 := pred2.JoinSubPred(schema1, schema2)
 	assert.Nil(t, result2)
 
 	// Term that applies to schema2 only should not be in join predicate
-	term2 := NewTerm(*NewFieldNameExpression("user_id"), *NewConstantExpression(*NewIntConstant(1)))
+	term2 := NewTerm(*NewFieldNameExpression("user_id"), *NewConstantExpression(*NewIntConstant(1)), OpEQ)
 	pred3 := NewPredicate(*term2)
 	result3 := pred3.JoinSubPred(schema1, schema2)
 	assert.Nil(t, result3)
@@ -96,7 +96,7 @@ func TestPredicateJoinSubPred(t *testing.T) {
 
 func TestPredicateEquatesWithConstant(t *testing.T) {
 	// Create predicate with field = constant
-	term := NewTerm(*NewFieldNameExpression("age"), *NewConstantExpression(*NewIntConstant(25)))
+	term := NewTerm(*NewFieldNameExpression("age"), *NewConstantExpression(*NewIntConstant(25)), OpEQ)
 	pred := NewPredicate(*term)
 
 	// Should find the constant for the matching field
@@ -109,7 +109,7 @@ func TestPredicateEquatesWithConstant(t *testing.T) {
 	assert.Nil(t, result2)
 
 	// Test with multiple terms
-	term2 := NewTerm(*NewFieldNameExpression("name"), *NewConstantExpression(*NewStringConstant("John")))
+	term2 := NewTerm(*NewFieldNameExpression("name"), *NewConstantExpression(*NewStringConstant("John")), OpEQ)
 	pred.ConjunctWith(*NewPredicate(*term2))
 
 	result3 := pred.EquatesWithConstant("name")
@@ -117,7 +117,7 @@ func TestPredicateEquatesWithConstant(t *testing.T) {
 	assert.Equal(t, "John", result3.AsString())
 
 	// Test with field = field (no constant)
-	term3 := NewTerm(*NewFieldNameExpression("id"), *NewFieldNameExpression("age"))
+	term3 := NewTerm(*NewFieldNameExpression("id"), *NewFieldNameExpression("age"), OpEQ)
 	pred3 := NewPredicate(*term3)
 	result4 := pred3.EquatesWithConstant("id")
 	assert.Nil(t, result4)
@@ -125,7 +125,7 @@ func TestPredicateEquatesWithConstant(t *testing.T) {
 
 func TestPredicateEquatesWithField(t *testing.T) {
 	// Create predicate with field = field
-	term := NewTerm(*NewFieldNameExpression("id"), *NewFieldNameExpression("age"))
+	term := NewTerm(*NewFieldNameExpression("id"), *NewFieldNameExpression("age"), OpEQ)
 	pred := NewPredicate(*term)
 
 	// Should find the other field for the matching field
@@ -143,7 +143,7 @@ func TestPredicateEquatesWithField(t *testing.T) {
 	assert.Nil(t, result3)
 
 	// Test with multiple terms
-	term2 := NewTerm(*NewFieldNameExpression("name"), *NewFieldNameExpression("alias"))
+	term2 := NewTerm(*NewFieldNameExpression("name"), *NewFieldNameExpression("alias"), OpEQ)
 	pred.ConjunctWith(*NewPredicate(*term2))
 
 	result4 := pred.EquatesWithField("name")
@@ -151,7 +151,7 @@ func TestPredicateEquatesWithField(t *testing.T) {
 	assert.Equal(t, "alias", *result4)
 
 	// Test with field = constant (not field = field)
-	term3 := NewTerm(*NewFieldNameExpression("age"), *NewConstantExpression(*NewIntConstant(25)))
+	term3 := NewTerm(*NewFieldNameExpression("age"), *NewConstantExpression(*NewIntConstant(25)), OpEQ)
 	pred3 := NewPredicate(*term3)
 	result5 := pred3.EquatesWithField("age")
 	assert.Nil(t, result5)

@@ -14,7 +14,7 @@ func createEqualsPredicate(fieldName string, value interface{}) *Predicate {
 	default:
 		panic("unsupported value type")
 	}
-	term := NewTerm(*fieldExpr, *constExpr)
+	term := NewTerm(*fieldExpr, *constExpr, OpEQ)
 	return NewPredicate(*term)
 }
 
