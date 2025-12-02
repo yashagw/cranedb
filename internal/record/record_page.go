@@ -1,6 +1,8 @@
 package record
 
 import (
+	"log"
+
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
@@ -76,7 +78,18 @@ func (rp *RecordPage) SetBool(slot int, fieldName string, value bool) error {
 }
 
 // SetString sets the string value in the specified slot and field.
+// The string is truncated to fit within the field's maximum length to prevent overflow.
 func (rp *RecordPage) SetString(slot int, fieldName string, value string) error {
+	maxLength := rp.layout.GetSchema().Length(fieldName)
+
+	// Truncate the string to fit within the allocated field size
+	valueBytes := []byte(value)
+	if len(valueBytes) > maxLength {
+		valueBytes = valueBytes[:maxLength]
+		value = string(valueBytes)
+		log.Printf("Truncating string field '%s': length %d exceeds max length %d", fieldName, len(valueBytes), maxLength)
+	}
+
 	fieldOffset := rp.layout.GetOffset(fieldName)
 	slotOffset := slot * rp.layout.GetSlotSize()
 	totalOffset := fieldOffset + slotOffset

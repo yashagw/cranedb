@@ -75,7 +75,7 @@ func NewServer(dbDir string) (*Server, error) {
 	lockTable := transaction.NewLockTable()
 
 	isNew := true
-	metadataFile := filepath.Join(dbDir, "tables.tbl")
+	metadataFile := filepath.Join(dbDir, "table_catelog.tbl")
 	if _, err := os.Stat(metadataFile); err == nil {
 		isNew = false
 	}

@@ -114,6 +114,11 @@ func (t *TableManager) GetLayout(tableName string, tx *transaction.Transaction) 
 	}
 	defer tcat.Close()
 
+	err = tcat.BeforeFirst()
+	if err != nil {
+		return nil, err
+	}
+
 	for {
 		hasNext, err := tcat.Next()
 		if err != nil {
@@ -149,6 +154,11 @@ func (t *TableManager) GetLayout(tableName string, tx *transaction.Transaction) 
 		return nil, err
 	}
 	defer fcat.Close()
+
+	err = fcat.BeforeFirst()
+	if err != nil {
+		return nil, err
+	}
 
 	for {
 		hasNext, err := fcat.Next()
