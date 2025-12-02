@@ -28,10 +28,11 @@ func TestTableScan(t *testing.T) {
 	tx := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable)
 	require.NotNil(t, tx)
 
-	// Create schema with int and string fields
+	// Create schema with int, string, and bool fields
 	schema := record.NewSchema()
 	schema.AddIntField("A")
 	schema.AddStringField("B", 9)
+	schema.AddBoolField("C")
 
 	layout := record.NewLayoutFromSchema(schema)
 	require.NotNil(t, layout)
@@ -53,23 +54,31 @@ func TestTableScan(t *testing.T) {
 
 	// Test 1: Fill the table with 50 random records
 	st := map[int]map[int]int{}
+	stBool := map[int]map[int]bool{}
 	err = ts.BeforeFirst()
 	require.NoError(t, err)
 	for i := 0; i < 50; i++ {
 		err = ts.Insert()
 		require.NoError(t, err)
 		n := (i * 7) % 50 // Simulate random values
+		c := i%2 == 0     // Alternate true/false
 		err = ts.SetInt("A", n)
 		require.NoError(t, err)
 		err = ts.SetString("B", "rec")
+		require.NoError(t, err)
+		err = ts.SetBool("C", c)
 		require.NoError(t, err)
 		rid, err := ts.GetRID()
 		require.NoError(t, err)
 		if _, ok := st[rid.Block()]; !ok {
 			st[rid.Block()] = map[int]int{}
 		}
+		if _, ok := stBool[rid.Block()]; !ok {
+			stBool[rid.Block()] = map[int]bool{}
+		}
 		st[rid.Block()][rid.Slot()] = n
-		t.Logf("inserting into block %d, slot %d: {%d, %s}", rid.Block(), rid.Slot(), n, "rec")
+		stBool[rid.Block()][rid.Slot()] = c
+		t.Logf("inserting into block %d, slot %d: {%d, %s, %v}", rid.Block(), rid.Slot(), n, "rec", c)
 	}
 
 	// Test 2: Verify we can iterate through all records
@@ -87,10 +96,13 @@ func TestTableScan(t *testing.T) {
 			require.NoError(t, err)
 			b, err := ts.GetString("B")
 			require.NoError(t, err)
+			c, err := ts.GetBool("C")
+			require.NoError(t, err)
 			rid, err := ts.GetRID()
 			require.NoError(t, err)
 			assert.Equal(t, st[rid.Block()][rid.Slot()], a)
-			t.Logf("block %d, slot %d: {%d, %s}", rid.Block(), rid.Slot(), a, b)
+			assert.Equal(t, stBool[rid.Block()][rid.Slot()], c)
+			t.Logf("block %d, slot %d: {%d, %s, %v}", rid.Block(), rid.Slot(), a, b, c)
 			recordCount++
 		}
 	}
@@ -112,11 +124,13 @@ func TestTableScan(t *testing.T) {
 			require.NoError(t, err)
 			b, err := ts.GetString("B")
 			require.NoError(t, err)
+			c, err := ts.GetBool("C")
+			require.NoError(t, err)
 			if a < 25 {
 				count++
 				rid, err := ts.GetRID()
 				require.NoError(t, err)
-				t.Logf("slot %d: {%d, %s}", rid.Slot(), a, b)
+				t.Logf("slot %d: {%d, %s, %v}", rid.Slot(), a, b, c)
 				err = ts.Delete()
 				require.NoError(t, err)
 			}
@@ -141,9 +155,11 @@ func TestTableScan(t *testing.T) {
 			require.NoError(t, err)
 			b, err := ts.GetString("B")
 			require.NoError(t, err)
+			c, err := ts.GetBool("C")
+			require.NoError(t, err)
 			rid, err := ts.GetRID()
 			require.NoError(t, err)
-			t.Logf("slot %d: {%d, %s}", rid.Slot(), a, b)
+			t.Logf("slot %d: {%d, %s, %v}", rid.Slot(), a, b, c)
 			assert.GreaterOrEqual(t, a, 25)
 			remainingCount++
 		}
@@ -162,6 +178,8 @@ func TestTableScan(t *testing.T) {
 		require.NoError(t, err)
 		originalA, err := ts.GetInt("A")
 		require.NoError(t, err)
+		originalC, err := ts.GetBool("C")
+		require.NoError(t, err)
 
 		err = ts.BeforeFirst()
 		require.NoError(t, err)
@@ -178,7 +196,10 @@ func TestTableScan(t *testing.T) {
 			assert.Equal(t, rid.Slot(), ts.currentSlot)
 			checkA, err := ts.GetInt("A")
 			require.NoError(t, err)
+			checkC, err := ts.GetBool("C")
+			require.NoError(t, err)
 			assert.Equal(t, originalA, checkA)
+			assert.Equal(t, originalC, checkC)
 		}
 	}
 
@@ -227,12 +248,24 @@ func TestTableScan(t *testing.T) {
 		require.NoError(t, err)
 		err = ts.SetString("B", "updated")
 		require.NoError(t, err)
+		err = ts.SetBool("C", true)
+		require.NoError(t, err)
 		checkA, err := ts.GetInt("A")
 		require.NoError(t, err)
 		checkB, err := ts.GetString("B")
 		require.NoError(t, err)
+		checkC, err := ts.GetBool("C")
+		require.NoError(t, err)
 		assert.Equal(t, 999, checkA)
 		assert.Equal(t, "updated", checkB)
+		assert.Equal(t, true, checkC)
+
+		// Test setting bool to false
+		err = ts.SetBool("C", false)
+		require.NoError(t, err)
+		checkC, err = ts.GetBool("C")
+		require.NoError(t, err)
+		assert.Equal(t, false, checkC)
 	}
 
 	// Test 9: Test Close (should not panic)

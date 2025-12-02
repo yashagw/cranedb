@@ -220,6 +220,14 @@ func (ts *TableScan) GetInt(fieldName string) (int, error) {
 	return ts.currentRecordPage.GetInt(ts.currentSlot, fieldName)
 }
 
+// GetBool retrieves a boolean value from the current record
+func (ts *TableScan) GetBool(fieldName string) (bool, error) {
+	if ts.currentSlot < 0 {
+		return false, fmt.Errorf("attempted to GetBool on invalid slot %d", ts.currentSlot)
+	}
+	return ts.currentRecordPage.GetBool(ts.currentSlot, fieldName)
+}
+
 // GetString retrieves a string value from the current record
 func (ts *TableScan) GetString(fieldName string) (string, error) {
 	if ts.currentSlot < 0 {
@@ -231,15 +239,27 @@ func (ts *TableScan) GetString(fieldName string) (string, error) {
 // GetValue retrieves a value from the current record as an interface{}
 func (ts *TableScan) GetValue(fieldName string) (any, error) {
 	fieldType := ts.layout.GetSchema().Type(fieldName)
-	if fieldType == "int" {
+
+	switch fieldType {
+	case record.FieldTypeInt:
 		return ts.GetInt(fieldName)
+	case record.FieldTypeString:
+		return ts.GetString(fieldName)
+	case record.FieldTypeBool:
+		return ts.GetBool(fieldName)
 	}
-	return ts.GetString(fieldName)
+
+	return nil, fmt.Errorf("unsupported field type: %s", fieldType)
 }
 
 // SetInt sets an integer value in the current record
 func (ts *TableScan) SetInt(fieldName string, value int) error {
 	return ts.currentRecordPage.SetInt(ts.currentSlot, fieldName, value)
+}
+
+// SetBool sets a boolean value in the current record
+func (ts *TableScan) SetBool(fieldName string, value bool) error {
+	return ts.currentRecordPage.SetBool(ts.currentSlot, fieldName, value)
 }
 
 // SetString sets a string value in the current record
@@ -249,8 +269,15 @@ func (ts *TableScan) SetString(fieldName string, value string) error {
 
 func (ts *TableScan) SetValue(fieldName string, value any) error {
 	fieldType := ts.layout.GetSchema().Type(fieldName)
-	if fieldType == "int" {
+
+	switch fieldType {
+	case record.FieldTypeInt:
 		return ts.SetInt(fieldName, value.(int))
+	case record.FieldTypeString:
+		return ts.SetString(fieldName, value.(string))
+	case record.FieldTypeBool:
+		return ts.SetBool(fieldName, value.(bool))
 	}
-	return ts.SetString(fieldName, value.(string))
+
+	return fmt.Errorf("unsupported field type: %s", fieldType)
 }

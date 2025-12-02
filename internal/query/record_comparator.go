@@ -41,16 +41,23 @@ func (rc *RecordComparator) Compare(s1, s2 scan.Scan) (int, error) {
 			const1 = NewIntConstant(v)
 		case string:
 			const1 = NewStringConstant(v)
+		case bool:
+			const1 = NewBoolConstant(v)
 		default:
 			intVal, err := s1.GetInt(fldname)
 			if err == nil {
 				const1 = NewIntConstant(intVal)
 			} else {
-				strVal, err := s1.GetString(fldname)
-				if err != nil {
-					return 0, err
+				boolVal, err := s1.GetBool(fldname)
+				if err == nil {
+					const1 = NewBoolConstant(boolVal)
+				} else {
+					strVal, err := s1.GetString(fldname)
+					if err != nil {
+						return 0, err
+					}
+					const1 = NewStringConstant(strVal)
 				}
-				const1 = NewStringConstant(strVal)
 			}
 		}
 
@@ -59,16 +66,23 @@ func (rc *RecordComparator) Compare(s1, s2 scan.Scan) (int, error) {
 			const2 = NewIntConstant(v)
 		case string:
 			const2 = NewStringConstant(v)
+		case bool:
+			const2 = NewBoolConstant(v)
 		default:
 			intVal, err := s2.GetInt(fldname)
 			if err == nil {
 				const2 = NewIntConstant(intVal)
 			} else {
-				strVal, err := s2.GetString(fldname)
-				if err != nil {
-					return 0, err
+				boolVal, err := s2.GetBool(fldname)
+				if err == nil {
+					const2 = NewBoolConstant(boolVal)
+				} else {
+					strVal, err := s2.GetString(fldname)
+					if err != nil {
+						return 0, err
+					}
+					const2 = NewStringConstant(strVal)
 				}
-				const2 = NewStringConstant(strVal)
 			}
 		}
 

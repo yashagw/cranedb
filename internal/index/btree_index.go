@@ -83,13 +83,17 @@ func NewBTreeIndex(tx *transaction.Transaction, idxName string, leafLayout *reco
 	dirSchema := record.NewSchema()
 	dirSchema.AddIntField("block") // Child block number
 	dirSchema.AddIntField("id")    // Unused for internal nodes, but part of layout for compatibility
-	// Copy dataval field from leaf layout (preserves type: int or string)
+	// Copy dataval field from leaf layout (preserves type)
 	datavalType := leafLayout.GetSchema().Type("dataval")
 	datavalLength := leafLayout.GetSchema().Length("dataval")
-	if datavalType == "int" {
+
+	switch datavalType {
+	case record.FieldTypeInt:
 		dirSchema.AddIntField("dataval")
-	} else {
+	case record.FieldTypeString:
 		dirSchema.AddStringField("dataval", datavalLength)
+	case record.FieldTypeBool:
+		dirSchema.AddBoolField("dataval")
 	}
 
 	dirLayout := record.NewLayoutFromSchema(dirSchema)

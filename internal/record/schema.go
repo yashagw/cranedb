@@ -1,8 +1,21 @@
 package record
 
+type FieldType string
+
+func (f FieldType) String() string {
+	return string(f)
+}
+
+const (
+	FieldTypeNone   FieldType = "none"
+	FieldTypeInt    FieldType = "int"
+	FieldTypeBool   FieldType = "bool"
+	FieldTypeString FieldType = "string"
+)
+
 type FieldInfo struct {
 	fieldLength int
-	fieldType   string
+	fieldType   FieldType
 }
 
 type Schema struct {
@@ -18,7 +31,7 @@ func NewSchema() *Schema {
 	}
 }
 
-func (s *Schema) AddField(name string, fieldType string, length int) {
+func (s *Schema) AddField(name string, fieldType FieldType, length int) {
 	if _, exists := s.fieldInfo[name]; !exists {
 		s.fields = append(s.fields, name)
 	}
@@ -29,11 +42,15 @@ func (s *Schema) AddField(name string, fieldType string, length int) {
 }
 
 func (s *Schema) AddIntField(name string) {
-	s.AddField(name, "int", 4)
+	s.AddField(name, FieldTypeInt, 4)
+}
+
+func (s *Schema) AddBoolField(name string) {
+	s.AddField(name, FieldTypeBool, 1)
 }
 
 func (s *Schema) AddStringField(name string, length int) {
-	s.AddField(name, "string", length)
+	s.AddField(name, FieldTypeString, length)
 }
 
 func (s *Schema) Copy(other *Schema, fieldName string) {
@@ -63,11 +80,11 @@ func (s *Schema) GetFieldInfo(fieldName string) (FieldInfo, bool) {
 }
 
 // Type returns the type of a field
-func (s *Schema) Type(fieldName string) string {
+func (s *Schema) Type(fieldName string) FieldType {
 	if info, exists := s.fieldInfo[fieldName]; exists {
 		return info.fieldType
 	}
-	return ""
+	return FieldTypeNone
 }
 
 // Length returns the length of a field

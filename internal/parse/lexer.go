@@ -21,7 +21,7 @@ func NewLexer(input string) *Lexer {
 		"select": true, "from": true, "where": true, "and": true,
 		"insert": true, "into": true, "values": true,
 		"delete": true, "update": true, "set": true,
-		"create": true, "table": true, "varchar": true, "int": true,
+		"create": true, "table": true, "varchar": true, "int": true, "bool": true,
 		"view": true, "as": true, "index": true, "on": true,
 		"explain": true, "true": true, "false": true,
 		"order": true, "by": true,
@@ -91,6 +91,11 @@ func (l *Lexer) MatchStringConstant() bool {
 	return l.token == '\'' || l.token == scanner.String
 }
 
+// MatchBoolConstant checks if the current token is a boolean constant (true or false).
+func (l *Lexer) MatchBoolConstant() bool {
+	return l.token == scanner.Ident && (l.tokenVal == "true" || l.tokenVal == "false")
+}
+
 // MatchKeyword checks if the current token is the specified keyword (case-insensitive).
 func (l *Lexer) MatchKeyword(w string) bool {
 	return l.token == scanner.Ident && strings.EqualFold(l.tokenVal, w)
@@ -142,6 +147,26 @@ func (l *Lexer) EatStringConstant() (string, error) {
 
 	l.nextToken()
 	return s, nil
+}
+
+// EatBoolConstant consumes the current token if it's a boolean constant, then advances to the next token.
+// Returns the boolean value and ErrBadSyntax if the token is not a boolean.
+func (l *Lexer) EatBoolConstant() (bool, error) {
+	if !l.MatchBoolConstant() {
+		return false, ErrBadSyntax
+	}
+
+	// Save the current token value before advancing
+	val := l.tokenVal
+	l.nextToken()
+
+	if val == "true" {
+		return true, nil
+	} else if val == "false" {
+		return false, nil
+	} else {
+		return false, ErrBadSyntax
+	}
 }
 
 // EatKeyword consumes the current token if it matches the specified keyword (case-insensitive), then advances to the next token.

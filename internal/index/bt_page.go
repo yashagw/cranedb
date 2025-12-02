@@ -166,12 +166,16 @@ func (bp *BTPage) makeDefaultRecord(pos int) error {
 
 		fieldType := schema.Type(fieldName)
 		switch fieldType {
-		case "int":
+		case record.FieldTypeInt:
 			if err := bp.tx.SetInt(bp.currentBlk, totalOffset, 0, false); err != nil {
 				return err
 			}
-		case "string":
+		case record.FieldTypeString:
 			if err := bp.tx.SetString(bp.currentBlk, totalOffset, "", false); err != nil {
+				return err
+			}
+		case record.FieldTypeBool:
+			if err := bp.tx.SetBool(bp.currentBlk, totalOffset, false, false); err != nil {
 				return err
 			}
 		default:
@@ -201,6 +205,12 @@ func (bp *BTPage) GetInt(slot int, fieldName string) (int, error) {
 	return bp.tx.GetInt(bp.currentBlk, pos)
 }
 
+// GetBool reads a boolean value from the specified slot and field
+func (bp *BTPage) GetBool(slot int, fieldName string) (bool, error) {
+	pos := bp.GetFieldPosition(slot, fieldName)
+	return bp.tx.GetBool(bp.currentBlk, pos)
+}
+
 // GetString reads a string value from the specified slot and field
 func (bp *BTPage) GetString(slot int, fieldName string) (string, error) {
 	pos := bp.GetFieldPosition(slot, fieldName)
@@ -211,10 +221,12 @@ func (bp *BTPage) GetString(slot int, fieldName string) (string, error) {
 func (bp *BTPage) GetVal(slot int, fieldName string) (any, error) {
 	fieldType := bp.layout.GetSchema().Type(fieldName)
 	switch fieldType {
-	case "int":
+	case record.FieldTypeInt:
 		return bp.GetInt(slot, fieldName)
-	case "string":
+	case record.FieldTypeString:
 		return bp.GetString(slot, fieldName)
+	case record.FieldTypeBool:
+		return bp.GetBool(slot, fieldName)
 	default:
 		return nil, fmt.Errorf("unsupported field type: %s", fieldType)
 	}
@@ -224,6 +236,12 @@ func (bp *BTPage) GetVal(slot int, fieldName string) (any, error) {
 func (bp *BTPage) SetInt(slot int, fieldName string, val int) error {
 	pos := bp.GetFieldPosition(slot, fieldName)
 	return bp.tx.SetInt(bp.currentBlk, pos, val, true)
+}
+
+// SetBool writes an boolean value to the specified slot and field
+func (bp *BTPage) SetBool(slot int, fieldName string, val bool) error {
+	pos := bp.GetFieldPosition(slot, fieldName)
+	return bp.tx.SetBool(bp.currentBlk, pos, val, true)
 }
 
 // SetString writes a string value to the specified slot and field
@@ -236,12 +254,17 @@ func (bp *BTPage) SetString(slot int, fieldName string, val string) error {
 func (bp *BTPage) SetVal(slot int, fieldName string, val any) error {
 	fieldType := bp.layout.GetSchema().Type(fieldName)
 	switch fieldType {
-	case "int":
+	case record.FieldTypeInt:
 		if intVal, ok := val.(int); ok {
 			return bp.SetInt(slot, fieldName, intVal)
 		}
 		return fmt.Errorf("expected int for field %s, got %T", fieldName, val)
-	case "string":
+	case record.FieldTypeBool:
+		if boolVal, ok := val.(bool); ok {
+			return bp.SetBool(slot, fieldName, boolVal)
+		}
+		return fmt.Errorf("expected bool for field %s, got %T", fieldName, val)
+	case record.FieldTypeString:
 		if strVal, ok := val.(string); ok {
 			return bp.SetString(slot, fieldName, strVal)
 		}

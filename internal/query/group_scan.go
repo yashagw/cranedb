@@ -123,6 +123,20 @@ func (gbs *GroupByScan) GetInt(fldname string) (int, error) {
 	return intVal, nil
 }
 
+func (gbs *GroupByScan) GetBool(fldname string) (bool, error) {
+	val, err := gbs.GetValue(fldname)
+	if err != nil {
+		return false, err
+	}
+
+	boolVal, ok := val.(bool)
+	if !ok {
+		return false, fmt.Errorf("field %s is not a boolean", fldname)
+	}
+
+	return boolVal, nil
+}
+
 func (gbs *GroupByScan) GetString(fldname string) (string, error) {
 	val, err := gbs.GetValue(fldname)
 	if err != nil {

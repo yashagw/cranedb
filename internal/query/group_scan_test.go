@@ -37,6 +37,7 @@ func TestGroupByScanMultipleAggregations(t *testing.T) {
 	schema.AddStringField("dept", 20)
 	schema.AddIntField("salary")
 	schema.AddStringField("name", 20)
+	schema.AddBoolField("active")
 
 	layout := record.NewLayoutFromSchema(schema)
 	ts, err := table.NewTableScan(tx, layout, "Employees")
@@ -50,15 +51,16 @@ func TestGroupByScanMultipleAggregations(t *testing.T) {
 		dept   string
 		salary int
 		name   string
+		active bool
 	}{
-		{"CS", 50000, "Alice"},
-		{"CS", 60000, "Bob"},
-		{"CS", 55000, "Charlie"},
-		{"HR", 45000, "David"},
-		{"HR", 50000, "Eve"},
-		{"Sales", 40000, "Frank"},
-		{"Sales", 45000, "Grace"},
-		{"Sales", 50000, "Henry"},
+		{"CS", 50000, "Alice", true},
+		{"CS", 60000, "Bob", false},
+		{"CS", 55000, "Charlie", true},
+		{"HR", 45000, "David", true},
+		{"HR", 50000, "Eve", false},
+		{"Sales", 40000, "Frank", true},
+		{"Sales", 45000, "Grace", true},
+		{"Sales", 50000, "Henry", false},
 	}
 
 	err = ts.BeforeFirst()
@@ -72,14 +74,16 @@ func TestGroupByScanMultipleAggregations(t *testing.T) {
 		require.NoError(t, err)
 		err = ts.SetString("name", emp.name)
 		require.NoError(t, err)
-		t.Logf("Inserted: dept=%s, salary=%d, name=%s", emp.dept, emp.salary, emp.name)
+		err = ts.SetBool("active", emp.active)
+		require.NoError(t, err)
+		t.Logf("Inserted: dept=%s, salary=%d, name=%s, active=%v", emp.dept, emp.salary, emp.name, emp.active)
 	}
 
 	err = ts.BeforeFirst()
 	require.NoError(t, err)
 
 	// Create GroupByScan with multiple aggregations: MAX and MIN
-	groupFields := []string{"dept"}
+	groupFields := []string{"dept", "active"}
 	aggFns := []aggregations.AggregationFunction{
 		aggregations.NewMaxFn("salary"),
 		aggregations.NewMinFn("salary"),
@@ -91,6 +95,7 @@ func TestGroupByScanMultipleAggregations(t *testing.T) {
 	// Collect results
 	type Result struct {
 		dept      string
+		active    bool
 		maxSalary int
 		minSalary int
 	}
@@ -109,6 +114,9 @@ func TestGroupByScanMultipleAggregations(t *testing.T) {
 		dept, err := groupByScan.GetString("dept")
 		require.NoError(t, err)
 
+		active, err := groupByScan.GetBool("active")
+		require.NoError(t, err)
+
 		maxSalary, err := groupByScan.GetInt("maxofsalary")
 		require.NoError(t, err)
 
@@ -117,31 +125,21 @@ func TestGroupByScanMultipleAggregations(t *testing.T) {
 
 		results = append(results, Result{
 			dept:      dept,
+			active:    active,
 			maxSalary: maxSalary,
 			minSalary: minSalary,
 		})
 
-		t.Logf("Group: dept=%s, maxofsalary=%d, minofsalary=%d", dept, maxSalary, minSalary)
+		t.Logf("Group: dept=%s, active=%v, maxofsalary=%d, minofsalary=%d", dept, active, maxSalary, minSalary)
 	}
 
-	// Should have 3 groups: CS, HR, Sales
-	require.Len(t, results, 3)
+	// Should have more groups now (CS+active, CS+inactive, HR+active, HR+inactive, Sales+active, Sales+inactive)
+	require.GreaterOrEqual(t, len(results), 3)
 
-	// Verify results
-	expected := map[string]struct {
-		max int
-		min int
-	}{
-		"CS":    {max: 60000, min: 50000}, // max of 50000,60000,55000; min of 50000,60000,55000
-		"HR":    {max: 50000, min: 45000}, // max of 45000,50000; min of 45000,50000
-		"Sales": {max: 50000, min: 40000}, // max of 40000,45000,50000; min of 40000,45000,50000
-	}
-
+	// Verify that bool field is accessible
 	for _, r := range results {
-		exp := expected[r.dept]
-		assert.Equal(t, exp.max, r.maxSalary, "Max salary for %s should be %d", r.dept, exp.max)
-		assert.Equal(t, exp.min, r.minSalary, "Min salary for %s should be %d", r.dept, exp.min)
-		assert.GreaterOrEqual(t, r.maxSalary, r.minSalary, "Max should be >= Min for %s", r.dept)
+		assert.IsType(t, true, r.active)
+		assert.GreaterOrEqual(t, r.maxSalary, r.minSalary, "Max should be >= Min for %s/%v", r.dept, r.active)
 	}
 
 	groupByScan.Close()

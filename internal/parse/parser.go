@@ -47,6 +47,14 @@ func (p *Parser) constant() (any, error) {
 		}
 		return val, nil
 	}
+	if p.lexer.MatchBoolConstant() {
+		val, err := p.lexer.EatBoolConstant()
+		if err != nil {
+			return false, err
+		}
+		return val, nil
+	}
+
 	return nil, ErrBadSyntax
 }
 
@@ -58,7 +66,7 @@ func (p *Parser) expression() (*query.Expression, error) {
 		}
 		return query.NewFieldNameExpression(id), nil
 	}
-	if p.lexer.MatchIntConstant() || p.lexer.MatchStringConstant() {
+	if p.lexer.MatchIntConstant() || p.lexer.MatchStringConstant() || p.lexer.MatchBoolConstant() {
 		val, err := p.constant()
 		if err != nil {
 			return nil, err
@@ -68,6 +76,8 @@ func (p *Parser) expression() (*query.Expression, error) {
 			return query.NewConstantExpression(*query.NewIntConstant(v)), nil
 		case string:
 			return query.NewConstantExpression(*query.NewStringConstant(v)), nil
+		case bool:
+			return query.NewConstantExpression(*query.NewBoolConstant(v)), nil
 		default:
 			return nil, ErrBadSyntax
 		}
@@ -748,6 +758,13 @@ func (p *Parser) fieldType(fieldName string) (*record.Schema, error) {
 			return nil, err
 		}
 		schema.AddIntField(fieldName)
+		return schema, nil
+	} else if p.lexer.MatchKeyword("bool") {
+		err := p.lexer.EatKeyword("bool")
+		if err != nil {
+			return nil, err
+		}
+		schema.AddBoolField(fieldName)
 		return schema, nil
 	} else if p.lexer.MatchKeyword("varchar") {
 		err := p.lexer.EatKeyword("varchar")

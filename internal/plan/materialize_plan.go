@@ -84,7 +84,8 @@ func (mp *MaterializePlan) Open() (scan.Scan, error) {
 				return nil, err
 			}
 
-			if sch.Type(fldname) == "int" {
+			switch sch.Type(fldname) {
+			case record.FieldTypeInt:
 				intVal, ok := val.(int)
 				if !ok {
 					src.Close()
@@ -92,7 +93,7 @@ func (mp *MaterializePlan) Open() (scan.Scan, error) {
 					return nil, fmt.Errorf("expected int value for field %s, got %T", fldname, val)
 				}
 				err = dest.SetInt(fldname, intVal)
-			} else {
+			case record.FieldTypeString:
 				strVal, ok := val.(string)
 				if !ok {
 					src.Close()
@@ -100,7 +101,20 @@ func (mp *MaterializePlan) Open() (scan.Scan, error) {
 					return nil, fmt.Errorf("expected string value for field %s, got %T", fldname, val)
 				}
 				err = dest.SetString(fldname, strVal)
+			case record.FieldTypeBool:
+				boolVal, ok := val.(bool)
+				if !ok {
+					src.Close()
+					dest.Close()
+					return nil, fmt.Errorf("expected bool value for field %s, got %T", fldname, val)
+				}
+				err = dest.SetBool(fldname, boolVal)
+			default:
+				src.Close()
+				dest.Close()
+				return nil, fmt.Errorf("unsupported field type: %s", sch.Type(fldname))
 			}
+
 			if err != nil {
 				src.Close()
 				dest.Close()

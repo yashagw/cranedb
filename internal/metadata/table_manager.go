@@ -88,7 +88,7 @@ func (t *TableManager) CreateTable(tableName string, schema *record.Schema, tx *
 		if err != nil {
 			return err
 		}
-		err = fcat.SetString("type", schema.Type(fieldName))
+		err = fcat.SetString("type", schema.Type(fieldName).String())
 		if err != nil {
 			return err
 		}
@@ -181,10 +181,14 @@ func (t *TableManager) GetLayout(tableName string, tx *transaction.Transaction) 
 			}
 
 			offsets[fieldName] = offset
-			if fieldType == "int" {
+
+			switch fieldType {
+			case record.FieldTypeInt.String():
 				schema.AddIntField(fieldName)
-			} else if fieldType == "string" {
+			case record.FieldTypeString.String():
 				schema.AddStringField(fieldName, fieldLength)
+			case record.FieldTypeBool.String():
+				schema.AddBoolField(fieldName)
 			}
 		}
 	}

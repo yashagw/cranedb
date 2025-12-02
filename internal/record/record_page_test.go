@@ -27,6 +27,7 @@ func TestRecordPage_Format(t *testing.T) {
 	schema := NewSchema()
 	schema.AddIntField("id")
 	schema.AddStringField("name", 20)
+	schema.AddBoolField("active")
 
 	layout := NewLayoutFromSchema(schema)
 	require.NotNil(t, layout)
@@ -47,6 +48,8 @@ func TestRecordPage_Format(t *testing.T) {
 	require.NoError(t, err)
 	err = recordPage.SetString(slot1, "name", "test")
 	require.NoError(t, err)
+	err = recordPage.SetBool(slot1, "active", true)
+	require.NoError(t, err)
 
 	slot2, err := recordPage.InsertSlot(slot1)
 	require.NoError(t, err)
@@ -55,25 +58,36 @@ func TestRecordPage_Format(t *testing.T) {
 	require.NoError(t, err)
 	err = recordPage.SetString(slot2, "name", "example")
 	require.NoError(t, err)
+	err = recordPage.SetBool(slot2, "active", false)
+	require.NoError(t, err)
 
 	status1, err := recordPage.getSlotStatus(slot1)
 	require.NoError(t, err)
 	assert.Equal(t, SlotStatusInUse, status1)
+
 	status2, err := recordPage.getSlotStatus(slot2)
 	require.NoError(t, err)
 	assert.Equal(t, SlotStatusInUse, status2)
+
 	id1, err := recordPage.GetInt(slot1, "id")
 	require.NoError(t, err)
 	assert.Equal(t, 42, id1)
 	name1, err := recordPage.GetString(slot1, "name")
 	require.NoError(t, err)
 	assert.Equal(t, "test", name1)
+	active1, err := recordPage.GetBool(slot1, "active")
+	require.NoError(t, err)
+	assert.Equal(t, true, active1)
+
 	id2, err := recordPage.GetInt(slot2, "id")
 	require.NoError(t, err)
 	assert.Equal(t, 100, id2)
 	name2, err := recordPage.GetString(slot2, "name")
 	require.NoError(t, err)
 	assert.Equal(t, "example", name2)
+	active2, err := recordPage.GetBool(slot2, "active")
+	require.NoError(t, err)
+	assert.Equal(t, false, active2)
 
 	// Test 2: Format the record page
 	recordPage.Format()
@@ -81,21 +95,31 @@ func TestRecordPage_Format(t *testing.T) {
 	status1, err = recordPage.getSlotStatus(slot1)
 	require.NoError(t, err)
 	assert.Equal(t, SlotStatusEmpty, status1)
+
 	status2, err = recordPage.getSlotStatus(slot2)
 	require.NoError(t, err)
 	assert.Equal(t, SlotStatusEmpty, status2)
+
 	id1, err = recordPage.GetInt(slot1, "id")
 	require.NoError(t, err)
 	assert.Equal(t, 0, id1)
 	id2, err = recordPage.GetInt(slot2, "id")
 	require.NoError(t, err)
 	assert.Equal(t, 0, id2)
+
 	name1, err = recordPage.GetString(slot1, "name")
 	require.NoError(t, err)
 	assert.Equal(t, "", name1)
 	name2, err = recordPage.GetString(slot2, "name")
 	require.NoError(t, err)
 	assert.Equal(t, "", name2)
+
+	active1, err = recordPage.GetBool(slot1, "active")
+	require.NoError(t, err)
+	assert.Equal(t, false, active1)
+	active2, err = recordPage.GetBool(slot2, "active")
+	require.NoError(t, err)
+	assert.Equal(t, false, active2)
 
 	// Test 4: Verify we can still insert new slots after formatting
 	newSlot, err := recordPage.InsertSlot(-1)
@@ -105,12 +129,17 @@ func TestRecordPage_Format(t *testing.T) {
 	require.NoError(t, err)
 	err = recordPage.SetString(newSlot, "name", "newdata")
 	require.NoError(t, err)
+	err = recordPage.SetBool(newSlot, "active", true)
+	require.NoError(t, err)
 	newID, err := recordPage.GetInt(newSlot, "id")
 	require.NoError(t, err)
 	assert.Equal(t, 999, newID)
 	newName, err := recordPage.GetString(newSlot, "name")
 	require.NoError(t, err)
 	assert.Equal(t, "newdata", newName)
+	newActive, err := recordPage.GetBool(newSlot, "active")
+	require.NoError(t, err)
+	assert.Equal(t, true, newActive)
 
 	// Cleanup
 	tx.Commit()

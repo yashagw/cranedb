@@ -106,6 +106,16 @@ func (t *Transaction) GetInt(blk *file.BlockID, offset int) (int, error) {
 	return val, nil
 }
 
+func (t *Transaction) GetBool(blk *file.BlockID, offset int) (bool, error) {
+	err := t.concurrencyManager.sLock(blk)
+	if err != nil {
+		return false, err
+	}
+	buff := t.bufferList.GetBuffer(blk)
+	val := buff.Contents().GetBool(offset)
+	return val, nil
+}
+
 func (t *Transaction) GetString(blk *file.BlockID, offset int) (string, error) {
 	err := t.concurrencyManager.sLock(blk)
 	if err != nil {
@@ -138,6 +148,32 @@ func (t *Transaction) SetInt(blk *file.BlockID, offset int, val int, log bool) e
 	}
 	page := buff.Contents()
 	page.SetInt(offset, val)
+	buff.SetModified(t.txNum, lsn)
+	return nil
+}
+
+func (t *Transaction) SetBool(blk *file.BlockID, offset int, val bool, log bool) error {
+	err := t.concurrencyManager.xLock(blk)
+	if err != nil {
+		return err
+	}
+	buff := t.bufferList.GetBuffer(blk)
+	if buff == nil {
+		// Buffer not pinned yet, pin it first
+		buff, err = t.bufferList.Pin(blk)
+		if err != nil {
+			return err
+		}
+	}
+	lsn := -1
+	if log {
+		lsn, err = t.recoveryManager.SetBool(buff, offset)
+		if err != nil {
+			return err
+		}
+	}
+	page := buff.Contents()
+	page.SetBool(offset, val)
 	buff.SetModified(t.txNum, lsn)
 	return nil
 }

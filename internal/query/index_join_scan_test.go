@@ -43,6 +43,7 @@ func setupIndexJoinScanTest(t *testing.T, testDir string) (*transaction.Transact
 	studentsSchema.AddIntField("id")
 	studentsSchema.AddStringField("name", 20)
 	studentsSchema.AddIntField("dept_id")
+	studentsSchema.AddBoolField("active")
 
 	// Create Departments table schema
 	deptSchema := record.NewSchema()
@@ -93,12 +94,13 @@ func setupIndexJoinScanTest(t *testing.T, testDir string) (*transaction.Transact
 		id     int
 		name   string
 		deptID int
+		active bool
 	}{
-		{1, "Alice", 1},   // CS
-		{2, "Bob", 2},     // Math
-		{3, "Charlie", 1}, // CS
-		{4, "David", 3},   // Physics
-		{5, "Eve", 2},     // Math
+		{1, "Alice", 1, true},   // CS
+		{2, "Bob", 2, false},    // Math
+		{3, "Charlie", 1, true}, // CS
+		{4, "David", 3, true},   // Physics
+		{5, "Eve", 2, false},    // Math
 	}
 
 	err = studentsTS.BeforeFirst()
@@ -111,6 +113,8 @@ func setupIndexJoinScanTest(t *testing.T, testDir string) (*transaction.Transact
 		err = studentsTS.SetString("name", student.name)
 		require.NoError(t, err)
 		err = studentsTS.SetInt("dept_id", student.deptID)
+		require.NoError(t, err)
+		err = studentsTS.SetBool("active", student.active)
 		require.NoError(t, err)
 	}
 
@@ -244,6 +248,7 @@ func TestIndexJoinScanFieldAccess(t *testing.T) {
 		assert.True(t, indexJoinScan.HasField("id"))
 		assert.True(t, indexJoinScan.HasField("name"))
 		assert.True(t, indexJoinScan.HasField("dept_id"))
+		assert.True(t, indexJoinScan.HasField("active"))
 
 		// Fields from rhs (Departments)
 		assert.True(t, indexJoinScan.HasField("dept_name"))
@@ -285,6 +290,11 @@ func TestIndexJoinScanFieldAccess(t *testing.T) {
 			deptName, err := indexJoinScan.GetString("dept_name")
 			require.NoError(t, err)
 			assert.NotEmpty(t, deptName)
+
+			// Get bool from lhs
+			active, err := indexJoinScan.GetBool("active")
+			require.NoError(t, err)
+			assert.IsType(t, true, active)
 		}
 	})
 

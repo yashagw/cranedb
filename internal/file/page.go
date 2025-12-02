@@ -72,3 +72,17 @@ func (p *Page) GetString(offset int) string {
 func (p *Page) SetString(offset int, val string) {
 	p.SetBytesArray(offset, []byte(val))
 }
+
+// GetBool reads a boolean from the specified offset (1 byte)
+func (p *Page) GetBool(offset int) bool {
+	return p.bytes[offset] == 1
+}
+
+// SetBool writes a boolean at the specified offset (1 byte)
+func (p *Page) SetBool(offset int, val bool) {
+	if val {
+		p.bytes[offset] = 1
+	} else {
+		p.bytes[offset] = 0
+	}
+}

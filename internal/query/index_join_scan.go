@@ -108,6 +108,15 @@ func (ijs *IndexJoinScan) GetInt(fldname string) (int, error) {
 	return ijs.lhs.GetInt(fldname)
 }
 
+// GetBool returns the boolean value of the specified field.
+// It checks rhs first, then lhs.
+func (ijs *IndexJoinScan) GetBool(fldname string) (bool, error) {
+	if ijs.rhs.HasField(fldname) {
+		return ijs.rhs.GetBool(fldname)
+	}
+	return ijs.lhs.GetBool(fldname)
+}
+
 // GetString returns the string value of the specified field.
 // It checks rhs first, then lhs.
 func (ijs *IndexJoinScan) GetString(fldname string) (string, error) {

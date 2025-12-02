@@ -71,6 +71,13 @@ func (s *ProductScan) GetInt(fldname string) (int, error) {
 	return s.scan2.GetInt(fldname)
 }
 
+func (s *ProductScan) GetBool(fldname string) (bool, error) {
+	if s.scan1.HasField(fldname) {
+		return s.scan1.GetBool(fldname)
+	}
+	return s.scan2.GetBool(fldname)
+}
+
 func (s *ProductScan) GetString(fldname string) (string, error) {
 	if s.scan1.HasField(fldname) {
 		return s.scan1.GetString(fldname)

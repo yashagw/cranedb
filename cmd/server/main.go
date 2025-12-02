@@ -18,6 +18,7 @@ import (
 	"github.com/yashagw/cranedb/internal/parse"
 	"github.com/yashagw/cranedb/internal/parse/parserdata"
 	"github.com/yashagw/cranedb/internal/plan"
+	"github.com/yashagw/cranedb/internal/record"
 	"github.com/yashagw/cranedb/internal/session"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
@@ -311,7 +312,8 @@ func (s *Server) executeQuery(sql string, sess *session.Session) QueryResponse {
 			}
 			row := make(map[string]interface{})
 			for _, col := range columns {
-				if schema.Type(col) == "int" {
+				switch schema.Type(col) {
+				case record.FieldTypeInt:
 					val, err := queryScan.GetInt(col)
 					if err != nil {
 						queryScan.Close()
@@ -321,7 +323,17 @@ func (s *Server) executeQuery(sql string, sess *session.Session) QueryResponse {
 						}
 					}
 					row[col] = val
-				} else {
+				case record.FieldTypeBool:
+					val, err := queryScan.GetBool(col)
+					if err != nil {
+						queryScan.Close()
+						return QueryResponse{
+							Type:  "error",
+							Error: fmt.Sprintf("Failed to get bool value for column %s: %v", col, err),
+						}
+					}
+					row[col] = val
+				case record.FieldTypeString:
 					val, err := queryScan.GetString(col)
 					if err != nil {
 						queryScan.Close()

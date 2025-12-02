@@ -53,6 +53,8 @@ func createTempTableWithData(t *testing.T, tx *transaction.Transaction, sch *rec
 				err = scan.SetInt(fldname, v)
 			case string:
 				err = scan.SetString(fldname, v)
+			case bool:
+				err = scan.SetBool(fldname, v)
 			}
 			require.NoError(t, err)
 		}
@@ -81,12 +83,13 @@ func TestSortScan(t *testing.T) {
 		schema := record.NewSchema()
 		schema.AddIntField("id")
 		schema.AddStringField("name", 20)
+		schema.AddBoolField("active")
 
 		// Create a single sorted run
 		data := []map[string]interface{}{
-			{"id": 1, "name": "Alice"},
-			{"id": 2, "name": "Bob"},
-			{"id": 3, "name": "Charlie"},
+			{"id": 1, "name": "Alice", "active": true},
+			{"id": 2, "name": "Bob", "active": false},
+			{"id": 3, "name": "Charlie", "active": true},
 		}
 		temp := createTempTableWithData(t, tx, schema, data)
 
@@ -112,6 +115,9 @@ func TestSortScan(t *testing.T) {
 			id, err := sortScan.GetInt("id")
 			require.NoError(t, err)
 			assert.Equal(t, expectedIds[idx], id)
+			active, err := sortScan.GetBool("active")
+			require.NoError(t, err)
+			assert.IsType(t, true, active)
 			idx++
 		}
 		assert.Equal(t, len(expectedIds), idx)
@@ -127,17 +133,18 @@ func TestSortScan(t *testing.T) {
 		schema := record.NewSchema()
 		schema.AddIntField("id")
 		schema.AddStringField("name", 20)
+		schema.AddBoolField("active")
 
 		// Create two sorted runs
 		run1Data := []map[string]interface{}{
-			{"id": 1, "name": "Alice"},
-			{"id": 3, "name": "Charlie"},
-			{"id": 5, "name": "Eve"},
+			{"id": 1, "name": "Alice", "active": true},
+			{"id": 3, "name": "Charlie", "active": true},
+			{"id": 5, "name": "Eve", "active": false},
 		}
 		run2Data := []map[string]interface{}{
-			{"id": 2, "name": "Bob"},
-			{"id": 4, "name": "David"},
-			{"id": 6, "name": "Frank"},
+			{"id": 2, "name": "Bob", "active": false},
+			{"id": 4, "name": "David", "active": true},
+			{"id": 6, "name": "Frank", "active": true},
 		}
 
 		run1 := createTempTableWithData(t, tx, schema, run1Data)
@@ -165,6 +172,9 @@ func TestSortScan(t *testing.T) {
 			id, err := sortScan.GetInt("id")
 			require.NoError(t, err)
 			assert.Equal(t, expectedIds[idx], id, "Records should be merged in sorted order")
+			active, err := sortScan.GetBool("active")
+			require.NoError(t, err)
+			assert.IsType(t, true, active)
 			idx++
 		}
 		assert.Equal(t, len(expectedIds), idx)
@@ -321,6 +331,8 @@ func TestSortScanSaveRestorePosition(t *testing.T) {
 	require.NoError(t, err)
 	name1, err := sortScan.GetString("name")
 	require.NoError(t, err)
+	active1, err := sortScan.GetBool("active")
+	require.NoError(t, err)
 
 	// Save position
 	err = sortScan.SavePosition()
@@ -344,8 +356,11 @@ func TestSortScanSaveRestorePosition(t *testing.T) {
 	require.NoError(t, err)
 	name3, err := sortScan.GetString("name")
 	require.NoError(t, err)
+	active3, err := sortScan.GetBool("active")
+	require.NoError(t, err)
 	assert.Equal(t, id1, id3)
 	assert.Equal(t, name1, name3)
+	assert.Equal(t, active1, active3)
 
 	sortScan.Close()
 }

@@ -68,6 +68,8 @@ func (e *Expression) Evaluate(s scan.Scan) (Constant, error) {
 			return *NewIntConstant(v), nil
 		case string:
 			return *NewStringConstant(v), nil
+		case bool:
+			return *NewBoolConstant(v), nil
 		case Constant:
 			return v, nil
 		default:

@@ -280,6 +280,8 @@ func (p *BasicUpdatePlanner) ExecuteInsert(insertData *parserdata.InsertData, tx
 			constant = query.NewIntConstant(v)
 		case string:
 			constant = query.NewStringConstant(v)
+		case bool:
+			constant = query.NewBoolConstant(v)
 		case *query.Constant:
 			constant = v
 		case query.Constant:
@@ -308,6 +310,12 @@ func (p *BasicUpdatePlanner) ExecuteInsert(insertData *parserdata.InsertData, tx
 		if constant != nil {
 			if constant.IsInt() {
 				err = us.SetInt(fieldName, constant.AsInt())
+				if err != nil {
+					us.Close()
+					return 0, err
+				}
+			} else if constant.IsBool() {
+				err = us.SetBool(fieldName, constant.AsBool())
 				if err != nil {
 					us.Close()
 					return 0, err

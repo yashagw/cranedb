@@ -32,6 +32,7 @@ func setupProductScanTest(t *testing.T, testDir string) (*transaction.Transactio
 	schema1 := record.NewSchema()
 	schema1.AddIntField("student_id")
 	schema1.AddStringField("name", 20)
+	schema1.AddBoolField("active")
 
 	layout1 := record.NewLayoutFromSchema(schema1)
 	ts1, err := table.NewTableScan(tx, layout1, "Students")
@@ -39,12 +40,13 @@ func setupProductScanTest(t *testing.T, testDir string) (*transaction.Transactio
 
 	// Insert student data
 	students := []struct {
-		id   int
-		name string
+		id     int
+		name   string
+		active bool
 	}{
-		{1, "Alice"},
-		{2, "Bob"},
-		{3, "Charlie"},
+		{1, "Alice", true},
+		{2, "Bob", false},
+		{3, "Charlie", true},
 	}
 
 	err = ts1.BeforeFirst()
@@ -56,13 +58,16 @@ func setupProductScanTest(t *testing.T, testDir string) (*transaction.Transactio
 		require.NoError(t, err)
 		err = ts1.SetString("name", student.name)
 		require.NoError(t, err)
-		t.Logf("Inserted student: id=%d, name=%s", student.id, student.name)
+		err = ts1.SetBool("active", student.active)
+		require.NoError(t, err)
+		t.Logf("Inserted student: id=%d, name=%s, active=%v", student.id, student.name, student.active)
 	}
 
 	// Create second table (Courses)
 	schema2 := record.NewSchema()
 	schema2.AddIntField("course_id")
 	schema2.AddStringField("course_name", 20)
+	schema2.AddBoolField("required")
 
 	layout2 := record.NewLayoutFromSchema(schema2)
 	ts2, err := table.NewTableScan(tx, layout2, "Courses")
@@ -70,11 +75,12 @@ func setupProductScanTest(t *testing.T, testDir string) (*transaction.Transactio
 
 	// Insert course data
 	courses := []struct {
-		id   int
-		name string
+		id       int
+		name     string
+		required bool
 	}{
-		{101, "Math"},
-		{102, "Science"},
+		{101, "Math", true},
+		{102, "Science", false},
 	}
 
 	err = ts2.BeforeFirst()
@@ -86,7 +92,9 @@ func setupProductScanTest(t *testing.T, testDir string) (*transaction.Transactio
 		require.NoError(t, err)
 		err = ts2.SetString("course_name", course.name)
 		require.NoError(t, err)
-		t.Logf("Inserted course: id=%d, name=%s", course.id, course.name)
+		err = ts2.SetBool("required", course.required)
+		require.NoError(t, err)
+		t.Logf("Inserted course: id=%d, name=%s, required=%v", course.id, course.name, course.required)
 	}
 
 	return tx, ts1, ts2
@@ -186,10 +194,12 @@ func TestProductScanFieldAccess(t *testing.T) {
 		// Fields from scan1
 		assert.True(t, productScan.HasField("student_id"))
 		assert.True(t, productScan.HasField("name"))
+		assert.True(t, productScan.HasField("active"))
 
 		// Fields from scan2
 		assert.True(t, productScan.HasField("course_id"))
 		assert.True(t, productScan.HasField("course_name"))
+		assert.True(t, productScan.HasField("required"))
 
 		// Non-existent field
 		assert.False(t, productScan.HasField("missing"))
@@ -234,6 +244,26 @@ func TestProductScanFieldAccess(t *testing.T) {
 			require.NoError(t, err)
 			assert.NotEmpty(t, courseName)
 			t.Logf("Got course_name from scan2: %s", courseName)
+		}
+	})
+
+	t.Run("GetBoolFromBothScans", func(t *testing.T) {
+		err := productScan.BeforeFirst()
+		require.NoError(t, err)
+		hasNext, err := productScan.Next()
+		require.NoError(t, err)
+		if hasNext {
+			// Get bool from scan1
+			active, err := productScan.GetBool("active")
+			require.NoError(t, err)
+			assert.IsType(t, true, active)
+			t.Logf("Got active from scan1: %v", active)
+
+			// Get bool from scan2
+			required, err := productScan.GetBool("required")
+			require.NoError(t, err)
+			assert.IsType(t, true, required)
+			t.Logf("Got required from scan2: %v", required)
 		}
 	})
 

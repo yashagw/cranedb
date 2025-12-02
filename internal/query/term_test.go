@@ -96,4 +96,22 @@ func TestTermEquatesWithField(t *testing.T) {
 	term2 := NewTerm(*fieldExpr3, *constExpr)
 	result4 := term2.EquatesWithField("age")
 	assert.Nil(t, result4)
+
+	// Test creating term with boolean constant
+	boolFieldExpr := NewFieldNameExpression("active")
+	boolConstExpr := NewConstantExpression(*NewBoolConstant(true))
+	termBool := NewTerm(*boolFieldExpr, *boolConstExpr)
+	require.NotNil(t, termBool)
+	assert.Equal(t, "active = true", termBool.String())
+
+	// Test EquatesWithConstant with boolean
+	resultBool := termBool.EquatesWithConstant("active")
+	require.NotNil(t, resultBool)
+	assert.Equal(t, true, resultBool.AsBool())
+
+	// Test boolean constant = field (reversed)
+	termBool2 := NewTerm(*boolConstExpr, *boolFieldExpr)
+	resultBool2 := termBool2.EquatesWithConstant("active")
+	require.NotNil(t, resultBool2)
+	assert.Equal(t, true, resultBool2.AsBool())
 }

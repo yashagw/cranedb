@@ -52,4 +52,37 @@ func TestConstantBasic(t *testing.T) {
 
 	// Test CompareTo with different types
 	assert.Equal(t, -1, intConst1.CompareTo(strConst1)) // types don't match
+
+	// Test creating boolean constant
+	boolConst := NewBoolConstant(true)
+	require.NotNil(t, boolConst)
+	assert.Equal(t, true, boolConst.AsBool())
+	assert.Equal(t, "true", boolConst.String())
+
+	boolConstFalse := NewBoolConstant(false)
+	require.NotNil(t, boolConstFalse)
+	assert.Equal(t, false, boolConstFalse.AsBool())
+	assert.Equal(t, "false", boolConstFalse.String())
+
+	// Test Equals with boolean constants
+	boolConst1 := NewBoolConstant(true)
+	boolConst2 := NewBoolConstant(false)
+	assert.True(t, boolConst1.Equals(boolConst1))  // same instance
+	assert.False(t, boolConst1.Equals(boolConst2)) // different values
+
+	boolConst3 := NewBoolConstant(true)           // same value as boolConst1
+	assert.True(t, boolConst1.Equals(boolConst3)) // equal values
+
+	// Test Equals with different types
+	assert.False(t, intConst1.Equals(boolConst1))
+	assert.False(t, strConst1.Equals(boolConst1))
+
+	// Test CompareTo with boolean constants
+	assert.Equal(t, 0, boolConst1.CompareTo(boolConst3))      // equal values
+	assert.Equal(t, -1, boolConstFalse.CompareTo(boolConst1)) // false < true
+	assert.Equal(t, 1, boolConst1.CompareTo(boolConstFalse))  // true > false
+
+	// Test CompareTo with different types
+	assert.Equal(t, -1, boolConst1.CompareTo(intConst1)) // types don't match
+	assert.Equal(t, -1, boolConst1.CompareTo(strConst1)) // types don't match
 }

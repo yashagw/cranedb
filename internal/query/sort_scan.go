@@ -157,6 +157,14 @@ func (ss *SortScan) GetInt(fldname string) (int, error) {
 	return ss.currentScan.GetInt(fldname)
 }
 
+// GetBool returns the boolean value of the specified field from the current record.
+func (ss *SortScan) GetBool(fldname string) (bool, error) {
+	if ss.currentScan == nil {
+		return false, fmt.Errorf("no current record")
+	}
+	return ss.currentScan.GetBool(fldname)
+}
+
 // GetString returns the string value of the specified field from the current record.
 func (ss *SortScan) GetString(fldname string) (string, error) {
 	if ss.currentScan == nil {

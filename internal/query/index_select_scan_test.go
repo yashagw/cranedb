@@ -41,6 +41,7 @@ func setupIndexSelectScanTest(t *testing.T, testDir string) (*transaction.Transa
 	schema.AddStringField("name", 20)
 	schema.AddIntField("age")
 	schema.AddStringField("department", 15)
+	schema.AddBoolField("active")
 
 	// Create table using metadata manager
 	err = tableManager.CreateTable("Students", schema, tx)
@@ -58,15 +59,16 @@ func setupIndexSelectScanTest(t *testing.T, testDir string) (*transaction.Transa
 		name       string
 		age        int
 		department string
+		active     bool
 	}{
-		{1, "Alice", 20, "CS"},
-		{2, "Bob", 22, "Math"},
-		{3, "Charlie", 20, "CS"},
-		{4, "David", 21, "Physics"},
-		{5, "Eve", 20, "Math"},
-		{6, "Frank", 23, "CS"},
-		{7, "Grace", 22, "Physics"},
-		{8, "Henry", 20, "CS"},
+		{1, "Alice", 20, "CS", true},
+		{2, "Bob", 22, "Math", false},
+		{3, "Charlie", 20, "CS", true},
+		{4, "David", 21, "Physics", true},
+		{5, "Eve", 20, "Math", false},
+		{6, "Frank", 23, "CS", true},
+		{7, "Grace", 22, "Physics", true},
+		{8, "Henry", 20, "CS", false},
 	}
 
 	err = ts.BeforeFirst()
@@ -81,6 +83,8 @@ func setupIndexSelectScanTest(t *testing.T, testDir string) (*transaction.Transa
 		err = ts.SetInt("age", student.age)
 		require.NoError(t, err)
 		err = ts.SetString("department", student.department)
+		require.NoError(t, err)
+		err = ts.SetBool("active", student.active)
 		require.NoError(t, err)
 	}
 
@@ -259,6 +263,7 @@ func TestIndexSelectScanFieldAccess(t *testing.T) {
 		assert.True(t, indexSelectScan.HasField("name"))
 		assert.True(t, indexSelectScan.HasField("age"))
 		assert.True(t, indexSelectScan.HasField("department"))
+		assert.True(t, indexSelectScan.HasField("active"))
 
 		// Should not have non-existent field
 		assert.False(t, indexSelectScan.HasField("missing"))
@@ -284,6 +289,11 @@ func TestIndexSelectScanFieldAccess(t *testing.T) {
 			department, err := indexSelectScan.GetString("department")
 			require.NoError(t, err)
 			assert.NotEmpty(t, department)
+
+			// Test GetBool
+			active, err := indexSelectScan.GetBool("active")
+			require.NoError(t, err)
+			assert.IsType(t, true, active)
 		}
 	})
 
@@ -309,6 +319,14 @@ func TestIndexSelectScanFieldAccess(t *testing.T) {
 			nameStr, ok := nameVal.(string)
 			require.True(t, ok)
 			assert.NotEmpty(t, nameStr)
+
+			// GetValue for bool field
+			activeVal, err := indexSelectScan.GetValue("active")
+			require.NoError(t, err)
+			require.NotNil(t, activeVal)
+			activeBool, ok := activeVal.(bool)
+			require.True(t, ok)
+			assert.IsType(t, true, activeBool)
 		}
 	})
 

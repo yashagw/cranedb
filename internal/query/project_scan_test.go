@@ -34,6 +34,7 @@ func setupProjectScanTest(t *testing.T, testDir string) (*transaction.Transactio
 	schema.AddIntField("age")
 	schema.AddStringField("email", 30)
 	schema.AddIntField("salary")
+	schema.AddBoolField("active")
 
 	layout := record.NewLayoutFromSchema(schema)
 	ts, err := table.NewTableScan(tx, layout, "Employees")
@@ -46,10 +47,11 @@ func setupProjectScanTest(t *testing.T, testDir string) (*transaction.Transactio
 		age    int
 		email  string
 		salary int
+		active bool
 	}{
-		{1, "Alice", 30, "alice@example.com", 50000},
-		{2, "Bob", 35, "bob@example.com", 60000},
-		{3, "Charlie", 28, "charlie@example.com", 55000},
+		{1, "Alice", 30, "alice@example.com", 50000, true},
+		{2, "Bob", 35, "bob@example.com", 60000, false},
+		{3, "Charlie", 28, "charlie@example.com", 55000, true},
 	}
 
 	err = ts.BeforeFirst()
@@ -72,8 +74,10 @@ func setupProjectScanTest(t *testing.T, testDir string) (*transaction.Transactio
 		err = ts.SetInt("salary", emp.salary)
 
 		require.NoError(t, err)
-		t.Logf("Inserted: id=%d, name=%s, age=%d, email=%s, salary=%d",
-			emp.id, emp.name, emp.age, emp.email, emp.salary)
+		err = ts.SetBool("active", emp.active)
+		require.NoError(t, err)
+		t.Logf("Inserted: id=%d, name=%s, age=%d, email=%s, salary=%d, active=%v",
+			emp.id, emp.name, emp.age, emp.email, emp.salary, emp.active)
 	}
 
 	return tx, ts
@@ -112,6 +116,35 @@ func TestProjectScanBasicProjection(t *testing.T) {
 
 			require.NoError(t, err)
 			t.Logf("Projected record: id=%d, name=%s", id, name)
+			count++
+		}
+
+		assert.Equal(t, 3, count, "Should have 3 records")
+		projectScan.Close()
+	})
+
+	t.Run("ProjectBoolField", func(t *testing.T) {
+		err := ts.BeforeFirst()
+		require.NoError(t, err)
+
+		// Project id and active
+		fieldList := []string{"id", "active"}
+		projectScan := NewProjectScan(ts, fieldList)
+
+		err = projectScan.BeforeFirst()
+		require.NoError(t, err)
+		count := 0
+		for {
+			hasNext, err := projectScan.Next()
+			require.NoError(t, err)
+			if !hasNext {
+				break
+			}
+			id, err := projectScan.GetInt("id")
+			require.NoError(t, err)
+			active, err := projectScan.GetBool("active")
+			require.NoError(t, err)
+			t.Logf("Projected record: id=%d, active=%v", id, active)
 			count++
 		}
 
@@ -218,7 +251,8 @@ func TestProjectScanHasField(t *testing.T) {
 	assert.False(t, projectScan.HasField("age"), "Should not have age field")
 	assert.False(t, projectScan.HasField("email"), "Should not have email field")
 	assert.False(t, projectScan.HasField("salary"), "Should not have salary field")
-	t.Log("Non-projected fields (age, email, salary) are not accessible")
+	assert.False(t, projectScan.HasField("active"), "Should not have active field")
+	t.Log("Non-projected fields (age, email, salary, active) are not accessible")
 
 	// Non-existent field
 	assert.False(t, projectScan.HasField("missing"), "Should not have missing field")
@@ -264,6 +298,10 @@ func TestProjectScanAccessNonProjectedField(t *testing.T) {
 		_, err = projectScan.GetString("email")
 		assert.Error(t, err, "Accessing non-projected string field should return error")
 		t.Log("GetString on non-projected field correctly returns error")
+
+		_, err = projectScan.GetBool("active")
+		assert.Error(t, err, "Accessing non-projected bool field should return error")
+		t.Log("GetBool on non-projected field correctly returns error")
 
 		_, err = projectScan.GetValue("salary")
 		assert.Error(t, err, "Accessing non-projected field via GetValue should return error")

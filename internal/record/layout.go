@@ -12,7 +12,18 @@ func NewLayoutFromSchema(schema *Schema) *Layout {
 	pos := 4 // 4 bytes for the empty/inuse flag
 	for _, field := range schema.fields {
 		offsets[field] = pos
-		pos += schema.fieldInfo[field].fieldLength
+		fieldInfo := schema.fieldInfo[field]
+		if fieldInfo.fieldType == FieldTypeInt {
+			pos += 4
+		} else if fieldInfo.fieldType == FieldTypeString {
+			// String needs 4 bytes for length prefix + fieldLength for data
+			pos += 4 + fieldInfo.fieldLength
+		} else if fieldInfo.fieldType == FieldTypeBool {
+			pos += 1
+		} else {
+			// Fallback to fieldLength for unknown types
+			pos += fieldInfo.fieldLength
+		}
 	}
 	slotSize := pos
 
@@ -48,15 +59,19 @@ func (l *Layout) GetSchema() *Schema {
 func (l *Layout) lengthInBytes(fieldName string) int {
 	fieldInfo, ok := l.schema.fieldInfo[fieldName]
 	if !ok {
-		return 0 // or consider panicking or returning an error
+		// Consider panicking here
+		return 0
 	}
 
-	if fieldInfo.fieldType == "int" {
+	if fieldInfo.fieldType == FieldTypeInt {
 		return 4
-	} else if fieldInfo.fieldType == "string" {
+	} else if fieldInfo.fieldType == FieldTypeString {
 		// Assume string's length field tells max bytes for storage, plus 4 bytes prefix for VARCHAR length
 		// Adjust depending on your actual Page & encoding logic
 		return 4 + fieldInfo.fieldLength
+	} else if fieldInfo.fieldType == FieldTypeBool {
+		return 1
 	}
+
 	return 0
 }

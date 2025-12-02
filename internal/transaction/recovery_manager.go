@@ -89,6 +89,15 @@ func (rm *RecoveryManager) SetString(buf *buffer.Buffer, offset int) (int, error
 	return WriteSetStringLogRecord(rm.logManager, rm.txNum, buf.Block(), offset, oldVal)
 }
 
+// SetBool logs a boolean modification operation before it occurs.
+// It reads the current value from the buffer at the specified offset,
+// writes a SetBool log record with the old value for potential rollback,
+// and returns the LSN of the log record.
+func (rm *RecoveryManager) SetBool(buf *buffer.Buffer, offset int) (int, error) {
+	oldVal := buf.Contents().GetBool(offset)
+	return WriteSetBoolLogRecord(rm.logManager, rm.txNum, buf.Block(), offset, oldVal)
+}
+
 // doRollback undoes all operations for the current transaction by scanning the log records
 // backwards. For each log record belonging to this transaction, it performs the corresponding
 // undo operation, stopping when it reaches the transaction's Start record.
@@ -146,7 +155,7 @@ func (rm *RecoveryManager) doRecovery() error {
 				return err
 			}
 			// Unpin the buffer after undo to prevent buffer pool exhaustion during recovery
-			// Only unpin if this is a SetInt or SetString record (they have block info)
+			// Only unpin if this is a SetInt/SetString/SetBool record (they have block info)
 			if record.Op() == LogRecordSetInt {
 				if setIntRecord, ok := record.(*SetIntLogRecord); ok {
 					rm.transaction.Unpin(setIntRecord.block)
@@ -154,6 +163,10 @@ func (rm *RecoveryManager) doRecovery() error {
 			} else if record.Op() == LogRecordSetString {
 				if setStringRecord, ok := record.(*SetStringLogRecord); ok {
 					rm.transaction.Unpin(setStringRecord.block)
+				}
+			} else if record.Op() == LogRecordSetBool {
+				if setBoolRecord, ok := record.(*SetBoolLogRecord); ok {
+					rm.transaction.Unpin(setBoolRecord.block)
 				}
 			}
 		}

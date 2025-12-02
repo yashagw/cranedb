@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/yashagw/cranedb/internal/parse/parserdata"
+	"github.com/yashagw/cranedb/internal/record"
 )
 
 func TestParserField(t *testing.T) {
@@ -359,9 +360,9 @@ func TestParserCreateTable(t *testing.T) {
 		sch := ct.Schema()
 		require.NotNil(t, sch)
 		assert.True(t, sch.HasField("id"))
-		assert.Equal(t, "int", sch.Type("id"))
+		assert.Equal(t, record.FieldTypeInt, sch.Type("id"))
 		assert.True(t, sch.HasField("name"))
-		assert.Equal(t, "string", sch.Type("name"))
+		assert.Equal(t, record.FieldTypeString, sch.Type("name"))
 		assert.Equal(t, 20, sch.Length("name"))
 	})
 
@@ -374,8 +375,8 @@ func TestParserCreateTable(t *testing.T) {
 		ct := cmd.(*parserdata.CreateTableData)
 		assert.Equal(t, "people", ct.TableName())
 		sch := ct.Schema()
-		assert.Equal(t, "int", sch.Type("age"))
-		assert.Equal(t, "string", sch.Type("nickname"))
+		assert.Equal(t, record.FieldTypeInt, sch.Type("age"))
+		assert.Equal(t, record.FieldTypeString, sch.Type("nickname"))
 		assert.Equal(t, 8, sch.Length("nickname"))
 	})
 }
@@ -419,10 +420,10 @@ func TestParserFieldDefinitionsHelpers(t *testing.T) {
 		sch, err := p.fieldDefs()
 		require.NoError(t, err)
 		require.NotNil(t, sch)
-		assert.Equal(t, "int", sch.Type("id"))
-		assert.Equal(t, "string", sch.Type("name"))
+		assert.Equal(t, record.FieldTypeInt, sch.Type("id"))
+		assert.Equal(t, record.FieldTypeString, sch.Type("name"))
 		assert.Equal(t, 10, sch.Length("name"))
-		assert.Equal(t, "int", sch.Type("age"))
+		assert.Equal(t, record.FieldTypeInt, sch.Type("age"))
 	})
 
 	t.Run("fieldDefInt", func(t *testing.T) {
@@ -430,7 +431,7 @@ func TestParserFieldDefinitionsHelpers(t *testing.T) {
 		require.NotNil(t, p)
 		sch, err := p.fieldDef()
 		require.NoError(t, err)
-		assert.Equal(t, "int", sch.Type("age"))
+		assert.Equal(t, record.FieldTypeInt, sch.Type("age"))
 	})
 
 	t.Run("fieldDefVarchar", func(t *testing.T) {
@@ -438,7 +439,7 @@ func TestParserFieldDefinitionsHelpers(t *testing.T) {
 		require.NotNil(t, p)
 		sch, err := p.fieldDef()
 		require.NoError(t, err)
-		assert.Equal(t, "string", sch.Type("name"))
+		assert.Equal(t, record.FieldTypeString, sch.Type("name"))
 		assert.Equal(t, 12, sch.Length("name"))
 	})
 }

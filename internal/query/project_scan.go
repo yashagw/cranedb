@@ -38,6 +38,13 @@ func (s *ProjectScan) GetInt(fldname string) (int, error) {
 	return s.input.GetInt(fldname)
 }
 
+func (s *ProjectScan) GetBool(fldname string) (bool, error) {
+	if !s.HasField(fldname) {
+		return false, fmt.Errorf("field not found: %s", fldname)
+	}
+	return s.input.GetBool(fldname)
+}
+
 func (s *ProjectScan) GetString(fldname string) (string, error) {
 	if !s.HasField(fldname) {
 		return "", fmt.Errorf("field not found: %s", fldname)

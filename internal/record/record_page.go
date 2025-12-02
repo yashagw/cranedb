@@ -43,6 +43,14 @@ func (rp *RecordPage) GetInt(slot int, fieldName string) (int, error) {
 	return rp.transaction.GetInt(rp.block, totalOffset)
 }
 
+// GetBool retrieves the boolean value stored in the specified slot and field.
+func (rp *RecordPage) GetBool(slot int, fieldName string) (bool, error) {
+	fieldOffset := rp.layout.GetOffset(fieldName)
+	slotOffset := slot * rp.layout.GetSlotSize()
+	totalOffset := fieldOffset + slotOffset
+	return rp.transaction.GetBool(rp.block, totalOffset)
+}
+
 // GetString retrieves the string value stored in the specified slot and field.
 func (rp *RecordPage) GetString(slot int, fieldName string) (string, error) {
 	fieldOffset := rp.layout.GetOffset(fieldName)
@@ -57,6 +65,14 @@ func (rp *RecordPage) SetInt(slot int, fieldName string, value int) error {
 	slotOffset := slot * rp.layout.GetSlotSize()
 	totalOffset := fieldOffset + slotOffset
 	return rp.transaction.SetInt(rp.block, totalOffset, value, true)
+}
+
+// SetBool sets the bool value in the specified slot and field.
+func (rp *RecordPage) SetBool(slot int, fieldName string, value bool) error {
+	fieldOffset := rp.layout.GetOffset(fieldName)
+	slotOffset := slot * rp.layout.GetSlotSize()
+	totalOffset := fieldOffset + slotOffset
+	return rp.transaction.SetBool(rp.block, totalOffset, value, true)
 }
 
 // SetString sets the string value in the specified slot and field.
@@ -113,7 +129,7 @@ func (rp *RecordPage) searchAfter(slot int, status SlotStatus) (int, error) {
 }
 
 // Format initializes all slots in the record page by setting them to empty status
-// and initializing all fields with default values (0 for integers, empty string for strings).
+// and initializing all fields with default values (0 for integers, false for booleans, empty string for strings).
 func (rp *RecordPage) Format() error {
 	slot := 0
 	for rp.isValidSlot(slot) {
@@ -127,12 +143,17 @@ func (rp *RecordPage) Format() error {
 			if !exists {
 				continue
 			}
-			if fieldInfo.fieldType == "int" {
+			if fieldInfo.fieldType == FieldTypeInt {
 				err = rp.SetInt(slot, fieldName, 0)
 				if err != nil {
 					return err
 				}
-			} else if fieldInfo.fieldType == "string" {
+			} else if fieldInfo.fieldType == FieldTypeBool {
+				err = rp.SetBool(slot, fieldName, false)
+				if err != nil {
+					return err
+				}
+			} else if fieldInfo.fieldType == FieldTypeString {
 				err = rp.SetString(slot, fieldName, "")
 				if err != nil {
 					return err

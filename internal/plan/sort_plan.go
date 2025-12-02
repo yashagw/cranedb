@@ -319,19 +319,29 @@ func (sp *SortPlan) copy(src scan.Scan, dest scan.UpdateScan) error {
 			return err
 		}
 
-		if sp.sch.Type(fldname) == "int" {
+		switch sp.sch.Type(fldname) {
+		case record.FieldTypeInt:
 			intVal, ok := val.(int)
 			if !ok {
 				return fmt.Errorf("expected int value for field %s, got %T", fldname, val)
 			}
 			err = dest.SetInt(fldname, intVal)
-		} else {
+		case record.FieldTypeString:
 			strVal, ok := val.(string)
 			if !ok {
 				return fmt.Errorf("expected string value for field %s, got %T", fldname, val)
 			}
 			err = dest.SetString(fldname, strVal)
+		case record.FieldTypeBool:
+			boolVal, ok := val.(bool)
+			if !ok {
+				return fmt.Errorf("expected bool value for field %s, got %T", fldname, val)
+			}
+			err = dest.SetBool(fldname, boolVal)
+		default:
+			return fmt.Errorf("unsupported field type: %s", sp.sch.Type(fldname))
 		}
+
 		if err != nil {
 			return err
 		}

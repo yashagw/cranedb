@@ -49,6 +49,10 @@ func (iss *IndexSelectScan) GetInt(fldname string) (int, error) {
 	return iss.tableScan.GetInt(fldname)
 }
 
+func (iss *IndexSelectScan) GetBool(fldname string) (bool, error) {
+	return iss.tableScan.GetBool(fldname)
+}
+
 func (iss *IndexSelectScan) GetString(fldname string) (string, error) {
 	return iss.tableScan.GetString(fldname)
 }

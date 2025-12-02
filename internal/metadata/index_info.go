@@ -65,11 +65,14 @@ func (ii *IndexInfo) CreateIndexLayout() *record.Layout {
 	sch.AddIntField("block")
 	sch.AddIntField("id")
 
-	if ii.tableSchema.Type(ii.fieldName) == "int" {
+	switch ii.tableSchema.Type(ii.fieldName) {
+	case record.FieldTypeInt:
 		sch.AddIntField("dataval")
-	} else {
+	case record.FieldTypeString:
 		fldLen := ii.tableSchema.Length(ii.fieldName)
 		sch.AddStringField("dataval", fldLen)
+	case record.FieldTypeBool:
+		sch.AddBoolField("dataval")
 	}
 
 	return record.NewLayoutFromSchema(sch)

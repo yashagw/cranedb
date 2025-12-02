@@ -50,6 +50,10 @@ func (s *SelectScan) GetInt(fldname string) (int, error) {
 	return s.input.GetInt(fldname)
 }
 
+func (s *SelectScan) GetBool(fldname string) (bool, error) {
+	return s.input.GetBool(fldname)
+}
+
 func (s *SelectScan) GetString(fldname string) (string, error) {
 	return s.input.GetString(fldname)
 }
@@ -72,6 +76,14 @@ func (s *SelectScan) SetInt(fldname string, val int) error {
 		return fmt.Errorf("input is not an scan.UpdateScan")
 	}
 	return updateScan.SetInt(fldname, val)
+}
+
+func (s *SelectScan) SetBool(fldname string, val bool) error {
+	updateScan, ok := s.input.(scan.UpdateScan)
+	if !ok {
+		return fmt.Errorf("input is not an scan.UpdateScan")
+	}
+	return updateScan.SetBool(fldname, val)
 }
 
 func (s *SelectScan) SetString(fldname string, val string) error {

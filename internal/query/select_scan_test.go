@@ -28,11 +28,12 @@ func setupTestDB(t *testing.T, testDir string) (*transaction.Transaction, *table
 	tx := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable)
 	require.NotNil(t, tx)
 
-	// Create schema with int and string fields
+	// Create schema with int, string, and bool fields
 	schema := record.NewSchema()
 	schema.AddIntField("id")
 	schema.AddIntField("age")
 	schema.AddStringField("name", 20)
+	schema.AddBoolField("active")
 
 	layout := record.NewLayoutFromSchema(schema)
 	require.NotNil(t, layout)
@@ -44,18 +45,19 @@ func setupTestDB(t *testing.T, testDir string) (*transaction.Transaction, *table
 
 	// Insert test records
 	testData := []struct {
-		id   int
-		age  int
-		name string
+		id     int
+		age    int
+		name   string
+		active bool
 	}{
-		{1, 25, "Alice"},
-		{2, 30, "Bob"},
-		{3, 25, "Charlie"},
-		{4, 35, "David"},
-		{5, 25, "Eve"},
-		{6, 40, "Frank"},
-		{7, 30, "Grace"},
-		{8, 45, "Henry"},
+		{1, 25, "Alice", true},
+		{2, 30, "Bob", false},
+		{3, 25, "Charlie", true},
+		{4, 35, "David", true},
+		{5, 25, "Eve", false},
+		{6, 40, "Frank", true},
+		{7, 30, "Grace", true},
+		{8, 45, "Henry", false},
 	}
 
 	err = ts.BeforeFirst()
@@ -69,7 +71,9 @@ func setupTestDB(t *testing.T, testDir string) (*transaction.Transaction, *table
 		require.NoError(t, err)
 		err = ts.SetString("name", data.name)
 		require.NoError(t, err)
-		t.Logf("Inserted: id=%d, age=%d, name=%s", data.id, data.age, data.name)
+		err = ts.SetBool("active", data.active)
+		require.NoError(t, err)
+		t.Logf("Inserted: id=%d, age=%d, name=%s, active=%v", data.id, data.age, data.name, data.active)
 	}
 
 	return tx, ts
@@ -270,6 +274,7 @@ func TestSelectScanReadOperations(t *testing.T) {
 		assert.True(t, selectScan.HasField("id"))
 		assert.True(t, selectScan.HasField("age"))
 		assert.True(t, selectScan.HasField("name"))
+		assert.True(t, selectScan.HasField("active"))
 		assert.False(t, selectScan.HasField("missing"))
 
 		selectScan.Close()
@@ -305,6 +310,26 @@ func TestSelectScanReadOperations(t *testing.T) {
 			require.True(t, ok, "GetValue should return string")
 			assert.NotEmpty(t, nameStr)
 			t.Logf("GetValue for name returned value: %s", nameStr)
+		}
+
+		selectScan.Close()
+	})
+
+	t.Run("GetBool", func(t *testing.T) {
+		ts.BeforeFirst()
+
+		predicate := createEqualsPredicate("id", 1)
+		selectScan := NewSelectScan(ts, *predicate)
+
+		err := selectScan.BeforeFirst()
+		require.NoError(t, err)
+		hasNext, err := selectScan.Next()
+		require.NoError(t, err)
+		if hasNext {
+			active, err := selectScan.GetBool("active")
+			require.NoError(t, err)
+			assert.IsType(t, true, active)
+			t.Logf("GetBool for active returned value: %v", active)
 		}
 
 		selectScan.Close()
@@ -437,6 +462,51 @@ func TestSelectScanUpdateOperations(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, "Alicia", checkName)
 			t.Log("Verified: Name was successfully updated")
+		}
+		selectScan2.Close()
+	})
+
+	t.Run("SetBool", func(t *testing.T) {
+		ts.BeforeFirst()
+
+		// Find Bob and update his active status
+		predicate := createEqualsPredicate("name", "Bob")
+		selectScan := NewSelectScan(ts, *predicate)
+
+		err := selectScan.BeforeFirst()
+		require.NoError(t, err)
+		hasNext, err := selectScan.Next()
+		require.NoError(t, err)
+		if hasNext {
+			originalActive, err := selectScan.GetBool("active")
+			require.NoError(t, err)
+			t.Logf("Bob's original active status: %v", originalActive)
+
+			// Update active status
+			newActive := true
+			err = selectScan.SetBool("active", newActive)
+			require.NoError(t, err)
+			checkActive, err := selectScan.GetBool("active")
+			require.NoError(t, err)
+			assert.Equal(t, newActive, checkActive)
+			t.Logf("Updated Bob's active status to %v", newActive)
+		}
+		selectScan.Close()
+
+		// Verify the update persisted
+		ts.BeforeFirst()
+		predicate2 := createEqualsPredicate("name", "Bob")
+		selectScan2 := NewSelectScan(ts, *predicate2)
+
+		err = selectScan2.BeforeFirst()
+		require.NoError(t, err)
+		hasNext, err = selectScan2.Next()
+		require.NoError(t, err)
+		if hasNext {
+			checkActive, err := selectScan2.GetBool("active")
+			require.NoError(t, err)
+			assert.Equal(t, true, checkActive, "Bob's active status should be updated to true")
+			t.Log("Verified: Active status was successfully updated")
 		}
 		selectScan2.Close()
 	})

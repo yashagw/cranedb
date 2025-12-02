@@ -9,6 +9,8 @@ func createEqualsPredicate(fieldName string, value interface{}) *Predicate {
 		constExpr = NewConstantExpression(*NewIntConstant(v))
 	case string:
 		constExpr = NewConstantExpression(*NewStringConstant(v))
+	case bool:
+		constExpr = NewConstantExpression(*NewBoolConstant(v))
 	default:
 		panic("unsupported value type")
 	}

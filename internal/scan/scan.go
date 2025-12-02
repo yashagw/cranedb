@@ -13,6 +13,8 @@ type Scan interface {
 	Next() (bool, error)
 	// GetInt returns the value of the specified integer field from the current record.
 	GetInt(fldname string) (int, error)
+	// GetBool returns the value of the specified bool field from the current record.
+	GetBool(fldname string) (bool, error)
 	// GetString returns the value of the specified string field from the current record.
 	GetString(fldname string) (string, error)
 	// GetValue returns the value of the specified field from the current record.
@@ -31,6 +33,8 @@ type UpdateScan interface {
 
 	// SetInt sets the value of the specified integer field in the current record.
 	SetInt(fldname string, val int) error
+	// SetBool sets the value of the specified bool field in the current record.
+	SetBool(fldname string, val bool) error
 	// SetString sets the value of the specified string field in the current record.
 	SetString(fldname string, val string) error
 	// Insert inserts a new record in the scan.
