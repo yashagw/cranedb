@@ -67,7 +67,7 @@ The database has implemented the following core components:
 - **Relational Algebra**: Support for product (join), select (filter), project (field selection), sort, group, and materialization operations
 - **Query Execution**: Iterator-based query execution with lazy evaluation
 - **Expression Evaluation**: Support for field references and constant values in expressions
-- **Predicate Evaluation**: WHERE clause filtering with support for comparison operators (=, !=, >, <, >=, <=) and AND conditions
+- **Predicate Evaluation**: WHERE clause filtering with support for comparison operators (=, !=, >, <, >=, <=) and AND/OR conditions
 - **Sorting**: ORDER BY clause support for sorting query results by one or more fields
 - **Grouping**: GROUP BY clause support for grouping records by specified fields
 - **Aggregation Functions**: Support for MAX and MIN aggregation functions in GROUP BY queries
@@ -92,10 +92,10 @@ The database has implemented the following core components:
 - ✅ Materialization for query optimization
 - ✅ Sorting (ORDER BY) support
 - ✅ Grouping (GROUP BY) with MAX and MIN aggregation functions
-- ✅ Comparison operators (=, !=, >, <, >=, <=) in WHERE clauses
+- ✅ Comparison operators (=, !=, >, <, >=, <=) and AND/OR conditions in WHERE clauses
 
 🚧 **Future Development**
-- **Additional SQL Features**: OR conditions, additional aggregation functions (COUNT, SUM, AVG)
+- **Additional SQL Features**: Additional aggregation functions (COUNT, SUM, AVG)
 - **Merge Joins**: Merge join algorithms
 ---
 

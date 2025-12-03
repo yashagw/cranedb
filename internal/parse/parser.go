@@ -145,21 +145,75 @@ func (p *Parser) term() (*query.Term, error) {
 	return query.NewTerm(*left, *right, operator), nil
 }
 
+// predicate parses a full boolean predicate expression supporting AND, OR, and parentheses.
+// Precedence: AND binds tighter than OR
 func (p *Parser) predicate() (*query.Predicate, error) {
-	firstTerm, err := p.term()
+	return p.parseOrExpr()
+}
+
+// parseOrExpr parses left-associative OR expressions: AndExpr ('or' AndExpr)*
+func (p *Parser) parseOrExpr() (*query.Predicate, error) {
+	left, err := p.parseAndExpr()
 	if err != nil {
 		return nil, err
 	}
-	pred := query.NewPredicate(*firstTerm)
-	for p.lexer.MatchKeyword("and") {
-		p.lexer.EatKeyword("and")
-		term, err := p.term()
+
+	for p.lexer.MatchKeyword("or") {
+		if err := p.lexer.EatKeyword("or"); err != nil {
+			return nil, err
+		}
+		right, err := p.parseAndExpr()
 		if err != nil {
 			return nil, err
 		}
-		pred.ConjunctWith(*query.NewPredicate(*term))
+		left = query.Or(left, right)
 	}
-	return pred, nil
+
+	return left, nil
+}
+
+// parseAndExpr parses left-associative AND expressions: PrimaryPred ('and' PrimaryPred)*
+func (p *Parser) parseAndExpr() (*query.Predicate, error) {
+	left, err := p.parsePrimaryPred()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.lexer.MatchKeyword("and") {
+		if err := p.lexer.EatKeyword("and"); err != nil {
+			return nil, err
+		}
+		right, err := p.parsePrimaryPred()
+		if err != nil {
+			return nil, err
+		}
+		left = query.And(left, right)
+	}
+
+	return left, nil
+}
+
+// parsePrimaryPred parses either a single comparison term or a parenthesized predicate.
+func (p *Parser) parsePrimaryPred() (*query.Predicate, error) {
+	if p.lexer.MatchDelim('(') {
+		if err := p.lexer.EatDelim('('); err != nil {
+			return nil, err
+		}
+		sub, err := p.predicate()
+		if err != nil {
+			return nil, err
+		}
+		if err := p.lexer.EatDelim(')'); err != nil {
+			return nil, err
+		}
+		return sub, nil
+	}
+
+	t, err := p.term()
+	if err != nil {
+		return nil, err
+	}
+	return query.NewPredicate(*t), nil
 }
 
 func (p *Parser) Query() (*parserdata.QueryData, error) {

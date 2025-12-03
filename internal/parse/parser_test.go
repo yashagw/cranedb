@@ -161,12 +161,69 @@ func TestParserTermComparisonOperators(t *testing.T) {
 }
 
 func TestParserPredicate(t *testing.T) {
-	p := NewParser(NewLexer("age = 25 and name = 'John'"))
-	require.NotNil(t, p)
-	pr, err := p.predicate()
-	require.NoError(t, err)
-	require.NotNil(t, pr)
-	assert.Equal(t, "age = 25 and name = John", pr.String())
+	t.Run("AndOnly", func(t *testing.T) {
+		p := NewParser(NewLexer("age = 25 and name = 'John'"))
+		require.NotNil(t, p)
+		pr, err := p.predicate()
+		require.NoError(t, err)
+		require.NotNil(t, pr)
+		assert.Equal(t, "age = 25 and name = John", pr.String())
+	})
+
+	t.Run("SimpleOr", func(t *testing.T) {
+		p := NewParser(NewLexer("age = 25 or age = 30"))
+		require.NotNil(t, p)
+		pr, err := p.predicate()
+		require.NoError(t, err)
+		require.NotNil(t, pr)
+		assert.Equal(t, "age = 25 or age = 30", pr.String())
+	})
+
+	t.Run("AndOrPrecedence", func(t *testing.T) {
+		p := NewParser(NewLexer("age > 20 and status = true or age < 18"))
+		require.NotNil(t, p)
+		pr, err := p.predicate()
+		require.NoError(t, err)
+		require.NotNil(t, pr)
+		// AND binds tighter than OR; parentheses are optional in the string form.
+		assert.Equal(t, "age > 20 and status = true or age < 18", pr.String())
+	})
+
+	t.Run("WithParentheses", func(t *testing.T) {
+		p := NewParser(NewLexer("age > 20 and (status = true or vip = true)"))
+		require.NotNil(t, p)
+		pr, err := p.predicate()
+		require.NoError(t, err)
+		require.NotNil(t, pr)
+		assert.Equal(t, "age > 20 and (status = true or vip = true)", pr.String())
+	})
+
+	t.Run("LeadingParentheses", func(t *testing.T) {
+		p := NewParser(NewLexer("(age > 20 or age < 18) and status = true"))
+		require.NotNil(t, p)
+		pr, err := p.predicate()
+		require.NoError(t, err)
+		require.NotNil(t, pr)
+		assert.Equal(t, "(age > 20 or age < 18) and status = true", pr.String())
+	})
+
+	t.Run("WithComplexWherePredicate", func(t *testing.T) {
+		q := "select name from students where (age > 20 or age < 18) and status = true"
+		p := NewParser(NewLexer(q))
+		require.NotNil(t, p)
+
+		qd, err := p.Query()
+		require.NoError(t, err)
+		require.NotNil(t, qd)
+
+		assert.Equal(t, []string{"name"}, qd.Fields())
+		assert.Equal(t, []string{"students"}, qd.Tables())
+
+		pred := qd.Predicate()
+		require.NotNil(t, pred)
+		// Ensure parentheses and operator precedence are preserved
+		assert.Equal(t, "(age > 20 or age < 18) and status = true", pred.String())
+	})
 }
 
 func TestParserQuery(t *testing.T) {

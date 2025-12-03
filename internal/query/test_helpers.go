@@ -34,7 +34,7 @@ func createCompoundPredicate(conditions []struct {
 	for i := 1; i < len(conditions); i++ {
 		cond := conditions[i]
 		nextPredicate := createEqualsPredicate(cond.fieldName, cond.value)
-		predicate.ConjunctWith(*nextPredicate)
+		predicate = And(predicate, nextPredicate)
 	}
 
 	return predicate

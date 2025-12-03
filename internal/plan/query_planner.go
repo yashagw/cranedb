@@ -268,7 +268,7 @@ func (p *BasicQueryPlanner) removeIndexedTerm(predicate *query.Predicate, indexe
 			result = query.NewPredicate(term)
 		} else {
 			termPred := query.NewPredicate(term)
-			result.ConjunctWith(*termPred)
+			result = query.And(result, termPred)
 		}
 	}
 

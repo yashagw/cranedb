@@ -17,16 +17,16 @@ func TestPredicateBasic(t *testing.T) {
 	require.NotNil(t, pred)
 	assert.Equal(t, "age = 25", pred.String())
 
-	// Test ConjunctWith
+	// Test combining predicates with AND
 	fieldExpr2 := NewFieldNameExpression("name")
 	constExpr2 := NewConstantExpression(*NewStringConstant("John"))
 	term2 := NewTerm(*fieldExpr2, *constExpr2, OpEQ)
 	pred2 := NewPredicate(*term2)
-	pred.ConjunctWith(*pred2)
+	pred = And(pred, pred2)
 	assert.Equal(t, "age = 25 and name = John", pred.String())
 
 	// Test empty predicate string
-	emptyPred := &Predicate{terms: []Term{}}
+	emptyPred := &Predicate{}
 	assert.Equal(t, "", emptyPred.String())
 }
 
@@ -40,7 +40,7 @@ func TestPredicateSelectSubPred(t *testing.T) {
 	term1 := NewTerm(*NewFieldNameExpression("age"), *NewConstantExpression(*NewIntConstant(25)), OpEQ)
 	term2 := NewTerm(*NewFieldNameExpression("name"), *NewConstantExpression(*NewStringConstant("John")), OpEQ)
 	pred := NewPredicate(*term1)
-	pred.ConjunctWith(*NewPredicate(*term2))
+	pred = And(pred, NewPredicate(*term2))
 
 	// SelectSubPred should return all terms that apply
 	result := pred.SelectSubPred(schema)
@@ -55,7 +55,7 @@ func TestPredicateSelectSubPred(t *testing.T) {
 
 	// Mixed case: some terms apply, some don't
 	pred4 := NewPredicate(*term1)
-	pred4.ConjunctWith(*pred3)
+	pred4 = And(pred4, pred3)
 	result3 := pred4.SelectSubPred(schema)
 	require.NotNil(t, result3)
 	assert.Equal(t, "age = 25", result3.String())
@@ -110,7 +110,7 @@ func TestPredicateEquatesWithConstant(t *testing.T) {
 
 	// Test with multiple terms
 	term2 := NewTerm(*NewFieldNameExpression("name"), *NewConstantExpression(*NewStringConstant("John")), OpEQ)
-	pred.ConjunctWith(*NewPredicate(*term2))
+	pred = And(pred, NewPredicate(*term2))
 
 	result3 := pred.EquatesWithConstant("name")
 	require.NotNil(t, result3)
@@ -144,7 +144,7 @@ func TestPredicateEquatesWithField(t *testing.T) {
 
 	// Test with multiple terms
 	term2 := NewTerm(*NewFieldNameExpression("name"), *NewFieldNameExpression("alias"), OpEQ)
-	pred.ConjunctWith(*NewPredicate(*term2))
+	pred = And(pred, NewPredicate(*term2))
 
 	result4 := pred.EquatesWithField("name")
 	require.NotNil(t, result4)

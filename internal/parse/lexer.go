@@ -18,7 +18,7 @@ type Lexer struct {
 
 func NewLexer(input string) *Lexer {
 	keywords := map[string]bool{
-		"select": true, "from": true, "where": true, "and": true,
+		"select": true, "from": true, "where": true, "and": true, "or": true,
 		"insert": true, "into": true, "values": true,
 		"delete": true, "update": true, "set": true,
 		"create": true, "table": true, "varchar": true, "int": true, "bool": true,

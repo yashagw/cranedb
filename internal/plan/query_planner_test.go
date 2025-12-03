@@ -258,8 +258,10 @@ func TestBasicQueryPlanner_JoinWithPredicate(t *testing.T) {
 		*query.NewConstantExpression(*query.NewStringConstant("Bob")),
 		query.OpEQ,
 	)
-	pred := query.NewPredicate(*term1)
-	pred.ConjunctWith(*query.NewPredicate(*term2))
+	pred := query.And(
+		query.NewPredicate(*term1),
+		query.NewPredicate(*term2),
+	)
 
 	plan, _ := planner.CreatePlan(parserdata.NewQueryData(
 		[]string{"name", "course"}, []string{"students", "enrollments"}, pred,
@@ -1138,8 +1140,10 @@ func TestBasicQueryPlanner_ComparisonOperators(t *testing.T) {
 			*query.NewConstantExpression(*query.NewIntConstant(90)),
 			query.OpLT,
 		)
-		pred := query.NewPredicate(*term1)
-		pred.ConjunctWith(*query.NewPredicate(*term2))
+		pred := query.And(
+			query.NewPredicate(*term1),
+			query.NewPredicate(*term2),
+		)
 
 		plan, err := planner.CreatePlan(parserdata.NewQueryData(
 			[]string{"id", "name", "age", "score"}, []string{"students"}, pred,
