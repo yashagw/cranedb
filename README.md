@@ -50,7 +50,7 @@ The database has implemented the following core components:
 - **Log Iteration**: Efficient forward and backward iteration through log records
 
 ### Record Management
-- **Schema Support**: Dynamic schema definition with integer and string field types
+- **Schema Support**: Dynamic schema definition with integer, boolean, and string field types
 - **Record Layout**: Efficient record storage with offset-based field access
 - **Table Scanning**: Iterator-based table scanning with insert, update, and delete operations
 - **Record Identification**: Unique RID (Record ID) system for record addressing
@@ -67,7 +67,7 @@ The database has implemented the following core components:
 - **Relational Algebra**: Support for product (join), select (filter), project (field selection), sort, group, and materialization operations
 - **Query Execution**: Iterator-based query execution with lazy evaluation
 - **Expression Evaluation**: Support for field references and constant values in expressions
-- **Predicate Evaluation**: WHERE clause filtering with support for equality comparisons and AND conditions
+- **Predicate Evaluation**: WHERE clause filtering with support for comparison operators (=, !=, >, <, >=, <=) and AND conditions
 - **Sorting**: ORDER BY clause support for sorting query results by one or more fields
 - **Grouping**: GROUP BY clause support for grouping records by specified fields
 - **Aggregation Functions**: Support for MAX and MIN aggregation functions in GROUP BY queries
@@ -82,7 +82,7 @@ The database has implemented the following core components:
 - ✅ Write-ahead logging and recovery
 - ✅ Transaction management with ACID properties
 - ✅ Concurrency control with two-phase locking
-- ✅ Record storage and schema management
+- ✅ Record storage and schema management (integer, boolean, and string field types)
 - ✅ Metadata management for tables, views, and indexes
 - ✅ SQL parsing and lexing
 - ✅ Query planning and execution
@@ -92,9 +92,10 @@ The database has implemented the following core components:
 - ✅ Materialization for query optimization
 - ✅ Sorting (ORDER BY) support
 - ✅ Grouping (GROUP BY) with MAX and MIN aggregation functions
+- ✅ Comparison operators (=, !=, >, <, >=, <=) in WHERE clauses
 
 🚧 **Future Development**
-- **Additional SQL Features**: OR conditions, comparison operators (>, <, >=, <=), additional aggregation functions (COUNT, SUM, AVG)
+- **Additional SQL Features**: OR conditions, additional aggregation functions (COUNT, SUM, AVG)
 - **Merge Joins**: Merge join algorithms
 ---
 
