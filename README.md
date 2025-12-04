@@ -70,7 +70,7 @@ The database has implemented the following core components:
 - **Predicate Evaluation**: WHERE clause filtering with support for comparison operators (=, !=, >, <, >=, <=) and AND/OR conditions
 - **Sorting**: ORDER BY clause support for sorting query results by one or more fields
 - **Grouping**: GROUP BY clause support for grouping records by specified fields
-- **Aggregation Functions**: Support for MAX and MIN aggregation functions in GROUP BY queries
+- **Aggregation Functions**: Support for MAX, MIN, COUNT and SUM aggregation functions in GROUP BY queries
 - **Update Operations**: Execution of INSERT, UPDATE, and DELETE statements with predicate support and automatic index maintenance
 - **Materialization**: Temporary table materialization for query optimization, especially beneficial for nested loop joins
 
@@ -91,12 +91,9 @@ The database has implemented the following core components:
 - ✅ B-tree indexes
 - ✅ Materialization for query optimization
 - ✅ Sorting (ORDER BY) support
-- ✅ Grouping (GROUP BY) with MAX and MIN aggregation functions
+- ✅ Grouping (GROUP BY) with MAX, MIN, COUNT and SUM aggregation functions
 - ✅ Comparison operators (=, !=, >, <, >=, <=) and AND/OR conditions in WHERE clauses
 
-🚧 **Future Development**
-- **Additional SQL Features**: Additional aggregation functions (COUNT, SUM, AVG)
-- **Merge Joins**: Merge join algorithms
 ---
 
 **Note**: This project is not intended for production use and serves as an educational implementation of database internals.

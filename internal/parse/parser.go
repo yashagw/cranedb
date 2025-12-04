@@ -683,7 +683,7 @@ func (p *Parser) selectFieldList() ([]string, []parserdata.AggregationFn, error)
 
 // selectField parses a single SELECT field, which may be:
 // - A regular field: fieldname
-// - An aggregation function: max(fieldname) or min(fieldname)
+// - An aggregation function: max(fieldname), min(fieldname), count(fieldname), or sum(fieldname)
 // Returns: (field name or empty if aggregation, aggregation function or nil, error)
 func (p *Parser) selectField() (string, *parserdata.AggregationFn, error) {
 	// Check if it's an aggregation function: max(...) or min(...)
@@ -730,6 +730,54 @@ func (p *Parser) selectField() (string, *parserdata.AggregationFn, error) {
 		}
 		aggFn := parserdata.AggregationFn{
 			Type:      parserdata.AggMin,
+			FieldName: fieldName,
+		}
+		return "", &aggFn, nil
+	}
+
+	if p.lexer.MatchKeyword("count") {
+		err := p.lexer.EatKeyword("count")
+		if err != nil {
+			return "", nil, err
+		}
+		err = p.lexer.EatDelim('(')
+		if err != nil {
+			return "", nil, err
+		}
+		fieldName, err := p.field()
+		if err != nil {
+			return "", nil, err
+		}
+		err = p.lexer.EatDelim(')')
+		if err != nil {
+			return "", nil, err
+		}
+		aggFn := parserdata.AggregationFn{
+			Type:      parserdata.AggCount,
+			FieldName: fieldName,
+		}
+		return "", &aggFn, nil
+	}
+
+	if p.lexer.MatchKeyword("sum") {
+		err := p.lexer.EatKeyword("sum")
+		if err != nil {
+			return "", nil, err
+		}
+		err = p.lexer.EatDelim('(')
+		if err != nil {
+			return "", nil, err
+		}
+		fieldName, err := p.field()
+		if err != nil {
+			return "", nil, err
+		}
+		err = p.lexer.EatDelim(')')
+		if err != nil {
+			return "", nil, err
+		}
+		aggFn := parserdata.AggregationFn{
+			Type:      parserdata.AggSum,
 			FieldName: fieldName,
 		}
 		return "", &aggFn, nil
