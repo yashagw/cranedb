@@ -250,8 +250,10 @@ func main() {
 			continue
 		}
 
-		// Check for QUIT/EXIT commands
-		upperLine := strings.ToUpper(line)
+		// Check for QUIT/EXIT commands (with or without semicolon)
+		lineWithoutSemicolon := strings.TrimSuffix(line, ";")
+		lineWithoutSemicolon = strings.TrimSpace(lineWithoutSemicolon)
+		upperLine := strings.ToUpper(lineWithoutSemicolon)
 		if upperLine == "QUIT" || upperLine == "EXIT" {
 			fmt.Println("Goodbye!")
 			break

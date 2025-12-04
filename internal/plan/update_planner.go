@@ -201,6 +201,12 @@ func (p *BasicUpdatePlanner) ExecuteModify(modifyData *parserdata.ModifyData, tx
 				us.Close()
 				return 0, err
 			}
+		} else if newValConstant.IsBool() {
+			err = us.SetBool(fieldName, newValConstant.AsBool())
+			if err != nil {
+				us.Close()
+				return 0, err
+			}
 		} else {
 			err = us.SetString(fieldName, newValConstant.AsString())
 			if err != nil {
@@ -214,6 +220,8 @@ func (p *BasicUpdatePlanner) ExecuteModify(modifyData *parserdata.ModifyData, tx
 			var newVal any
 			if newValConstant.IsInt() {
 				newVal = newValConstant.AsInt()
+			} else if newValConstant.IsBool() {
+				newVal = newValConstant.AsBool()
 			} else {
 				newVal = newValConstant.AsString()
 			}
