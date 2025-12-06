@@ -1,4 +1,4 @@
-.PHONY: help build build-server build-client clean test run-server run-client
+.PHONY: help build build-server build-client build-logviewer clean test run-server run-client
 
 # Default target
 help:
@@ -8,6 +8,7 @@ help:
 	@echo "  make build         - Build both server and client"
 	@echo "  make build-server  - Build server binary"
 	@echo "  make build-client  - Build client binary"
+	@echo "  make build-logviewer - Build logviewer binary"
 	@echo "  make clean         - Remove built binaries and database files"
 	@echo "  make test          - Run all tests"
 	@echo "  make run-server    - Start the database server"
@@ -28,6 +29,12 @@ build-client:
 	@mkdir -p bin
 	@go build -o bin/client ./cmd/client
 	@echo "✓ Client built: bin/client"
+
+build-logviewer:
+	@echo "Building logviewer..."
+	@mkdir -p bin
+	@go build -o bin/logviewer ./cmd/logviewer
+	@echo "✓ Logviewer built: bin/logviewer"
 
 # Clean target
 clean:

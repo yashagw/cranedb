@@ -24,12 +24,12 @@ func TestTransaction_BasicOperations(t *testing.T) {
 	// Test 1: Create transaction
 	tx1 := NewTransaction(fileManager, logManager, bufferManager, lockTable)
 	require.NotNil(t, tx1)
-	assert.Equal(t, 0, tx1.txNum) // First transaction should be 0
+	assert.Equal(t, int64(0), tx1.txNum) // First transaction should be 0
 
 	// Test 2: Create another transaction (should get unique number)
 	tx2 := NewTransaction(fileManager, logManager, bufferManager, lockTable)
 	require.NotNil(t, tx2)
-	assert.Equal(t, 1, tx2.txNum) // Second transaction should be 1
+	assert.Equal(t, int64(1), tx2.txNum) // Second transaction should be 1
 
 	// Test 3: Pin and unpin buffer
 	block := file.NewBlockID("testfile", 1)

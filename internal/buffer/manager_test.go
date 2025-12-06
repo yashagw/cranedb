@@ -58,7 +58,7 @@ func TestManager_BasicOperations(t *testing.T) {
 
 	// Test modification tracking
 	buff1.SetModified(123, 456)
-	assert.Equal(t, 123, buff1.ModifyingTx(), "Should track modifying transaction")
+	assert.Equal(t, int64(123), buff1.ModifyingTx(), "Should track modifying transaction")
 
 	// Test flush all
 	err = bm.FlushAll(123)

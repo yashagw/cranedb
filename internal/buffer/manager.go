@@ -43,7 +43,7 @@ func (bm *Manager) Available() int {
 	return bm.numAvailable
 }
 
-func (bm *Manager) FlushAll(txnum int) error {
+func (bm *Manager) FlushAll(txnum int64) error {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 

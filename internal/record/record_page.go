@@ -181,7 +181,9 @@ func (rp *RecordPage) Format() error {
 
 func (rp *RecordPage) isValidSlot(slot int) bool {
 	slotOffset := (slot + 1) * rp.layout.GetSlotSize()
-	return slotOffset <= rp.transaction.BlockSize()
+	// Account for PageHeaderSize - slotOffset is relative to data area start
+	// but GetInt/SetInt add PageHeaderSize, so we need to ensure total doesn't exceed block size
+	return slotOffset <= rp.transaction.BlockSize()-file.PageHeaderSize
 }
 
 func (rp *RecordPage) getSlotStatus(slot int) (SlotStatus, error) {

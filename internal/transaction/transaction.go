@@ -10,11 +10,11 @@ import (
 
 var (
 	txNumMutex sync.Mutex
-	nextTxNum  int
+	nextTxNum  int64
 )
 
 // getNextTxNum returns a unique transaction number using a global mutex
-func getNextTxNum() int {
+func getNextTxNum() int64 {
 	txNumMutex.Lock()
 	defer txNumMutex.Unlock()
 	txNum := nextTxNum
@@ -33,7 +33,8 @@ type Transaction struct {
 	recoveryManager    *RecoveryManager
 	concurrencyManager *ConcurrencyManager
 
-	txNum      int
+	txNum      int64
+	prevTxLSN  int64
 	bufferList *BufferList
 }
 
@@ -50,10 +51,19 @@ func NewTransaction(fileManager *file.Manager, logManager *dblog.Manager, buffer
 		bufferManager:      bufferManager,
 		concurrencyManager: concurrencyManager,
 		txNum:              txNum,
+		prevTxLSN:          -1,
 		bufferList:         bufferList,
 	}
 	recoveryManager := NewRecoveryManager(txNum, transaction, logManager, bufferManager)
 	transaction.recoveryManager = recoveryManager
+
+	// Write Start log record
+	lsn := logManager.GetNextLatestLSN()
+	err := WriteStartLogRecord(logManager, txNum, lsn, -1)
+	if err != nil {
+		return nil
+	}
+	transaction.prevTxLSN = lsn
 
 	return transaction
 }
@@ -139,9 +149,9 @@ func (t *Transaction) SetInt(blk *file.BlockID, offset int, val int, log bool) e
 			return err
 		}
 	}
-	lsn := -1
+	lsn := int64(-1)
 	if log {
-		lsn, err = t.recoveryManager.SetInt(buff, offset)
+		lsn, err = t.recoveryManager.SetInt(buff, offset, val)
 		if err != nil {
 			return err
 		}
@@ -165,9 +175,9 @@ func (t *Transaction) SetBool(blk *file.BlockID, offset int, val bool, log bool)
 			return err
 		}
 	}
-	lsn := -1
+	lsn := int64(-1)
 	if log {
-		lsn, err = t.recoveryManager.SetBool(buff, offset)
+		lsn, err = t.recoveryManager.SetBool(buff, offset, val)
 		if err != nil {
 			return err
 		}
@@ -191,9 +201,9 @@ func (t *Transaction) SetString(blk *file.BlockID, offset int, val string, log b
 			return err
 		}
 	}
-	lsn := -1
+	lsn := int64(-1)
 	if log {
-		lsn, err = t.recoveryManager.SetString(buff, offset)
+		lsn, err = t.recoveryManager.SetString(buff, offset, val)
 		if err != nil {
 			return err
 		}

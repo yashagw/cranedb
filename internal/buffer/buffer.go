@@ -12,8 +12,8 @@ type Buffer struct {
 	contents    *file.Page
 	blk         *file.BlockID
 	pins        int
-	txNum       int
-	lsn         int
+	txNum       int64
+	lsn         int64
 }
 
 func NewBuffer(fm *file.Manager, lm *log.Manager) *Buffer {
@@ -42,7 +42,8 @@ func (b *Buffer) IsPinned() bool {
 
 // SetModified marks this buffer as modified by the specified transaction.
 // If lsn is non-negative, it also sets the log sequence number.
-func (b *Buffer) SetModified(txnum int, lsn int) {
+// Note: pageLSN is only updated when the buffer is flushed to disk, not here.
+func (b *Buffer) SetModified(txnum int64, lsn int64) {
 	b.txNum = txnum
 	if lsn >= 0 {
 		b.lsn = lsn
@@ -50,7 +51,7 @@ func (b *Buffer) SetModified(txnum int, lsn int) {
 }
 
 // ModifyingTx returns the transaction number that modified this buffer.
-func (b *Buffer) ModifyingTx() int {
+func (b *Buffer) ModifyingTx() int64 {
 	return b.txNum
 }
 
@@ -91,6 +92,11 @@ func (b *Buffer) flush() error {
 		err := b.logManager.Flush(b.lsn)
 		if err != nil {
 			return err
+		}
+		// Update pageLSN in the page header before writing to disk
+		// This ensures the pageLSN reflects the LSN of the log record that was flushed
+		if b.lsn >= 0 {
+			b.contents.SetPageLSN(b.lsn)
 		}
 		err = b.fileManager.Write(b.blk, b.contents)
 		if err != nil {

@@ -43,7 +43,7 @@ func (it *LogIterator) Next() []byte {
 	}
 
 	// Read current record and advance position
-	rec := it.page.GetBytesArray(it.currentpos)
+	rec := it.page.GetBytesArrayRaw(it.currentpos)
 	it.currentpos += 4 + len(rec) // Move past this record (4 bytes length + data)
 	return rec
 }
@@ -51,7 +51,7 @@ func (it *LogIterator) Next() []byte {
 // moveToBlock moves the iterator to the specified block and reads its contents.
 func (it *LogIterator) moveToBlock(blk *file.BlockID) {
 	it.fm.Read(blk, it.page)
-	it.boundary = it.page.GetInt(0)
+	it.boundary = it.page.GetIntRaw(0)
 	// Start at the boundary (newest record)
 	it.currentpos = it.boundary
 }

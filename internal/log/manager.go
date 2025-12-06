@@ -14,9 +14,44 @@ type Manager struct {
 	logFilename  string
 	logPage      *file.Page
 	currentBlk   *file.BlockID
-	latestLSN    int
-	lastSavedLSN int
+	latestLSN    int64
+	lastSavedLSN int64
 	mu           sync.Mutex
+}
+
+func (lm *Manager) GetNextLatestLSN() int64 {
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
+	lm.latestLSN++
+	return lm.latestLSN
+}
+
+// getLSNFromRecord extracts the LSN from a log record byte array.
+// Different record types store LSN at different offsets:
+// - CheckpointLogRecord (op=0): [op(4)] [lsn(8)] - LSN at offset 4
+// - Other records (op>0): [op(4)] [txNum(8)] [lsn(8)] [prevLSN(8)] - LSN at offset 12
+func getLSNFromRecord(recordBytes []byte) (int64, error) {
+	if len(recordBytes) < 4 {
+		return 0, errors.New("record too short to contain operation type")
+	}
+
+	page := file.NewPageFromBytes(recordBytes)
+	op := page.GetIntRaw(0)
+
+	// LogRecordCheckpoint = 0
+	if op == 0 {
+		// Checkpoint: [op(4)] [lsn(8)]
+		if len(recordBytes) < 12 {
+			return 0, errors.New("checkpoint record too short")
+		}
+		return page.GetInt64Raw(4), nil
+	}
+
+	// Other records: [op(4)] [txNum(8)] [lsn(8)] [prevLSN(8)]
+	if len(recordBytes) < 20 {
+		return 0, errors.New("record too short to contain LSN")
+	}
+	return page.GetInt64Raw(12), nil
 }
 
 // NewManager creates a new log manager
@@ -36,6 +71,7 @@ func NewManager(fm *file.Manager, logFilename string) (*Manager, error) {
 	}
 
 	var currentBlk *file.BlockID
+	var latestLSN int64 = 0
 
 	if totalBlocks == 0 {
 		// Create and initialize new block
@@ -44,7 +80,7 @@ func NewManager(fm *file.Manager, logFilename string) (*Manager, error) {
 		if err != nil {
 			return nil, errors.New("not able to append first block to log file: " + err.Error())
 		}
-		logPage.SetInt(0, fm.BlockSize())
+		logPage.SetIntRaw(0, fm.BlockSize())
 		err = fm.Write(currentBlk, logPage)
 		if err != nil {
 			return nil, errors.New("not able to write first block to log file: " + err.Error())
@@ -57,6 +93,24 @@ func NewManager(fm *file.Manager, logFilename string) (*Manager, error) {
 		if err != nil {
 			return nil, errors.New("not able to read last block from log file: " + err.Error())
 		}
+
+		// Scan through all log records to find the maximum LSN
+		// TODO: Maybe only scan last 5/4 records
+		iter := NewLogIterator(fm, currentBlk)
+		for iter.HasNext() {
+			recordBytes := iter.Next()
+			if recordBytes == nil {
+				break
+			}
+			lsn, err := getLSNFromRecord(recordBytes)
+			if err != nil {
+				// Skip records that can't be parsed, but continue scanning
+				continue
+			}
+			if lsn > latestLSN {
+				latestLSN = lsn
+			}
+		}
 	}
 
 	return &Manager{
@@ -64,8 +118,8 @@ func NewManager(fm *file.Manager, logFilename string) (*Manager, error) {
 		logFilename:  logFilename,
 		logPage:      logPage,
 		currentBlk:   currentBlk,
-		latestLSN:    0,
-		lastSavedLSN: 0,
+		latestLSN:    latestLSN,
+		lastSavedLSN: latestLSN,
 	}, nil
 }
 
@@ -78,7 +132,7 @@ func (lm *Manager) Close() error {
 }
 
 // Flush writes the current log page to disk if there are any unsaved changes.
-func (lm *Manager) Flush(lsn int) error {
+func (lm *Manager) Flush(lsn int64) error {
 	lm.mu.Lock()
 	defer lm.mu.Unlock()
 
@@ -113,7 +167,7 @@ func (lm *Manager) flush() error {
 }
 
 // Append adds a new log record to the log file.
-// It returns the LSN assigned to this record.
+// It accepts the LSN that was assigned to this record.
 //
 // Block Layout:
 //
@@ -139,11 +193,11 @@ func (lm *Manager) flush() error {
 //	- Check: 48 - 4 >= 4? Yes (44 >= 4), so it fits
 //	- Write record at position 48-59
 //	- Update boundary to 48
-func (lm *Manager) Append(logrec []byte) (int, error) {
+func (lm *Manager) Append(logrec []byte, lsn int64) error {
 	lm.mu.Lock()
 	defer lm.mu.Unlock()
 
-	boundary := lm.logPage.GetInt(0)
+	boundary := lm.logPage.GetIntRaw(0)
 	bytesneeded := len(logrec) + 4
 
 	// The record should fit entirely within [4, boundary] in the current block.
@@ -162,32 +216,32 @@ func (lm *Manager) Append(logrec []byte) (int, error) {
 		// Record doesn't fit, need to move to a new block
 		err = lm.flush()
 		if err != nil {
-			return 0, err
+			return err
 		}
 
 		// Create and initialize new block
 		// Set boundary to blockSize, this indicates the block is completely empty
 		lm.currentBlk, err = lm.fileManager.Append(lm.logFilename)
 		if err != nil {
-			return 0, errors.New("not able to append block to log file: " + err.Error())
+			return errors.New("not able to append block to log file: " + err.Error())
 		}
-		lm.logPage.SetInt(0, lm.fileManager.BlockSize())
+		lm.logPage.SetIntRaw(0, lm.fileManager.BlockSize())
 		err = lm.fileManager.Write(lm.currentBlk, lm.logPage)
 		if err != nil {
-			return 0, errors.New("not able to write block to log file: " + err.Error())
+			return errors.New("not able to write block to log file: " + err.Error())
 		}
 
-		boundary = lm.logPage.GetInt(0)
+		boundary = lm.logPage.GetIntRaw(0)
 	}
 
 	// Calculate position where record will be written
 	// Records grow downward from the boundary
 	recpos := boundary - bytesneeded
-	lm.logPage.SetBytesArray(recpos, logrec)
+	lm.logPage.SetBytesArrayRaw(recpos, logrec)
 
 	// Write the boundary to mark the start of used space
-	lm.logPage.SetInt(0, recpos)
-	lm.latestLSN++
+	lm.logPage.SetIntRaw(0, recpos)
+	lm.latestLSN = lsn
 
-	return lm.latestLSN, nil
+	return nil
 }

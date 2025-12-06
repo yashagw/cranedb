@@ -19,7 +19,7 @@ func TestManager(t *testing.T) {
 	lm, err := NewManager(fm, logFile)
 	assert.NoError(t, err)
 
-	boundary := lm.logPage.GetInt(0)
+	boundary := lm.logPage.GetIntRaw(0)
 	assert.Equal(t, boundary, 32)
 
 	logSize, err := fm.GetTotalBlocks(logFile)
@@ -53,7 +53,7 @@ func TestLog(t *testing.T) {
 		data             []byte
 		expectedLogSize  int
 		expectedboundary int
-		expectedLSN      int
+		expectedLSN      int64
 	}{
 		{
 			name:             "test loging first record",
@@ -80,11 +80,12 @@ func TestLog(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			lsn, err := lm.Append(tt.data)
+			lsn := lm.GetNextLatestLSN()
+			err := lm.Append(tt.data, lsn)
 			assert.NoError(t, err)
 			assert.Equal(t, lsn, tt.expectedLSN)
 
-			boundary := lm.logPage.GetInt(0)
+			boundary := lm.logPage.GetIntRaw(0)
 			assert.Equal(t, boundary, tt.expectedboundary)
 
 			logSize, err := fm.GetTotalBlocks(logFile)
@@ -121,7 +122,8 @@ func TestIterator(t *testing.T) {
 		[]byte("record thirteen"),
 	}
 	for _, record := range records {
-		lm.Append(record)
+		lsn := lm.GetNextLatestLSN()
+		lm.Append(record, lsn)
 	}
 
 	iter, err := lm.Iterator()

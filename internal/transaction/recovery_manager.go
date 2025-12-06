@@ -12,13 +12,13 @@ import (
 // All RecoveryManager shares a single log manager and buffer manager
 // DB Server Itself also has a RecoveryManager used for recovery after a crash
 type RecoveryManager struct {
-	txNum         int
+	txNum         int64
 	transaction   *Transaction
 	logManager    *log.Manager
 	bufferManager *buffer.Manager
 }
 
-func NewRecoveryManager(txNum int, transaction *Transaction, logManager *log.Manager, bufferManager *buffer.Manager) *RecoveryManager {
+func NewRecoveryManager(txNum int64, transaction *Transaction, logManager *log.Manager, bufferManager *buffer.Manager) *RecoveryManager {
 	return &RecoveryManager{
 		txNum:         txNum,
 		transaction:   transaction,
@@ -32,10 +32,13 @@ func (rm *RecoveryManager) Commit() error {
 	if err != nil {
 		return err
 	}
-	lsn, err := WriteCommitLogRecord(rm.logManager, rm.txNum)
+	lsn := rm.logManager.GetNextLatestLSN()
+	prevLSN := rm.transaction.prevTxLSN
+	err = WriteCommitLogRecord(rm.logManager, rm.txNum, lsn, prevLSN)
 	if err != nil {
 		return err
 	}
+	rm.transaction.prevTxLSN = lsn
 	return rm.logManager.Flush(lsn)
 }
 
@@ -48,10 +51,13 @@ func (rm *RecoveryManager) Rollback() error {
 	if err != nil {
 		return err
 	}
-	lsn, err := WriteCommitLogRecord(rm.logManager, rm.txNum)
+	lsn := rm.logManager.GetNextLatestLSN()
+	prevLSN := rm.transaction.prevTxLSN
+	err = WriteRollbackLogRecord(rm.logManager, rm.txNum, lsn, prevLSN)
 	if err != nil {
 		return err
 	}
+	rm.transaction.prevTxLSN = lsn
 	return rm.logManager.Flush(lsn)
 }
 
@@ -64,7 +70,8 @@ func (rm *RecoveryManager) Recover() error {
 	if err != nil {
 		return err
 	}
-	lsn, err := WriteCheckpointLogRecord(rm.logManager)
+	lsn := rm.logManager.GetNextLatestLSN()
+	err = WriteCheckpointLogRecord(rm.logManager, lsn)
 	if err != nil {
 		return err
 	}
@@ -75,27 +82,48 @@ func (rm *RecoveryManager) Recover() error {
 // It reads the current value from the buffer at the specified offset,
 // writes a SetInt log record with the old value for potential rollback,
 // and returns the LSN of the log record.
-func (rm *RecoveryManager) SetInt(buf *buffer.Buffer, offset int) (int, error) {
+func (rm *RecoveryManager) SetInt(buf *buffer.Buffer, offset int, newValue int) (int64, error) {
 	oldVal := buf.Contents().GetInt(offset)
-	return WriteSetIntLogRecord(rm.logManager, rm.txNum, buf.Block(), offset, oldVal)
+	lsn := rm.logManager.GetNextLatestLSN()
+	prevLSN := rm.transaction.prevTxLSN
+	err := WriteSetIntLogRecord(rm.logManager, rm.txNum, lsn, prevLSN, buf.Block(), offset, oldVal, newValue)
+	if err != nil {
+		return 0, err
+	}
+	rm.transaction.prevTxLSN = lsn
+	return lsn, nil
 }
 
 // SetString logs a string modification operation before it occurs.
 // It reads the current value from the buffer at the specified offset,
 // writes a SetString log record with the old value for potential rollback,
 // and returns the LSN of the log record.
-func (rm *RecoveryManager) SetString(buf *buffer.Buffer, offset int) (int, error) {
+func (rm *RecoveryManager) SetString(buf *buffer.Buffer, offset int, newValue string) (int64, error) {
 	oldVal := buf.Contents().GetString(offset)
-	return WriteSetStringLogRecord(rm.logManager, rm.txNum, buf.Block(), offset, oldVal)
+	lsn := rm.logManager.GetNextLatestLSN()
+	prevLSN := rm.transaction.prevTxLSN
+	err := WriteSetStringLogRecord(rm.logManager, rm.txNum, lsn, prevLSN, buf.Block(), offset, oldVal, newValue)
+	if err != nil {
+		return 0, err
+	}
+	rm.transaction.prevTxLSN = lsn
+	return lsn, nil
 }
 
 // SetBool logs a boolean modification operation before it occurs.
 // It reads the current value from the buffer at the specified offset,
 // writes a SetBool log record with the old value for potential rollback,
 // and returns the LSN of the log record.
-func (rm *RecoveryManager) SetBool(buf *buffer.Buffer, offset int) (int, error) {
+func (rm *RecoveryManager) SetBool(buf *buffer.Buffer, offset int, newValue bool) (int64, error) {
 	oldVal := buf.Contents().GetBool(offset)
-	return WriteSetBoolLogRecord(rm.logManager, rm.txNum, buf.Block(), offset, oldVal)
+	lsn := rm.logManager.GetNextLatestLSN()
+	prevLSN := rm.transaction.prevTxLSN
+	err := WriteSetBoolLogRecord(rm.logManager, rm.txNum, lsn, prevLSN, buf.Block(), offset, oldVal, newValue)
+	if err != nil {
+		return 0, err
+	}
+	rm.transaction.prevTxLSN = lsn
+	return lsn, nil
 }
 
 // doRollback undoes all operations for the current transaction by scanning the log records
@@ -129,7 +157,7 @@ func (rm *RecoveryManager) doRollback() error {
 // and undoes any uncompleted transactions.
 // Recovery stops if it reaches the start of the log or a checkpoint record.
 func (rm *RecoveryManager) doRecovery() error {
-	finishedTXs := []int{}
+	finishedTXs := []int64{}
 	lmIterator, err := rm.logManager.Iterator()
 	if err != nil {
 		return err

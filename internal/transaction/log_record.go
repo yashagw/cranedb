@@ -24,7 +24,7 @@ const (
 // LogRecord interface
 type LogRecord interface {
 	Op() LogRecordType
-	TxNumber() int
+	TxNumber() int64
 	Undo(tx *Transaction) error
 }
 
@@ -33,7 +33,8 @@ func CreateLogRecord(bytes []byte) LogRecord {
 	page := file.NewPageFromBytes(bytes)
 
 	// First 4 bytes is the operation type
-	op := page.GetInt(0)
+	// Use Raw method since log records don't have pageLSN header
+	op := page.GetIntRaw(0)
 	switch LogRecordType(op) {
 	case LogRecordCheckpoint:
 		return NewCheckpointLogRecord(page)

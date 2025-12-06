@@ -21,11 +21,14 @@ func TestSetIntLogRecord_EncodeDecode(t *testing.T) {
 	blockNum := 5
 	blockID := file.NewBlockID(fileName, blockNum)
 
-	txNum := 42
+	txNum := int64(42)
 	offset := 100
 	oldValue := 12345
+	newValue := 67890
+	lsn := logManager.GetNextLatestLSN()
+	prevLSN := int64(-1)
 
-	_, err = WriteSetIntLogRecord(logManager, txNum, blockID, offset, oldValue)
+	err = WriteSetIntLogRecord(logManager, txNum, lsn, prevLSN, blockID, offset, oldValue, newValue)
 	assert.NoError(t, err)
 
 	// Get the last log record
@@ -47,8 +50,11 @@ func TestSetIntLogRecord_EncodeDecode(t *testing.T) {
 
 	// Verify the decoded record matches the original
 	assert.Equal(t, txNum, decodedRecord.TxNumber(), "Transaction number mismatch")
+	assert.Equal(t, lsn, decodedRecord.lsn, "LSN mismatch")
+	assert.Equal(t, prevLSN, decodedRecord.prevLSN, "PrevLSN mismatch")
 	assert.Equal(t, offset, decodedRecord.offset, "Offset mismatch")
-	assert.Equal(t, oldValue, decodedRecord.oldValue, "Value mismatch")
+	assert.Equal(t, oldValue, decodedRecord.oldValue, "Old value mismatch")
+	assert.Equal(t, newValue, decodedRecord.newValue, "New value mismatch")
 	assert.Equal(t, fileName, decodedRecord.block.Filename(), "Filename mismatch")
 	assert.Equal(t, blockNum, decodedRecord.block.Number(), "Block number mismatch")
 	assert.Equal(t, LogRecordSetInt, decodedRecord.Op())
@@ -66,11 +72,14 @@ func TestSetStringLogRecord_EncodeDecode(t *testing.T) {
 	blockNum := 5
 	blockID := file.NewBlockID(fileName, blockNum)
 
-	txNum := 42
+	txNum := int64(42)
 	offset := 100
 	oldValue := "old_test_value"
+	newValue := "new_test_value"
+	lsn := logManager.GetNextLatestLSN()
+	prevLSN := int64(-1)
 
-	_, err = WriteSetStringLogRecord(logManager, txNum, blockID, offset, oldValue)
+	err = WriteSetStringLogRecord(logManager, txNum, lsn, prevLSN, blockID, offset, oldValue, newValue)
 	assert.NoError(t, err)
 
 	// Get the last log record
@@ -92,8 +101,11 @@ func TestSetStringLogRecord_EncodeDecode(t *testing.T) {
 
 	// Verify the decoded record matches the original
 	assert.Equal(t, txNum, decodedRecord.TxNumber(), "Transaction number mismatch")
+	assert.Equal(t, lsn, decodedRecord.lsn, "LSN mismatch")
+	assert.Equal(t, prevLSN, decodedRecord.prevLSN, "PrevLSN mismatch")
 	assert.Equal(t, offset, decodedRecord.offset, "Offset mismatch")
-	assert.Equal(t, oldValue, decodedRecord.oldValue, "Value mismatch")
+	assert.Equal(t, oldValue, decodedRecord.oldValue, "Old value mismatch")
+	assert.Equal(t, newValue, decodedRecord.newValue, "New value mismatch")
 	assert.Equal(t, fileName, decodedRecord.block.Filename(), "Filename mismatch")
 	assert.Equal(t, blockNum, decodedRecord.block.Number(), "Block number mismatch")
 	assert.Equal(t, LogRecordSetString, decodedRecord.Op())
@@ -106,9 +118,11 @@ func TestStartLogRecord_EncodeDecode(t *testing.T) {
 	logManager, err := log.NewManager(fileManager, "log_test")
 	assert.NoError(t, err)
 
-	txNum := 42
+	txNum := int64(42)
+	lsn := logManager.GetNextLatestLSN()
+	prevLSN := int64(-1)
 
-	_, err = WriteStartLogRecord(logManager, txNum)
+	err = WriteStartLogRecord(logManager, txNum, lsn, prevLSN)
 	assert.NoError(t, err)
 
 	// Get the last log record
@@ -130,6 +144,8 @@ func TestStartLogRecord_EncodeDecode(t *testing.T) {
 
 	// Verify the decoded record matches the original
 	assert.Equal(t, txNum, decodedRecord.TxNumber(), "Transaction number mismatch")
+	assert.Equal(t, lsn, decodedRecord.lsn, "LSN mismatch")
+	assert.Equal(t, prevLSN, decodedRecord.prevLSN, "PrevLSN mismatch")
 	assert.Equal(t, LogRecordStart, decodedRecord.Op())
 }
 
@@ -140,9 +156,11 @@ func TestCommitLogRecord_EncodeDecode(t *testing.T) {
 	logManager, err := log.NewManager(fileManager, "log_test")
 	assert.NoError(t, err)
 
-	txNum := 42
+	txNum := int64(42)
+	lsn := logManager.GetNextLatestLSN()
+	prevLSN := int64(-1)
 
-	_, err = WriteCommitLogRecord(logManager, txNum)
+	err = WriteCommitLogRecord(logManager, txNum, lsn, prevLSN)
 	assert.NoError(t, err)
 
 	// Get the last log record
@@ -164,6 +182,8 @@ func TestCommitLogRecord_EncodeDecode(t *testing.T) {
 
 	// Verify the decoded record matches the original
 	assert.Equal(t, txNum, decodedRecord.TxNumber(), "Transaction number mismatch")
+	assert.Equal(t, lsn, decodedRecord.lsn, "LSN mismatch")
+	assert.Equal(t, prevLSN, decodedRecord.prevLSN, "PrevLSN mismatch")
 	assert.Equal(t, LogRecordCommit, decodedRecord.Op())
 }
 
@@ -174,9 +194,11 @@ func TestRollbackLogRecord_EncodeDecode(t *testing.T) {
 	logManager, err := log.NewManager(fileManager, "log_test")
 	assert.NoError(t, err)
 
-	txNum := 42
+	txNum := int64(42)
+	lsn := logManager.GetNextLatestLSN()
+	prevLSN := int64(-1)
 
-	_, err = WriteRollbackLogRecord(logManager, txNum)
+	err = WriteRollbackLogRecord(logManager, txNum, lsn, prevLSN)
 	assert.NoError(t, err)
 
 	// Get the last log record
@@ -198,6 +220,8 @@ func TestRollbackLogRecord_EncodeDecode(t *testing.T) {
 
 	// Verify the decoded record matches the original
 	assert.Equal(t, txNum, decodedRecord.TxNumber(), "Transaction number mismatch")
+	assert.Equal(t, lsn, decodedRecord.lsn, "LSN mismatch")
+	assert.Equal(t, prevLSN, decodedRecord.prevLSN, "PrevLSN mismatch")
 	assert.Equal(t, LogRecordRollback, decodedRecord.Op())
 }
 
@@ -208,7 +232,8 @@ func TestCheckpointLogRecord_EncodeDecode(t *testing.T) {
 	logManager, err := log.NewManager(fileManager, "log_test")
 	assert.NoError(t, err)
 
-	_, err = WriteCheckpointLogRecord(logManager)
+	lsn := logManager.GetNextLatestLSN()
+	err = WriteCheckpointLogRecord(logManager, lsn)
 	assert.NoError(t, err)
 
 	// Get the last log record
@@ -229,7 +254,8 @@ func TestCheckpointLogRecord_EncodeDecode(t *testing.T) {
 	decodedRecord := NewCheckpointLogRecord(page)
 
 	// Verify the decoded record matches the original
-	assert.Equal(t, -1, decodedRecord.TxNumber(), "Transaction number mismatch")
+	assert.Equal(t, int64(-1), decodedRecord.TxNumber(), "Transaction number mismatch")
+	assert.Equal(t, lsn, decodedRecord.lsn, "LSN mismatch")
 	assert.Equal(t, LogRecordCheckpoint, decodedRecord.Op())
 }
 
@@ -245,11 +271,14 @@ func TestSetBoolLogRecord_EncodeDecode(t *testing.T) {
 	blockNum := 5
 	blockID := file.NewBlockID(fileName, blockNum)
 
-	txNum := 42
+	txNum := int64(42)
 	offset := 100
 	oldValue := true
+	newValue := false
+	lsn := logManager.GetNextLatestLSN()
+	prevLSN := int64(-1)
 
-	_, err = WriteSetBoolLogRecord(logManager, txNum, blockID, offset, oldValue)
+	err = WriteSetBoolLogRecord(logManager, txNum, lsn, prevLSN, blockID, offset, oldValue, newValue)
 	assert.NoError(t, err)
 
 	// Get the last log record
@@ -271,8 +300,11 @@ func TestSetBoolLogRecord_EncodeDecode(t *testing.T) {
 
 	// Verify the decoded record matches the original
 	assert.Equal(t, txNum, decodedRecord.TxNumber(), "Transaction number mismatch")
+	assert.Equal(t, lsn, decodedRecord.lsn, "LSN mismatch")
+	assert.Equal(t, prevLSN, decodedRecord.prevLSN, "PrevLSN mismatch")
 	assert.Equal(t, offset, decodedRecord.offset, "Offset mismatch")
-	assert.Equal(t, oldValue, decodedRecord.oldValue, "Value mismatch")
+	assert.Equal(t, oldValue, decodedRecord.oldValue, "Old value mismatch")
+	assert.Equal(t, newValue, decodedRecord.newValue, "New value mismatch")
 	assert.Equal(t, fileName, decodedRecord.block.Filename(), "Filename mismatch")
 	assert.Equal(t, blockNum, decodedRecord.block.Number(), "Block number mismatch")
 	assert.Equal(t, LogRecordSetBool, decodedRecord.Op())
