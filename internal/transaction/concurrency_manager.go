@@ -10,14 +10,14 @@ import (
 // All Concurrency Manager shares a single LockTable
 type ConcurrencyManager struct {
 	lockTable *LockTable
-	locks     map[blockKey]string // "S" for shared, "X" for exclusive
+	locks     map[file.BlockID]string // "S" for shared, "X" for exclusive
 	mu        sync.Mutex
 }
 
 func NewConcurrencyManager(lockTable *LockTable) *ConcurrencyManager {
 	return &ConcurrencyManager{
 		lockTable: lockTable,
-		locks:     make(map[blockKey]string),
+		locks:     make(map[file.BlockID]string),
 		mu:        sync.Mutex{},
 	}
 }
@@ -26,7 +26,7 @@ func (cm *ConcurrencyManager) sLock(block *file.BlockID) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	key := makeKey(block)
+	key := file.MakeBlockKey(block)
 
 	// We already have a lock on this block, nothing to do
 	if _, exists := cm.locks[key]; exists {
@@ -46,7 +46,7 @@ func (cm *ConcurrencyManager) xLock(block *file.BlockID) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	key := makeKey(block)
+	key := file.MakeBlockKey(block)
 
 	if lockType, exists := cm.locks[key]; exists {
 		// We already have an exclusive lock, nothing to do
@@ -85,7 +85,7 @@ func (cm *ConcurrencyManager) release() error {
 	defer cm.mu.Unlock()
 
 	for key := range cm.locks {
-		block := file.NewBlockID(key.filename, key.blkNum)
+		block := file.NewBlockID(key.Filename(), key.Number())
 
 		err := cm.lockTable.unlock(block)
 		if err != nil {
@@ -93,7 +93,7 @@ func (cm *ConcurrencyManager) release() error {
 		}
 	}
 
-	cm.locks = make(map[blockKey]string)
+	cm.locks = make(map[file.BlockID]string)
 
 	return nil
 }

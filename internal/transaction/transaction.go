@@ -32,6 +32,8 @@ type Transaction struct {
 	bufferManager      *buffer.Manager
 	recoveryManager    *RecoveryManager
 	concurrencyManager *ConcurrencyManager
+	transactionTable   *TransactionTable
+	dirtyPageTable     *DirtyPageTable
 
 	txNum      int64
 	prevTxLSN  int64
@@ -39,7 +41,7 @@ type Transaction struct {
 }
 
 // NewTransaction creates a new transaction
-func NewTransaction(fileManager *file.Manager, logManager *dblog.Manager, bufferManager *buffer.Manager, lockTable *LockTable) *Transaction {
+func NewTransaction(fileManager *file.Manager, logManager *dblog.Manager, bufferManager *buffer.Manager, lockTable *LockTable, dirtyPageTable *DirtyPageTable, transactionTable *TransactionTable) *Transaction {
 	txNum := getNextTxNum()
 
 	concurrencyManager := NewConcurrencyManager(lockTable)
@@ -54,7 +56,7 @@ func NewTransaction(fileManager *file.Manager, logManager *dblog.Manager, buffer
 		prevTxLSN:          -1,
 		bufferList:         bufferList,
 	}
-	recoveryManager := NewRecoveryManager(txNum, transaction, logManager, bufferManager)
+	recoveryManager := NewRecoveryManager(txNum, transaction, logManager, bufferManager, dirtyPageTable, transactionTable)
 	transaction.recoveryManager = recoveryManager
 
 	// Write Start log record

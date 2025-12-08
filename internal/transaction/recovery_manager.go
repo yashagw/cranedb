@@ -12,18 +12,22 @@ import (
 // All RecoveryManager shares a single log manager and buffer manager
 // DB Server Itself also has a RecoveryManager used for recovery after a crash
 type RecoveryManager struct {
-	txNum         int64
-	transaction   *Transaction
-	logManager    *log.Manager
-	bufferManager *buffer.Manager
+	txNum            int64
+	transaction      *Transaction
+	logManager       *log.Manager
+	bufferManager    *buffer.Manager
+	dirtyPageTable   *DirtyPageTable
+	transactionTable *TransactionTable
 }
 
-func NewRecoveryManager(txNum int64, transaction *Transaction, logManager *log.Manager, bufferManager *buffer.Manager) *RecoveryManager {
+func NewRecoveryManager(txNum int64, transaction *Transaction, logManager *log.Manager, bufferManager *buffer.Manager, dirtyPageTable *DirtyPageTable, transactionTable *TransactionTable) *RecoveryManager {
 	return &RecoveryManager{
-		txNum:         txNum,
-		transaction:   transaction,
-		logManager:    logManager,
-		bufferManager: bufferManager,
+		txNum:            txNum,
+		transaction:      transaction,
+		logManager:       logManager,
+		bufferManager:    bufferManager,
+		dirtyPageTable:   dirtyPageTable,
+		transactionTable: transactionTable,
 	}
 }
 

@@ -28,7 +28,9 @@ func setupHashIndexTest(t *testing.T, layout *record.Layout) (*HashIndex, func()
 	require.NoError(t, err)
 
 	lockTable := transaction.NewLockTable()
-	tx := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable)
+	dirtyPageTable := transaction.NewDirtyPageTable()
+	transactionTable := transaction.NewTransactionTable()
+	tx := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
 
 	hashIndex, err := NewHashIndex(tx, "test_hash_index", layout)
 	require.NoError(t, err)

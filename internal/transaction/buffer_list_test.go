@@ -24,23 +24,23 @@ func TestBufferList_PinAndUnpin(t *testing.T) {
 	buff1, err := bufferList.Pin(block)
 	require.NoError(t, err)
 	require.NotNil(t, buff1)
-	assert.Equal(t, 1, bufferList.pins[makeKey(block)])
+	assert.Equal(t, 1, bufferList.pins[file.MakeBlockKey(block)])
 
 	// Test 2: Pin the same buffer again (should increment pin count)
 	buff2, err := bufferList.Pin(block)
 	require.NoError(t, err)
 	require.NotNil(t, buff2)
 	assert.Equal(t, buff1, buff2) // Should return the same buffer
-	assert.Equal(t, 2, bufferList.pins[makeKey(block)])
+	assert.Equal(t, 2, bufferList.pins[file.MakeBlockKey(block)])
 
 	// Test 3: Unpin once (should decrement but not remove)
 	bufferList.Unpin(block)
-	assert.Equal(t, 1, bufferList.pins[makeKey(block)])
+	assert.Equal(t, 1, bufferList.pins[file.MakeBlockKey(block)])
 	assert.NotNil(t, bufferList.GetBuffer(block)) // Buffer should still exist
 
 	// Test 4: Unpin again (should remove buffer completely)
 	bufferList.Unpin(block)
-	_, exists := bufferList.pins[makeKey(block)]
+	_, exists := bufferList.pins[file.MakeBlockKey(block)]
 	assert.False(t, exists)
 	assert.Nil(t, bufferList.GetBuffer(block)) // Buffer should be removed
 

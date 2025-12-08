@@ -30,3 +30,10 @@ func (b *BlockID) Number() int {
 func (b *BlockID) String() string {
 	return fmt.Sprintf("%s:%d", b.filename, b.blkNum)
 }
+
+func MakeBlockKey(b *BlockID) BlockID {
+	return BlockID{
+		filename: b.Filename(),
+		blkNum:   b.Number(),
+	}
+}

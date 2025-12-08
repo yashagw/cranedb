@@ -15,33 +15,21 @@ const (
 	MAX_WAITING_TIME = 10 * time.Second
 )
 
-type blockKey struct {
-	filename string
-	blkNum   int
-}
-
-func makeKey(block *file.BlockID) blockKey {
-	return blockKey{
-		filename: block.Filename(),
-		blkNum:   block.Number(),
-	}
-}
-
 type LockTable struct {
-	locks   map[blockKey]int
+	locks   map[file.BlockID]int
 	mu      sync.Mutex
-	waiters map[blockKey]chan struct{} // Block-specific notification channels
+	waiters map[file.BlockID]chan struct{} // Block-specific notification channels
 }
 
 func NewLockTable() *LockTable {
 	return &LockTable{
-		locks:   make(map[blockKey]int),
-		waiters: make(map[blockKey]chan struct{}),
+		locks:   make(map[file.BlockID]int),
+		waiters: make(map[file.BlockID]chan struct{}),
 	}
 }
 
 func (lt *LockTable) sLock(block *file.BlockID) error {
-	key := makeKey(block)
+	key := file.MakeBlockKey(block)
 	deadline := time.Now().Add(MAX_WAITING_TIME)
 
 	for {
@@ -77,7 +65,7 @@ func (lt *LockTable) sLock(block *file.BlockID) error {
 }
 
 func (lt *LockTable) xLock(block *file.BlockID) error {
-	key := makeKey(block)
+	key := file.MakeBlockKey(block)
 	deadline := time.Now().Add(MAX_WAITING_TIME)
 
 	for {
@@ -115,7 +103,7 @@ func (lt *LockTable) unlock(block *file.BlockID) error {
 	lt.mu.Lock()
 	defer lt.mu.Unlock()
 
-	key := makeKey(block)
+	key := file.MakeBlockKey(block)
 	val, exists := lt.locks[key]
 
 	if !exists {
@@ -150,7 +138,7 @@ func (lt *LockTable) HasXLock(block *file.BlockID) bool {
 	lt.mu.Lock()
 	defer lt.mu.Unlock()
 
-	key := makeKey(block)
+	key := file.MakeBlockKey(block)
 	return lt.locks[key] == -1
 }
 
@@ -159,6 +147,6 @@ func (lt *LockTable) HasSLock(block *file.BlockID) bool {
 	lt.mu.Lock()
 	defer lt.mu.Unlock()
 
-	key := makeKey(block)
+	key := file.MakeBlockKey(block)
 	return lt.locks[key] > 0
 }

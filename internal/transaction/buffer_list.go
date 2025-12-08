@@ -8,24 +8,24 @@ import (
 type BufferList struct {
 	bufferManager *buffer.Manager
 
-	buffers map[blockKey]*buffer.Buffer
-	pins    map[blockKey]int // Track pin count for each block
+	buffers map[file.BlockID]*buffer.Buffer
+	pins    map[file.BlockID]int // Track pin count for each block
 }
 
 func NewBufferList(bufferManager *buffer.Manager) *BufferList {
 	return &BufferList{
 		bufferManager: bufferManager,
-		buffers:       make(map[blockKey]*buffer.Buffer),
-		pins:          make(map[blockKey]int),
+		buffers:       make(map[file.BlockID]*buffer.Buffer),
+		pins:          make(map[file.BlockID]int),
 	}
 }
 
 func (bl *BufferList) GetBuffer(blk *file.BlockID) *buffer.Buffer {
-	return bl.buffers[makeKey(blk)]
+	return bl.buffers[file.MakeBlockKey(blk)]
 }
 
 func (bl *BufferList) Pin(blk *file.BlockID) (*buffer.Buffer, error) {
-	key := makeKey(blk)
+	key := file.MakeBlockKey(blk)
 
 	// If buffer is already pinned, just increment pin count
 	if pinCount, exists := bl.pins[key]; exists {
@@ -44,7 +44,7 @@ func (bl *BufferList) Pin(blk *file.BlockID) (*buffer.Buffer, error) {
 }
 
 func (bl *BufferList) Unpin(blk *file.BlockID) {
-	key := makeKey(blk)
+	key := file.MakeBlockKey(blk)
 	if pinCount, exists := bl.pins[key]; exists {
 		bl.pins[key] = pinCount - 1
 
@@ -61,6 +61,6 @@ func (bl *BufferList) UnpinAll() {
 	for _, buff := range bl.buffers {
 		bl.bufferManager.Unpin(buff)
 	}
-	bl.buffers = make(map[blockKey]*buffer.Buffer)
-	bl.pins = make(map[blockKey]int)
+	bl.buffers = make(map[file.BlockID]*buffer.Buffer)
+	bl.pins = make(map[file.BlockID]int)
 }

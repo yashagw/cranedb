@@ -20,8 +20,10 @@ func TestRecordPage_Format(t *testing.T) {
 	bufferManager, err := buffer.NewManager(fileManager, logManager, 10)
 	assert.NoError(t, err)
 	lockTable := transaction.NewLockTable()
+	dirtyPageTable := transaction.NewDirtyPageTable()
+	transactionTable := transaction.NewTransactionTable()
 
-	tx := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable)
+	tx := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
 	require.NotNil(t, tx)
 
 	schema := NewSchema()

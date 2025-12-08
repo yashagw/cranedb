@@ -27,7 +27,10 @@ func setupBTreeIndexTest(t *testing.T, layout *record.Layout) (*BTreeIndex, *tra
 	require.NoError(t, err)
 
 	lockTable := transaction.NewLockTable()
-	tx := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable)
+	dirtyPageTable := transaction.NewDirtyPageTable()
+	transactionTable := transaction.NewTransactionTable()
+
+	tx := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
 
 	btreeIndex, err := NewBTreeIndex(tx, "test_btree_index", layout)
 	require.NoError(t, err)
@@ -230,9 +233,11 @@ func TestBTreeIndex_ReopenIndex(t *testing.T) {
 	require.NoError(t, err)
 
 	lockTable := transaction.NewLockTable()
+	dirtyPageTable := transaction.NewDirtyPageTable()
+	transactionTable := transaction.NewTransactionTable()
 
 	// First transaction: create index and insert data
-	tx1 := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable)
+	tx1 := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
 	btreeIndex1, err := NewBTreeIndex(tx1, "test_reopen", layout)
 	require.NoError(t, err)
 
@@ -242,7 +247,7 @@ func TestBTreeIndex_ReopenIndex(t *testing.T) {
 	require.NoError(t, tx1.Commit())
 
 	// Second transaction: reopen index and verify data
-	tx2 := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable)
+	tx2 := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
 	btreeIndex2, err := NewBTreeIndex(tx2, "test_reopen", layout)
 	require.NoError(t, err)
 	defer btreeIndex2.Close()

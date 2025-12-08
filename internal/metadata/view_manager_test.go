@@ -29,9 +29,11 @@ func TestViewManager_BasicOperations(t *testing.T) {
 	bm, err := buffer.NewManager(fm, lm, 10)
 	require.NoError(t, err)
 	lockTable := transaction.NewLockTable()
+	dirtyPageTable := transaction.NewDirtyPageTable()
+	transactionTable := transaction.NewTransactionTable()
 
 	// Test 1: Create new ViewManager with new database
-	tx1 := transaction.NewTransaction(fm, lm, bm, lockTable)
+	tx1 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
 	tm := NewTableManager(true, tx1)
 	vm := NewViewManager(true, tm, tx1)
 	require.NotNil(t, vm)
@@ -39,7 +41,7 @@ func TestViewManager_BasicOperations(t *testing.T) {
 	tx1.Commit()
 
 	// Test 2: Create ViewManager for existing database
-	tx2 := transaction.NewTransaction(fm, lm, bm, lockTable)
+	tx2 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
 	tm2 := NewTableManager(false, tx2)
 	vm2 := NewViewManager(false, tm2, tx2)
 	require.NotNil(t, vm2)
@@ -47,7 +49,7 @@ func TestViewManager_BasicOperations(t *testing.T) {
 	tx2.Commit()
 
 	// Test 3: Create a new view
-	tx3 := transaction.NewTransaction(fm, lm, bm, lockTable)
+	tx3 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
 	viewName := "user_emails"
 	viewDef := "SELECT name, email FROM users WHERE active = 1"
 	err = vm.CreateView(viewName, viewDef, tx3)
@@ -55,21 +57,21 @@ func TestViewManager_BasicOperations(t *testing.T) {
 	tx3.Commit()
 
 	// Test 4: Retrieve view definition and verify it matches
-	tx4 := transaction.NewTransaction(fm, lm, bm, lockTable)
+	tx4 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
 	retrievedViewDef, err := vm.GetViewDef(viewName, tx4)
 	require.NoError(t, err, "Should retrieve view definition successfully")
 	assert.Equal(t, viewDef, retrievedViewDef, "Retrieved view definition should match original")
 	tx4.Commit()
 
 	// Test 5: Try to get definition for non-existent view
-	tx5 := transaction.NewTransaction(fm, lm, bm, lockTable)
+	tx5 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
 	nonExistentViewDef, err := vm.GetViewDef("nonexistent", tx5)
 	require.NoError(t, err, "Should not return error for non-existent view")
 	assert.Empty(t, nonExistentViewDef, "Should return empty string for non-existent view")
 	tx5.Commit()
 
 	// Test 6: Create multiple views with different definitions
-	tx6 := transaction.NewTransaction(fm, lm, bm, lockTable)
+	tx6 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
 
 	views := map[string]string{
 		"active_users":   "SELECT * FROM users WHERE active = 1",
@@ -84,7 +86,7 @@ func TestViewManager_BasicOperations(t *testing.T) {
 	tx6.Commit()
 
 	// Test 7: Verify all views exist and have correct definitions
-	tx7 := transaction.NewTransaction(fm, lm, bm, lockTable)
+	tx7 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
 
 	// Check original view still exists
 	originalViewDef, err := vm.GetViewDef(viewName, tx7)
@@ -100,7 +102,7 @@ func TestViewManager_BasicOperations(t *testing.T) {
 	tx7.Commit()
 
 	// Test 8: Verify view catalog data by directly scanning the catalog table
-	tx8 := transaction.NewTransaction(fm, lm, bm, lockTable)
+	tx8 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
 
 	layout, err := tm.GetLayout(ViewCatalogName, tx8)
 	require.NoError(t, err, "Should get view catalog layout")
@@ -136,7 +138,7 @@ func TestViewManager_BasicOperations(t *testing.T) {
 	tx8.Commit()
 
 	// Test 9: Test view definition length limits
-	tx9 := transaction.NewTransaction(fm, lm, bm, lockTable)
+	tx9 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
 
 	// Create a view with maximum allowed definition length
 	longViewName := "long_view"
@@ -153,7 +155,7 @@ func TestViewManager_BasicOperations(t *testing.T) {
 	tx9.Commit()
 
 	// Test 10: Test case sensitivity
-	tx10 := transaction.NewTransaction(fm, lm, bm, lockTable)
+	tx10 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
 
 	// Create views with similar names but different cases
 	err = vm.CreateView("TestView", "SELECT * FROM test", tx10)

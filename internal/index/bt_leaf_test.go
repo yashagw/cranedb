@@ -28,7 +28,10 @@ func setupLeafTest(t *testing.T) (*transaction.Transaction, *record.Layout, func
 	require.NoError(t, err)
 
 	lockTable := transaction.NewLockTable()
-	tx := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable)
+	dirtyPageTable := transaction.NewDirtyPageTable()
+	transactionTable := transaction.NewTransactionTable()
+
+	tx := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
 
 	// Create a layout for B-tree leaf records
 	schema := record.NewSchema()

@@ -24,8 +24,10 @@ func setupProductScanTest(t *testing.T, testDir string) (*transaction.Transactio
 	bufferManager, err := buffer.NewManager(fileManager, logManager, 10)
 	require.NoError(t, err)
 	lockTable := transaction.NewLockTable()
+	dirtyPageTable := transaction.NewDirtyPageTable()
+	transactionTable := transaction.NewTransactionTable()
 
-	tx := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable)
+	tx := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
 	require.NotNil(t, tx)
 
 	// Create first table (Students)
@@ -383,8 +385,10 @@ func TestProductScanEmptyScans(t *testing.T) {
 	bufferManager, err := buffer.NewManager(fileManager, logManager, 10)
 	require.NoError(t, err)
 	lockTable := transaction.NewLockTable()
+	dirtyPageTable := transaction.NewDirtyPageTable()
+	transactionTable := transaction.NewTransactionTable()
 
-	tx := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable)
+	tx := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
 	require.NotNil(t, tx)
 	defer tx.Commit()
 
