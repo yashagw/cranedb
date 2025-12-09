@@ -58,6 +58,12 @@ func (s *CommitLogRecord) Undo(tx *Transaction) error {
 	return nil
 }
 
+// Redo performs the redo operation for this log record.
+// Commit records don't need redo (they're metadata).
+func (s *CommitLogRecord) Redo(tx *Transaction) (bool, error) {
+	return false, nil
+}
+
 // WriteCommitLogRecord writes a CommitLogRecord to the log manager
 func WriteCommitLogRecord(lm *log.Manager, txNum int64, lsn int64, prevLSN int64) error {
 	opPos := 0

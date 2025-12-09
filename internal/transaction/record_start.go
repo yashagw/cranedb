@@ -58,6 +58,11 @@ func (s *StartLogRecord) Undo(tx *Transaction) error {
 	return nil
 }
 
+// Redo performs the redo operation for this log record.
+func (s *StartLogRecord) Redo(tx *Transaction) (bool, error) {
+	return false, nil
+}
+
 // WriteStartLogRecord writes a StartLogRecord to the log manager
 func WriteStartLogRecord(lm *log.Manager, txNum int64, lsn int64, prevLSN int64) error {
 	opPos := 0

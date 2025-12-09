@@ -104,6 +104,25 @@ func (s *SetBoolLogRecord) Undo(tx *Transaction) error {
 	return tx.SetBool(s.block, s.offset, s.oldValue, false)
 }
 
+// Redo performs the redo operation for this log record.
+// Returns true if redo was performed, false if skipped (PageLSN >= record LSN).
+func (s *SetBoolLogRecord) Redo(tx *Transaction) (bool, error) {
+	pageLSN, err := tx.GetPageLSN(s.block)
+	if err != nil {
+		return false, err
+	}
+	if pageLSN >= s.lsn {
+		return false, nil
+	}
+
+	err = tx.SetBool(s.block, s.offset, s.newValue, false)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
 // WriteSetBoolLogRecord writes a SetBoolLogRecord to the log manager
 func WriteSetBoolLogRecord(lm *log.Manager, txNum int64, lsn int64, prevLSN int64, blk *file.BlockID, offset int, oldValue bool, newValue bool) error {
 	opPos := 0

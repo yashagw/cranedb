@@ -58,6 +58,12 @@ func (s *RollbackLogRecord) Undo(tx *Transaction) error {
 	return nil
 }
 
+// Redo performs the redo operation for this log record.
+// Rollback records don't need redo (they're metadata).
+func (s *RollbackLogRecord) Redo(tx *Transaction) (bool, error) {
+	return false, nil
+}
+
 // WriteRollbackLogRecord writes a RollbackLogRecord to the log manager
 func WriteRollbackLogRecord(lm *log.Manager, txNum int64, lsn int64, prevLSN int64) error {
 	opPos := 0

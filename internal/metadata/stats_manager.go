@@ -1,7 +1,7 @@
 package metadata
 
 import (
-	"log"
+	"log/slog"
 	"sync"
 
 	"github.com/yashagw/cranedb/internal/record"
@@ -35,7 +35,7 @@ func (sm *StatsManager) InvalidateStats(tblName string) {
 
 // GetStatInfo returns statistical information for a given table
 func (sm *StatsManager) GetStatInfo(tblName string, layout *record.Layout, tx *transaction.Transaction) (*StatInfo, error) {
-	log.Printf("[STATS] GetStatInfo: table %s", tblName)
+	slog.Info("GetStatInfo", "table", tblName)
 
 	// Check cache with read lock first
 	sm.mutex.RLock()
@@ -61,7 +61,7 @@ func (sm *StatsManager) GetStatInfo(tblName string, layout *record.Layout, tx *t
 	if !exists {
 		sm.mutex.Lock()
 
-		log.Printf("[STATS] GetStatInfo: Recalculating stats for %s", tblName)
+		slog.Info("Recalculating stats", "table", tblName)
 		calculated, err := sm.calcTableStats(tblName, layout, tx)
 		if err != nil {
 			sm.mutex.Unlock()

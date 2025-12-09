@@ -2,7 +2,6 @@ package table
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/record"
@@ -95,7 +94,6 @@ func (ts *TableScan) Insert() error {
 	// Try to insert in the current block
 	newSlot, err := ts.currentRecordPage.InsertSlot(ts.currentSlot)
 	if err != nil {
-		log.Printf("[INSERT] InsertSlot failed: %v", err)
 		return err
 	}
 	ts.currentSlot = newSlot
@@ -104,7 +102,6 @@ func (ts *TableScan) Insert() error {
 	for ts.currentSlot == -1 {
 		atLastBlock, err := ts.AtLastBlock()
 		if err != nil {
-			log.Printf("[INSERT] AtLastBlock failed: %v", err)
 			return err
 		}
 
@@ -113,7 +110,6 @@ func (ts *TableScan) Insert() error {
 			// No more blocks, create a new one
 			err = ts.MoveToNewBlock()
 			if err != nil {
-				log.Printf("[INSERT] MoveToNewBlock failed: %v", err)
 				return err
 			}
 			createdNewBlock = true
@@ -122,7 +118,6 @@ func (ts *TableScan) Insert() error {
 			nextBlockNum := ts.currentRecordPage.Block().Number() + 1
 			err = ts.MoveToBlock(nextBlockNum)
 			if err != nil {
-				log.Printf("[INSERT] MoveToBlock failed: %v", err)
 				return err
 			}
 		}
@@ -130,7 +125,6 @@ func (ts *TableScan) Insert() error {
 		// Try to insert in the new/next block
 		newSlot, err = ts.currentRecordPage.InsertSlot(ts.currentSlot)
 		if err != nil {
-			log.Printf("[INSERT] InsertSlot failed: %v", err)
 			return err
 		}
 		ts.currentSlot = newSlot

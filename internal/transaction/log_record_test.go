@@ -233,7 +233,30 @@ func TestCheckpointLogRecord_EncodeDecode(t *testing.T) {
 	assert.NoError(t, err)
 
 	lsn := logManager.GetNextLatestLSN()
-	err = WriteCheckpointLogRecord(logManager, lsn)
+
+	txTable := make(map[int64]*TransactionEntry)
+	txTable[1] = &TransactionEntry{
+		Status:  TransactionStatusRunning,
+		LastLSN: 100,
+	}
+	txTable[2] = &TransactionEntry{
+		Status:  TransactionStatusCommitted,
+		LastLSN: 200,
+	}
+	txTable[3] = &TransactionEntry{
+		Status:  TransactionStatusAborted,
+		LastLSN: 300,
+	}
+
+	dpt := make(map[file.BlockID]*DirtyPageEntry)
+	block1 := file.NewBlockID("students.tbl", 0)
+	block2 := file.NewBlockID("courses.tbl", 5)
+	block3 := file.NewBlockID("enrollments.tbl", 10)
+	dpt[file.MakeBlockKey(block1)] = &DirtyPageEntry{RecLSN: 50}
+	dpt[file.MakeBlockKey(block2)] = &DirtyPageEntry{RecLSN: 150}
+	dpt[file.MakeBlockKey(block3)] = &DirtyPageEntry{RecLSN: 250}
+
+	err = WriteCheckpointLogRecord(logManager, lsn, txTable, dpt)
 	assert.NoError(t, err)
 
 	// Get the last log record
@@ -255,8 +278,29 @@ func TestCheckpointLogRecord_EncodeDecode(t *testing.T) {
 
 	// Verify the decoded record matches the original
 	assert.Equal(t, int64(-1), decodedRecord.TxNumber(), "Transaction number mismatch")
-	assert.Equal(t, lsn, decodedRecord.lsn, "LSN mismatch")
+	assert.Equal(t, lsn, decodedRecord.LSN(), "LSN mismatch")
 	assert.Equal(t, LogRecordCheckpoint, decodedRecord.Op())
+
+	// Verify transaction table was encoded and decoded correctly
+	decodedTxTable := decodedRecord.TransactionTable()
+	require.Equal(t, len(txTable), len(decodedTxTable), "Transaction table size mismatch")
+
+	for txNum, expectedEntry := range txTable {
+		actualEntry, exists := decodedTxTable[txNum]
+		require.True(t, exists, "Transaction %d not found in decoded table", txNum)
+		assert.Equal(t, expectedEntry.Status, actualEntry.Status, "Status mismatch for transaction %d", txNum)
+		assert.Equal(t, expectedEntry.LastLSN, actualEntry.LastLSN, "LastLSN mismatch for transaction %d", txNum)
+	}
+
+	// Verify dirty page table was encoded and decoded correctly
+	decodedDPT := decodedRecord.DirtyPageTable()
+	require.Equal(t, len(dpt), len(decodedDPT), "Dirty page table size mismatch")
+
+	for blockKey, expectedEntry := range dpt {
+		actualEntry, exists := decodedDPT[blockKey]
+		require.True(t, exists, "Block %s not found in decoded DPT", blockKey.String())
+		assert.Equal(t, expectedEntry.RecLSN, actualEntry.RecLSN, "RecLSN mismatch for block %s", blockKey.String())
+	}
 }
 
 func TestSetBoolLogRecord_EncodeDecode(t *testing.T) {

@@ -2,6 +2,7 @@ package buffer
 
 import (
 	"errors"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -16,6 +17,7 @@ type Manager struct {
 	maxTime      time.Duration
 	mu           sync.Mutex
 	cond         *sync.Cond
+	flushStopCh  chan struct{}
 }
 
 func NewManager(fileManager *file.Manager, logManager *log.Manager, numOfBuffer int) (*Manager, error) {
@@ -24,17 +26,50 @@ func NewManager(fileManager *file.Manager, logManager *log.Manager, numOfBuffer 
 	}
 
 	bufferpool := make([]*Buffer, 0, numOfBuffer)
-	for range numOfBuffer {
-		bufferpool = append(bufferpool, NewBuffer(fileManager, logManager))
+	for i := 0; i < numOfBuffer; i++ {
+		buf := NewBuffer(fileManager, logManager)
+		buf.number = i
+		bufferpool = append(bufferpool, buf)
 	}
 
 	bm := &Manager{
 		bufferpool:   bufferpool,
 		numAvailable: numOfBuffer,
 		maxTime:      10 * time.Second,
+		flushStopCh:  make(chan struct{}),
 	}
 	bm.cond = sync.NewCond(&bm.mu)
 	return bm, nil
+}
+
+// StartBackgroundFlush launches a goroutine that periodically flushes dirty, unpinned buffers.
+func (bm *Manager) StartBackgroundFlush(interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				slog.Info("Background flush started")
+				flushed := 0
+				bm.mu.Lock()
+				for _, buff := range bm.bufferpool {
+					if buff.ModifyingTx() >= 0 && !buff.IsPinned() {
+						_ = buff.flush() // ignore errors for background flush
+						flushed++
+					}
+				}
+				bm.mu.Unlock()
+			case <-bm.flushStopCh:
+				return
+			}
+		}
+	}()
+}
+
+// StopBackgroundFlush signals the background flush goroutine to stop.
+func (bm *Manager) StopBackgroundFlush() {
+	close(bm.flushStopCh)
 }
 
 func (bm *Manager) Available() int {
@@ -43,29 +78,28 @@ func (bm *Manager) Available() int {
 	return bm.numAvailable
 }
 
-func (bm *Manager) FlushAll(txnum int64) error {
-	bm.mu.Lock()
-	defer bm.mu.Unlock()
-
-	for _, buff := range bm.bufferpool {
-		if buff.ModifyingTx() == txnum {
-			err := buff.flush()
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 func (bm *Manager) Unpin(buff *Buffer) {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
+	prevPinned := buff.IsPinned()
 	buff.unpin()
-	if !buff.IsPinned() {
+	slog.Info("Buffer unpinned from block", slog.Group("buffer",
+		slog.Int("id", buff.number),
+		slog.String("block", func() string {
+			if buff.Block() != nil {
+				return buff.Block().String()
+			}
+			return "nil"
+		}()),
+		slog.Bool("wasPinned", prevPinned),
+		slog.Bool("nowPinned", buff.IsPinned()),
+		slog.Int64("txNum", buff.ModifyingTx()),
+		slog.Int64("lsn", buff.lsn),
+	))
+	if !buff.IsPinned() && prevPinned {
 		bm.numAvailable++
-		// Wake up all waiting goroutines
+		slog.Info("Buffer available after unpin", slog.Int("buffer", buff.number), slog.Int("numAvailable", bm.numAvailable))
 		bm.cond.Broadcast()
 	}
 }
@@ -82,6 +116,19 @@ func (bm *Manager) Pin(blk *file.BlockID) (*Buffer, error) {
 	buff, err := bm.tryToPin(blk)
 	if err != nil {
 		return nil, err
+	}
+	if buff != nil {
+		slog.Info("Buffer pinned to block", slog.Group("buffer",
+			slog.Int("id", buff.number),
+			slog.String("block", func() string {
+				if buff.Block() != nil {
+					return buff.Block().String()
+				}
+				return "nil"
+			}()),
+			slog.Int64("txNum", buff.ModifyingTx()),
+			slog.Int64("lsn", buff.lsn),
+		))
 	}
 
 	// If no buffer available, wait with timeout
@@ -116,26 +163,60 @@ func (bm *Manager) tryToPin(blk *file.BlockID) (*Buffer, error) {
 		block := b.Block()
 		if block != nil && block.Filename() == blk.Filename() && block.Number() == blk.Number() {
 			buff = b
+			slog.Info("Buffer selected for block (already loaded)", slog.Group("buffer",
+				slog.Int("id", b.number),
+				slog.String("block", block.String()),
+				slog.Int64("txNum", b.ModifyingTx()),
+				slog.Int64("lsn", b.lsn),
+			))
 			break
 		}
 	}
 
-	// 2. If not, choose an unpinned buffer
 	if buff == nil {
+		// Prefer buffers with no block assigned (empty buffer)
 		for _, b := range bm.bufferpool {
-			if !b.IsPinned() {
+			if b.Block() == nil {
 				buff = b
+				slog.Info("Buffer allocated (empty) for block", slog.Group("buffer",
+					slog.Int("id", b.number),
+					slog.String("block", blk.String()),
+					slog.Int64("txNum", b.ModifyingTx()),
+					slog.Int64("lsn", b.lsn),
+				))
 				break
 			}
 		}
 
-		// 3. If no unpinned buffer is available, return nil
+		// If no empty buffer, choose an unpinned buffer
+		if buff == nil {
+			for _, b := range bm.bufferpool {
+				if !b.IsPinned() {
+					buff = b
+					slog.Info("Buffer reallocated (unpinned) for block", slog.Group("buffer",
+						slog.Int("id", b.number),
+						slog.String("block", blk.String()),
+						slog.Int64("txNum", b.ModifyingTx()),
+						slog.Int64("lsn", b.lsn),
+					))
+					break
+				}
+			}
+		}
+
+		// If still no buffer, return nil
 		if buff == nil {
 			return nil, nil
 		}
 
-		// 4. Assign the buffer to the block
+		// Assign the buffer to the block
 		err := buff.loadBlock(blk)
+		slog.Info("Block loaded into buffer", slog.Group("buffer",
+			slog.Int("id", buff.number),
+			slog.String("block", blk.String()),
+			slog.Int64("txNum", buff.ModifyingTx()),
+			slog.Int64("lsn", buff.lsn),
+		))
 		if err != nil {
 			return nil, err
 		}

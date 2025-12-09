@@ -55,17 +55,23 @@ func NewTransaction(fileManager *file.Manager, logManager *dblog.Manager, buffer
 		txNum:              txNum,
 		prevTxLSN:          -1,
 		bufferList:         bufferList,
+		transactionTable:   transactionTable,
+		dirtyPageTable:     dirtyPageTable,
 	}
 	recoveryManager := NewRecoveryManager(txNum, transaction, logManager, bufferManager, dirtyPageTable, transactionTable)
 	transaction.recoveryManager = recoveryManager
 
-	// Write Start log record
 	lsn := logManager.GetNextLatestLSN()
+
+	// 1. Write log record first (WAL principle)
 	err := WriteStartLogRecord(logManager, txNum, lsn, -1)
 	if err != nil {
 		return nil
 	}
 	transaction.prevTxLSN = lsn
+
+	// 2. Update TransactionTable
+	transaction.transactionTable.Add(txNum, TransactionStatusRunning, lsn)
 
 	return transaction
 }
@@ -96,8 +102,14 @@ func (t *Transaction) Rollback() error {
 	return nil
 }
 
-func (t *Transaction) DoRecovery() error {
-	return t.recoveryManager.Recover()
+func (t *Transaction) DBRecovery() error {
+	return t.recoveryManager.DBRecovery()
+}
+
+// TakeCheckpoint performs a fuzzy checkpoint.
+// This should be called periodically during normal operation.
+func (t *Transaction) TakeCheckpoint() error {
+	return t.recoveryManager.TakeCheckpoint()
 }
 
 func (t *Transaction) Pin(blk *file.BlockID) (*buffer.Buffer, error) {
@@ -138,6 +150,25 @@ func (t *Transaction) GetString(blk *file.BlockID, offset int) (string, error) {
 	return val, nil
 }
 
+// GetPageLSN reads the PageLSN from the page header with proper concurrency control.
+// This is used during recovery to check if a page already has a log record applied.
+func (t *Transaction) GetPageLSN(blk *file.BlockID) (int64, error) {
+	err := t.concurrencyManager.sLock(blk)
+	if err != nil {
+		return -1, err
+	}
+	buff := t.bufferList.GetBuffer(blk)
+	if buff == nil {
+		// Buffer not pinned yet, pin it first
+		var err error
+		buff, err = t.bufferList.Pin(blk)
+		if err != nil {
+			return -1, err
+		}
+	}
+	return buff.Contents().GetPageLSN(), nil
+}
+
 func (t *Transaction) SetInt(blk *file.BlockID, offset int, val int, log bool) error {
 	err := t.concurrencyManager.xLock(blk)
 	if err != nil {
@@ -161,6 +192,10 @@ func (t *Transaction) SetInt(blk *file.BlockID, offset int, val int, log bool) e
 	page := buff.Contents()
 	page.SetInt(offset, val)
 	buff.SetModified(t.txNum, lsn)
+	if lsn >= 0 {
+		page.SetPageLSN(lsn)
+	}
+
 	return nil
 }
 
@@ -187,6 +222,10 @@ func (t *Transaction) SetBool(blk *file.BlockID, offset int, val bool, log bool)
 	page := buff.Contents()
 	page.SetBool(offset, val)
 	buff.SetModified(t.txNum, lsn)
+	if lsn >= 0 {
+		page.SetPageLSN(lsn)
+	}
+
 	return nil
 }
 
@@ -213,6 +252,10 @@ func (t *Transaction) SetString(blk *file.BlockID, offset int, val string, log b
 	page := buff.Contents()
 	page.SetString(offset, val)
 	buff.SetModified(t.txNum, lsn)
+	if lsn >= 0 {
+		page.SetPageLSN(lsn)
+	}
+
 	return nil
 }
 

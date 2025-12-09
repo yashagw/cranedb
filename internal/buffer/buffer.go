@@ -1,6 +1,8 @@
 package buffer
 
 import (
+	"log/slog"
+
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
 )
@@ -14,9 +16,11 @@ type Buffer struct {
 	pins        int
 	txNum       int64
 	lsn         int64
+	number      int // unique buffer number
 }
 
 func NewBuffer(fm *file.Manager, lm *log.Manager) *Buffer {
+	// number will be set by Manager
 	return &Buffer{
 		fileManager: fm,
 		logManager:  lm,
@@ -25,6 +29,7 @@ func NewBuffer(fm *file.Manager, lm *log.Manager) *Buffer {
 		pins:        0,
 		txNum:       -1,
 		lsn:         -1,
+		number:      -1,
 	}
 }
 
@@ -93,8 +98,7 @@ func (b *Buffer) flush() error {
 		if err != nil {
 			return err
 		}
-		// Update pageLSN in the page header before writing to disk
-		// This ensures the pageLSN reflects the LSN of the log record that was flushed
+
 		if b.lsn >= 0 {
 			b.contents.SetPageLSN(b.lsn)
 		}
@@ -102,9 +106,12 @@ func (b *Buffer) flush() error {
 		if err != nil {
 			return err
 		}
-		b.txNum = -1
-	}
 
+		slog.Info("Buffer flushed", "buffer", b.number, "block", b.blk, "lsn", b.lsn)
+
+		b.txNum = -1
+		b.lsn = -1
+	}
 	return nil
 }
 

@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/yashagw/cranedb/internal/buffer"
 	"github.com/yashagw/cranedb/internal/file"
@@ -85,7 +86,7 @@ func NewServer(dbDir string) (*Server, error) {
 	}
 
 	tx := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
-	err = tx.DoRecovery()
+	err = tx.DBRecovery()
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform recovery: %w", err)
 	}
@@ -126,7 +127,7 @@ func removeTempTables(dbDir string) error {
 		if strings.HasPrefix(name, "temp") && strings.HasSuffix(name, ".tbl") {
 			fullPath := filepath.Join(dbDir, name)
 			if err := os.Remove(fullPath); err != nil {
-				log.Printf("Failed to remove temp table %s: %v", fullPath, err)
+				slog.Warn("Failed to remove temp table", "path", fullPath, "err", err)
 			}
 		}
 	}
@@ -135,10 +136,10 @@ func removeTempTables(dbDir string) error {
 
 func (s *Server) handleConnection(conn net.Conn) {
 	remoteAddr := conn.RemoteAddr().String()
-	log.Printf("New connection from %s", remoteAddr)
+	slog.Info("New connection", "remoteAddr", remoteAddr)
 	defer func() {
 		conn.Close()
-		log.Printf("Connection closed from %s", remoteAddr)
+		slog.Info("Connection closed", "remoteAddr", remoteAddr)
 	}()
 
 	// Create a session for this connection
@@ -150,7 +151,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 	for {
 		if !scanner.Scan() {
 			if err := scanner.Err(); err != nil && err != io.EOF {
-				log.Printf("Error reading from client %s: %v", remoteAddr, err)
+				slog.Error("Error reading from client", "remoteAddr", remoteAddr, "err", err)
 			}
 			break
 		}
@@ -188,7 +189,7 @@ func (s *Server) executeQuery(sql string, sess *session.Session) QueryResponse {
 	if len(queryPreview) > 100 {
 		queryPreview = queryPreview[:100] + "..."
 	}
-	log.Printf("Executing query: %s", queryPreview)
+	slog.Info("Executing query", "query", queryPreview)
 
 	// Check if it's a SET command first
 	trimmedSQL := strings.TrimSpace(strings.ToLower(sql))
@@ -237,11 +238,11 @@ func (s *Server) executeQuery(sql string, sess *session.Session) QueryResponse {
 	defer func() {
 		if !committed {
 			if err := tx.Rollback(); err != nil {
-				log.Printf("Error rolling back transaction: %v", err)
+				slog.Error("Error rolling back transaction", "err", err)
 			}
-			log.Printf("Query rolled back: %s", queryPreview)
+			slog.Warn("Query rolled back", "query", queryPreview)
 		} else {
-			log.Printf("Query committed: %s", queryPreview)
+			slog.Info("Query committed", "query", queryPreview)
 		}
 	}()
 
@@ -371,7 +372,7 @@ func (s *Server) executeQuery(sql string, sess *session.Session) QueryResponse {
 
 	count, err := s.planner.ExecuteUpdate(sql, tx)
 	if err != nil {
-		log.Printf("Error executing update: %v", err)
+		slog.Error("Error executing update", "err", err)
 		return QueryResponse{
 			Type:  "error",
 			Error: err.Error(),
@@ -405,21 +406,48 @@ func main() {
 
 	server, err := NewServer(dbDir)
 	if err != nil {
-		log.Fatalf("Failed to initialize server: %v", err)
+		slog.Error("Failed to initialize server", "err", err)
+		os.Exit(1)
 	}
+
+	// Start background buffer flush every 30 seconds
+	server.bufferManager.StartBackgroundFlush(30 * time.Second)
+
+	// Start periodic fuzzy checkpoint every 1 minute
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for {
+			<-ticker.C
+			tx := transaction.NewTransaction(
+				server.fileManager,
+				server.logManager,
+				server.bufferManager,
+				server.lockTable,
+				server.dirtyPageTable,
+				server.transactionTable,
+			)
+			err := tx.TakeCheckpoint()
+			if err != nil {
+				slog.Error("Error saving checkpoint", "err", err)
+			} else {
+				slog.Info("Checkpoint saved")
+			}
+		}
+	}()
 
 	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
-		log.Fatalf("Failed to listen on port %s: %v", port, err)
+		slog.Error("Failed to listen on port", "port", port, "err", err)
+		os.Exit(1)
 	}
 
-	log.Printf("CraneDB server listening on port %s", port)
-	log.Printf("Database directory: %s", dbDir)
+	slog.Info("CraneDB server started", "port", port, "dir", dbDir)
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			log.Printf("Error accepting connection: %v", err)
+			slog.Error("Error accepting connection", "err", err)
 			continue
 		}
 

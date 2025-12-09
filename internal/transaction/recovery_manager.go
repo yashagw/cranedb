@@ -1,9 +1,10 @@
 package transaction
 
 import (
-	"slices"
+	"log/slog"
 
 	"github.com/yashagw/cranedb/internal/buffer"
+	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
 )
 
@@ -32,69 +33,130 @@ func NewRecoveryManager(txNum int64, transaction *Transaction, logManager *log.M
 }
 
 func (rm *RecoveryManager) Commit() error {
-	err := rm.bufferManager.FlushAll(rm.txNum)
-	if err != nil {
-		return err
-	}
 	lsn := rm.logManager.GetNextLatestLSN()
 	prevLSN := rm.transaction.prevTxLSN
-	err = WriteCommitLogRecord(rm.logManager, rm.txNum, lsn, prevLSN)
+
+	// 1. Write log record first (WAL principle)
+	err := WriteCommitLogRecord(rm.logManager, rm.txNum, lsn, prevLSN)
 	if err != nil {
 		return err
 	}
 	rm.transaction.prevTxLSN = lsn
-	return rm.logManager.Flush(lsn)
+
+	// 2. Update TransactionTable
+	err = rm.transactionTable.UpdateStatus(rm.txNum, TransactionStatusCommitted)
+	if err != nil {
+		return err
+	}
+	err = rm.transactionTable.UpdateLastLSN(rm.txNum, lsn)
+	if err != nil {
+		return err
+	}
+
+	// 3. Flush log up to commit record LSN (ARIES: no need to flush data buffers)
+	err = rm.logManager.Flush(lsn)
+	if err != nil {
+		return err
+	}
+
+	// 4. Remove from TransactionTable after commit is complete
+	return rm.transactionTable.Remove(rm.txNum)
 }
 
 func (rm *RecoveryManager) Rollback() error {
+	// Perform undo operations first
 	err := rm.doRollback()
 	if err != nil {
 		return err
 	}
-	err = rm.bufferManager.FlushAll(rm.txNum)
-	if err != nil {
-		return err
-	}
+
 	lsn := rm.logManager.GetNextLatestLSN()
 	prevLSN := rm.transaction.prevTxLSN
+
+	// 1. Write log record first (WAL principle)
 	err = WriteRollbackLogRecord(rm.logManager, rm.txNum, lsn, prevLSN)
 	if err != nil {
 		return err
 	}
 	rm.transaction.prevTxLSN = lsn
-	return rm.logManager.Flush(lsn)
+
+	// 2. Update TransactionTable
+	err = rm.transactionTable.UpdateStatus(rm.txNum, TransactionStatusAborted)
+	if err != nil {
+		return err
+	}
+	err = rm.transactionTable.UpdateLastLSN(rm.txNum, lsn)
+	if err != nil {
+		return err
+	}
+
+	// 3. Flush log up to rollback record LSN (ARIES: no need to flush data buffers)
+	err = rm.logManager.Flush(lsn)
+	if err != nil {
+		return err
+	}
+
+	// 4. Remove from TransactionTable after rollback is complete
+	return rm.transactionTable.Remove(rm.txNum)
 }
 
-func (rm *RecoveryManager) Recover() error {
-	err := rm.doRecovery()
-	if err != nil {
-		return err
-	}
-	err = rm.bufferManager.FlushAll(rm.txNum)
-	if err != nil {
-		return err
-	}
+// TakeCheckpoint performs a fuzzy checkpoint during normal operation.
+// ARIES fuzzy checkpoint: writes checkpoint record with TransactionTable and DirtyPageTable
+// without flushing all buffers. Buffers are flushed lazily during normal operation.
+// This should be called periodically (e.g., every N seconds or after N transactions).
+func (rm *RecoveryManager) TakeCheckpoint() error {
+	slog.Info("Saving fuzzy checkpoint...")
 	lsn := rm.logManager.GetNextLatestLSN()
-	err = WriteCheckpointLogRecord(rm.logManager, lsn)
+
+	// 1. Get snapshots of TransactionTable and DirtyPageTable
+	// These snapshots represent the state at checkpoint time
+	txTableSnapshot := rm.transactionTable.GetAll()
+	dptSnapshot := rm.dirtyPageTable.GetAll()
+
+	// 2. Write fuzzy checkpoint log record (WAL principle)
+	// This checkpoint record contains the TransactionTable and DirtyPageTable snapshots
+	err := WriteCheckpointLogRecord(rm.logManager, lsn, txTableSnapshot, dptSnapshot)
 	if err != nil {
 		return err
 	}
-	return rm.logManager.Flush(lsn)
+
+	// 3. Flush log up to checkpoint LSN
+	// Note: We do NOT flush all buffers here - this is a fuzzy checkpoint
+	// Buffers will be flushed lazily during buffer replacement or when needed
+	err = rm.logManager.Flush(lsn)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // SetInt logs an integer modification operation before it occurs.
 // It reads the current value from the buffer at the specified offset,
 // writes a SetInt log record with the old value for potential rollback,
 // and returns the LSN of the log record.
+// Order: 1. Log, 2. DirtyPageTable, 3. TransactionTable
 func (rm *RecoveryManager) SetInt(buf *buffer.Buffer, offset int, newValue int) (int64, error) {
-	oldVal := buf.Contents().GetInt(offset)
 	lsn := rm.logManager.GetNextLatestLSN()
+	oldVal := buf.Contents().GetInt(offset)
 	prevLSN := rm.transaction.prevTxLSN
+
+	// 1. Write log record first (WAL principle)
 	err := WriteSetIntLogRecord(rm.logManager, rm.txNum, lsn, prevLSN, buf.Block(), offset, oldVal, newValue)
 	if err != nil {
 		return 0, err
 	}
 	rm.transaction.prevTxLSN = lsn
+
+	// 2. Update DirtyPageTable (when page becomes dirty)
+	rm.dirtyPageTable.Add(buf.Block(), lsn)
+
+	// 3. Update TransactionTable (with last LSN)
+	err = rm.transactionTable.UpdateLastLSN(rm.txNum, lsn)
+	if err != nil {
+		return 0, err
+	}
+
 	return lsn, nil
 }
 
@@ -102,15 +164,28 @@ func (rm *RecoveryManager) SetInt(buf *buffer.Buffer, offset int, newValue int) 
 // It reads the current value from the buffer at the specified offset,
 // writes a SetString log record with the old value for potential rollback,
 // and returns the LSN of the log record.
+// Order: 1. Log, 2. DirtyPageTable, 3. TransactionTable
 func (rm *RecoveryManager) SetString(buf *buffer.Buffer, offset int, newValue string) (int64, error) {
-	oldVal := buf.Contents().GetString(offset)
 	lsn := rm.logManager.GetNextLatestLSN()
+	oldVal := buf.Contents().GetString(offset)
 	prevLSN := rm.transaction.prevTxLSN
+
+	// 1. Write log record first (WAL principle)
 	err := WriteSetStringLogRecord(rm.logManager, rm.txNum, lsn, prevLSN, buf.Block(), offset, oldVal, newValue)
 	if err != nil {
 		return 0, err
 	}
 	rm.transaction.prevTxLSN = lsn
+
+	// 2. Update DirtyPageTable (when page becomes dirty)
+	rm.dirtyPageTable.Add(buf.Block(), lsn)
+
+	// 3. Update TransactionTable (with last LSN)
+	err = rm.transactionTable.UpdateLastLSN(rm.txNum, lsn)
+	if err != nil {
+		return 0, err
+	}
+
 	return lsn, nil
 }
 
@@ -118,15 +193,28 @@ func (rm *RecoveryManager) SetString(buf *buffer.Buffer, offset int, newValue st
 // It reads the current value from the buffer at the specified offset,
 // writes a SetBool log record with the old value for potential rollback,
 // and returns the LSN of the log record.
+// Order: 1. Log, 2. DirtyPageTable, 3. TransactionTable
 func (rm *RecoveryManager) SetBool(buf *buffer.Buffer, offset int, newValue bool) (int64, error) {
-	oldVal := buf.Contents().GetBool(offset)
 	lsn := rm.logManager.GetNextLatestLSN()
+	oldVal := buf.Contents().GetBool(offset)
 	prevLSN := rm.transaction.prevTxLSN
+
+	// 1. Write log record first (WAL principle)
 	err := WriteSetBoolLogRecord(rm.logManager, rm.txNum, lsn, prevLSN, buf.Block(), offset, oldVal, newValue)
 	if err != nil {
 		return 0, err
 	}
 	rm.transaction.prevTxLSN = lsn
+
+	// 2. Update DirtyPageTable (when page becomes dirty)
+	rm.dirtyPageTable.Add(buf.Block(), lsn)
+
+	// 3. Update TransactionTable (with last LSN)
+	err = rm.transactionTable.UpdateLastLSN(rm.txNum, lsn)
+	if err != nil {
+		return 0, err
+	}
+
 	return lsn, nil
 }
 
@@ -157,12 +245,132 @@ func (rm *RecoveryManager) doRollback() error {
 	return nil
 }
 
-// doRecovery performs database recovery by reading the log records backward
-// and undoes any uncompleted transactions.
-// Recovery stops if it reaches the start of the log or a checkpoint record.
-func (rm *RecoveryManager) doRecovery() error {
-	finishedTXs := []int64{}
+// DBRecovery performs ARIES recovery:
+// 1. Find the most recent checkpoint
+// 2. Restore TransactionTable and DirtyPageTable from checkpoint
+// 3. Perform analysis pass (identify winner/loser transactions)
+// 4. Perform redo pass (redo all operations from minRecLSN)
+// 5. Perform undo pass (undo loser transactions)
+func (rm *RecoveryManager) DBRecovery() error {
+	// Step 1: Find the most recent checkpoint and restore tables
+	checkpointLSN, err := rm.findAndRestoreCheckpoint()
+	if err != nil {
+		return err
+	}
+
+	// Step 2: Analysis pass - identify winner and loser transactions
+	// Winner: transactions that committed after checkpoint
+	// Loser: transactions that were active at checkpoint or started after but didn't commit
+	finishedTXs := make(map[int64]bool)
 	lmIterator, err := rm.logManager.Iterator()
+	if err != nil {
+		return err
+	}
+
+	// Find all committed/rolled back transactions after checkpoint
+	for lmIterator.HasNext() {
+		logBytes := lmIterator.Next()
+		record := CreateLogRecord(logBytes)
+
+		// Stop if we've gone past the checkpoint
+		if record.Op() == LogRecordCheckpoint {
+			if checkpointRecord, ok := record.(*CheckpointLogRecord); ok {
+				if checkpointRecord.LSN() == checkpointLSN {
+					break
+				}
+			}
+		}
+
+		if record.Op() == LogRecordCommit || record.Op() == LogRecordRollback {
+			finishedTXs[record.TxNumber()] = true
+		}
+	}
+
+	// Step 3: Redo pass - redo all operations from minRecLSN (minimum recLSN in DPT)
+	// Calculate minRecLSN from DirtyPageTable (minimum recLSN of all dirty pages)
+	minRecLSN := int64(-1)
+	dptSnapshot := rm.dirtyPageTable.GetAll()
+	for _, entry := range dptSnapshot {
+		if minRecLSN < 0 || entry.RecLSN < minRecLSN {
+			minRecLSN = entry.RecLSN
+		}
+	}
+	// If no dirty pages, start from checkpoint LSN (or 0 if no checkpoint)
+	if minRecLSN < 0 {
+		if checkpointLSN >= 0 {
+			minRecLSN = checkpointLSN
+		} else {
+			minRecLSN = 0
+		}
+	}
+
+	// Perform redo pass: redo all log records from minRecLSN forward
+	// Skip redo if PageLSN >= record LSN (ARIES optimization)
+	lmIterator, err = rm.logManager.Iterator()
+	if err != nil {
+		return err
+	}
+
+	// Collect all log records first (we need to process them forward, but iterator goes backward)
+	var records []LogRecord
+	for lmIterator.HasNext() {
+		logBytes := lmIterator.Next()
+		record := CreateLogRecord(logBytes)
+
+		// Stop at checkpoint
+		if record.Op() == LogRecordCheckpoint {
+			if checkpointRecord, ok := record.(*CheckpointLogRecord); ok {
+				if checkpointRecord.LSN() == checkpointLSN {
+					break
+				}
+			}
+		}
+
+		// Only redo data modification records (SetInt, SetString, SetBool)
+		if record.Op() == LogRecordSetInt || record.Op() == LogRecordSetString || record.Op() == LogRecordSetBool {
+			// Get LSN from record
+			var recordLSN int64
+			switch r := record.(type) {
+			case *SetIntLogRecord:
+				recordLSN = r.LSN()
+			case *SetStringLogRecord:
+				recordLSN = r.LSN()
+			case *SetBoolLogRecord:
+				recordLSN = r.LSN()
+			default:
+				continue
+			}
+
+			// Only redo if record LSN >= minRecLSN
+			if recordLSN >= minRecLSN {
+				records = append(records, record)
+			}
+		}
+	}
+
+	// Process records in forward order (reverse the list since iterator goes backward)
+	for i := len(records) - 1; i >= 0; i-- {
+		record := records[i]
+		redone, err := record.Redo(rm.transaction)
+		if err != nil {
+			return err
+		}
+		if redone {
+			// Unpin the buffer after redo
+			switch r := record.(type) {
+			case *SetIntLogRecord:
+				rm.transaction.Unpin(r.Block())
+			case *SetStringLogRecord:
+				rm.transaction.Unpin(r.Block())
+			case *SetBoolLogRecord:
+				rm.transaction.Unpin(r.Block())
+			}
+		}
+	}
+
+	// Step 4: Undo pass - undo all loser transactions
+	// Loser transactions are those in TransactionTable that are not in finishedTXs
+	lmIterator, err = rm.logManager.Iterator()
 	if err != nil {
 		return err
 	}
@@ -171,23 +379,23 @@ func (rm *RecoveryManager) doRecovery() error {
 		logBytes := lmIterator.Next()
 		record := CreateLogRecord(logBytes)
 
-		// If reached Checkpoint then it means
-		// above this logs everything is committed and we can stop
+		// Stop at checkpoint
 		if record.Op() == LogRecordCheckpoint {
-			return nil
+			if checkpointRecord, ok := record.(*CheckpointLogRecord); ok {
+				if checkpointRecord.LSN() == checkpointLSN {
+					break
+				}
+			}
 		}
 
-		if record.Op() == LogRecordCommit || record.Op() == LogRecordRollback {
-			finishedTXs = append(finishedTXs, record.TxNumber())
-		}
-
-		if !slices.Contains(finishedTXs, record.TxNumber()) {
+		txNum := record.TxNumber()
+		// Undo if this is a loser transaction (not finished)
+		if txNum >= 0 && !finishedTXs[txNum] {
 			err := record.Undo(rm.transaction)
 			if err != nil {
 				return err
 			}
 			// Unpin the buffer after undo to prevent buffer pool exhaustion during recovery
-			// Only unpin if this is a SetInt/SetString/SetBool record (they have block info)
 			if record.Op() == LogRecordSetInt {
 				if setIntRecord, ok := record.(*SetIntLogRecord); ok {
 					rm.transaction.Unpin(setIntRecord.block)
@@ -203,5 +411,52 @@ func (rm *RecoveryManager) doRecovery() error {
 			}
 		}
 	}
+
 	return nil
+}
+
+// findAndRestoreCheckpoint finds the most recent checkpoint and restores
+// TransactionTable and DirtyPageTable from it.
+// Returns the checkpoint LSN, or -1 if no checkpoint found.
+func (rm *RecoveryManager) findAndRestoreCheckpoint() (int64, error) {
+	lmIterator, err := rm.logManager.Iterator()
+	if err != nil {
+		return -1, err
+	}
+
+	var checkpointLSN int64 = -1
+	var checkpointRecord *CheckpointLogRecord
+
+	// Find the most recent checkpoint
+	for lmIterator.HasNext() {
+		logBytes := lmIterator.Next()
+		record := CreateLogRecord(logBytes)
+
+		if record.Op() == LogRecordCheckpoint {
+			if cr, ok := record.(*CheckpointLogRecord); ok {
+				checkpointLSN = cr.LSN()
+				checkpointRecord = cr
+				break
+			}
+		}
+	}
+
+	// If we found a checkpoint, restore the tables
+	if checkpointRecord != nil {
+		// Restore TransactionTable
+		txTableSnapshot := checkpointRecord.TransactionTable()
+		for txNum, entry := range txTableSnapshot {
+			rm.transactionTable.Add(txNum, entry.Status, entry.LastLSN)
+		}
+
+		// Restore DirtyPageTable
+		dptSnapshot := checkpointRecord.DirtyPageTable()
+		for blockID, entry := range dptSnapshot {
+			// Reconstruct BlockID from the key
+			block := file.NewBlockID(blockID.Filename(), blockID.Number())
+			rm.dirtyPageTable.Add(block, entry.RecLSN)
+		}
+	}
+
+	return checkpointLSN, nil
 }

@@ -60,10 +60,6 @@ func TestManager_BasicOperations(t *testing.T) {
 	buff1.SetModified(123, 456)
 	assert.Equal(t, int64(123), buff1.ModifyingTx(), "Should track modifying transaction")
 
-	// Test flush all
-	err = bm.FlushAll(123)
-	require.NoError(t, err, "FlushAll should succeed")
-
 	// Clean up
 	bm.Unpin(buff2)
 }

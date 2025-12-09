@@ -1,7 +1,7 @@
 package record
 
 import (
-	"log"
+	"log/slog"
 
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/transaction"
@@ -88,7 +88,7 @@ func (rp *RecordPage) SetString(slot int, fieldName string, value string) error 
 	if originalLength > maxLength {
 		valueBytes = valueBytes[:maxLength]
 		value = string(valueBytes)
-		log.Printf("Truncating string field '%s': length %d exceeds max length %d", fieldName, originalLength, maxLength)
+		slog.Info("Truncating string field", "field", fieldName, "length", originalLength, "maxLength", maxLength)
 	}
 
 	fieldOffset := rp.layout.GetOffset(fieldName)

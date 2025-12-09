@@ -26,6 +26,7 @@ type LogRecord interface {
 	Op() LogRecordType
 	TxNumber() int64
 	Undo(tx *Transaction) error
+	Redo(tx *Transaction) (bool, error)
 }
 
 // CreateLogRecord returns the correct LogRecord based on the operation type
