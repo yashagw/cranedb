@@ -22,16 +22,17 @@ func TestTransaction_BasicOperations(t *testing.T) {
 	lockTable := NewLockTable()
 	dirtyPageTable := NewDirtyPageTable()
 	transactionTable := NewTransactionTable()
+	transactionManager := NewTransactionManager(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
 
 	// Test 1: Create transaction
-	tx1 := NewTransaction(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
+	tx1 := transactionManager.BeginTransaction()
 	require.NotNil(t, tx1)
-	assert.Equal(t, int64(0), tx1.txNum) // First transaction should be 0
+	assert.GreaterOrEqual(t, tx1.txNum, int64(0)) // Transaction number should be non-negative
 
 	// Test 2: Create another transaction (should get unique number)
-	tx2 := NewTransaction(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
+	tx2 := transactionManager.BeginTransaction()
 	require.NotNil(t, tx2)
-	assert.Equal(t, int64(1), tx2.txNum) // Second transaction should be 1
+	assert.Equal(t, tx1.txNum+1, tx2.txNum) // Second transaction should be next sequential number
 
 	// Test 3: Pin and unpin buffer
 	block := file.NewBlockID("testfile", 1)
@@ -78,8 +79,9 @@ func TestTransaction_DataOperation(t *testing.T) {
 	lockTable := NewLockTable()
 	dirtyPageTable := NewDirtyPageTable()
 	transactionTable := NewTransactionTable()
+	transactionManager := NewTransactionManager(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
 
-	tx := NewTransaction(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
+	tx := transactionManager.BeginTransaction()
 	block := file.NewBlockID("testfile", 1)
 
 	// Pin the buffer first
@@ -122,6 +124,7 @@ func TestTransaction_ConcurrencyOperations(t *testing.T) {
 	lockTable := NewLockTable()
 	dirtyPageTable := NewDirtyPageTable()
 	transactionTable := NewTransactionTable()
+	transactionManager := NewTransactionManager(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
 
 	block := file.NewBlockID("testfile", 1)
 	var wg sync.WaitGroup
@@ -133,7 +136,7 @@ func TestTransaction_ConcurrencyOperations(t *testing.T) {
 		go func(index int) {
 			defer wg.Done()
 
-			tx := NewTransaction(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
+			tx := transactionManager.BeginTransaction()
 			buff, err := tx.Pin(block)
 			require.NoError(t, err)
 			require.NotNil(t, buff)
@@ -173,6 +176,7 @@ func TestTransaction_ReadWriteConcurrency(t *testing.T) {
 	lockTable := NewLockTable()
 	dirtyPageTable := NewDirtyPageTable()
 	transactionTable := NewTransactionTable()
+	transactionManager := NewTransactionManager(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
 
 	block := file.NewBlockID("testfile", 1)
 	var wg sync.WaitGroup
@@ -183,7 +187,7 @@ func TestTransaction_ReadWriteConcurrency(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		tx := NewTransaction(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
+		tx := transactionManager.BeginTransaction()
 		buff, err := tx.Pin(block)
 		require.NoError(t, err)
 		require.NotNil(t, buff)
@@ -207,7 +211,7 @@ func TestTransaction_ReadWriteConcurrency(t *testing.T) {
 			// Small delay to ensure writer starts first
 			time.Sleep(10 * time.Millisecond)
 
-			tx := NewTransaction(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
+			tx := transactionManager.BeginTransaction()
 			buff, err := tx.Pin(block)
 			require.NoError(t, err)
 			require.NotNil(t, buff)

@@ -27,8 +27,7 @@ func NewManager(fileManager *file.Manager, logManager *log.Manager, numOfBuffer 
 
 	bufferpool := make([]*Buffer, 0, numOfBuffer)
 	for i := 0; i < numOfBuffer; i++ {
-		buf := NewBuffer(fileManager, logManager)
-		buf.number = i
+		buf := NewBuffer(fileManager, logManager, i)
 		bufferpool = append(bufferpool, buf)
 	}
 

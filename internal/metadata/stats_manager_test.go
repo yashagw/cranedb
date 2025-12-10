@@ -34,12 +34,13 @@ func TestStatsManager_BasicOperations(t *testing.T) {
 	transactionTable := transaction.NewTransactionTable()
 
 	// Test 1: Create new StatsManager
-	tx1 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	transactionManager := transaction.NewTransactionManager(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx1 := transactionManager.BeginTransaction()
 	tm := NewTableManager(true, tx1)
 	require.NotNil(t, tm)
 	tx1.Commit()
 
-	tx2 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx2 := transactionManager.BeginTransaction()
 	sm := NewStatsManager(tm, tx2)
 	require.NotNil(t, sm)
 	assert.NotNil(t, sm.tblMgr)
@@ -48,7 +49,7 @@ func TestStatsManager_BasicOperations(t *testing.T) {
 	tx2.Commit()
 
 	// Test 2: Create StatInfo with basic data
-	tx3 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx3 := transactionManager.BeginTransaction()
 	schema := record.NewSchema()
 	schema.AddIntField("id")
 	schema.AddStringField("name", 20)
@@ -62,7 +63,7 @@ func TestStatsManager_BasicOperations(t *testing.T) {
 	tx3.Commit()
 
 	// Test 3: Get stats for non-existent table
-	tx4 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx4 := transactionManager.BeginTransaction()
 	sm2 := NewStatsManager(tm, tx4)
 	si2, err := sm2.GetStatInfo("nonexistent", layout, tx4)
 	require.NoError(t, err)
@@ -72,12 +73,12 @@ func TestStatsManager_BasicOperations(t *testing.T) {
 	tx4.Commit()
 
 	// Test 4: Create a table and get stats for empty table
-	tx5 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx5 := transactionManager.BeginTransaction()
 	err = tm.CreateTable("test_table", schema, tx5)
 	require.NoError(t, err, "Should create table successfully")
 	tx5.Commit()
 
-	tx6 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx6 := transactionManager.BeginTransaction()
 	layout2, err := tm.GetLayout("test_table", tx6)
 	require.NoError(t, err, "Should retrieve layout successfully")
 	require.NotNil(t, layout2)
@@ -91,14 +92,14 @@ func TestStatsManager_BasicOperations(t *testing.T) {
 	tx6.Commit()
 
 	// Test 5: Test cache clearing behavior (simulating refresh trigger)
-	tx7 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx7 := transactionManager.BeginTransaction()
 	schema3 := record.NewSchema()
 	schema3.AddIntField("id")
 	err = tm.CreateTable("refresh_test", schema3, tx7)
 	require.NoError(t, err, "Should create refresh test table successfully")
 	tx7.Commit()
 
-	tx8 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx8 := transactionManager.BeginTransaction()
 	sm4 := NewStatsManager(tm, tx8)
 	layout3, err := tm.GetLayout("refresh_test", tx8)
 	require.NoError(t, err)
@@ -142,13 +143,14 @@ func TestStatsManager_DistinctValues(t *testing.T) {
 	transactionTable := transaction.NewTransactionTable()
 
 	// Setup database
-	tx1 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	transactionManager := transaction.NewTransactionManager(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx1 := transactionManager.BeginTransaction()
 	tm := NewTableManager(true, tx1)
 	require.NotNil(t, tm)
 	tx1.Commit()
 
 	// Create table with data
-	tx2 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx2 := transactionManager.BeginTransaction()
 	schema := record.NewSchema()
 	schema.AddIntField("id")
 	schema.AddStringField("name", 20)
@@ -157,7 +159,7 @@ func TestStatsManager_DistinctValues(t *testing.T) {
 	tx2.Commit()
 
 	// Insert data
-	tx3 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx3 := transactionManager.BeginTransaction()
 	layout, err := tm.GetLayout("test_table", tx3)
 	require.NoError(t, err, "Should retrieve layout successfully")
 	require.NotNil(t, layout)
@@ -188,7 +190,7 @@ func TestStatsManager_DistinctValues(t *testing.T) {
 	tx3.Commit()
 
 	// Test StatsManager with data
-	tx4 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx4 := transactionManager.BeginTransaction()
 	sm := NewStatsManager(tm, tx4)
 	si, err := sm.GetStatInfo("test_table", layout, tx4)
 	require.NoError(t, err)

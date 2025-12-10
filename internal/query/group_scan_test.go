@@ -29,8 +29,8 @@ func TestGroupByScanMultipleAggregations(t *testing.T) {
 	lockTable := transaction.NewLockTable()
 	dirtyPageTable := transaction.NewDirtyPageTable()
 	transactionTable := transaction.NewTransactionTable()
-
-	tx := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
+	transactionManager := transaction.NewTransactionManager(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
+	tx := transactionManager.BeginTransaction()
 	require.NotNil(t, tx)
 	defer tx.Commit()
 
@@ -161,8 +161,8 @@ func TestGroupByScanMultipleGroupFields(t *testing.T) {
 	lockTable := transaction.NewLockTable()
 	dirtyPageTable := transaction.NewDirtyPageTable()
 	transactionTable := transaction.NewTransactionTable()
-
-	tx := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
+	transactionManager := transaction.NewTransactionManager(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
+	tx := transactionManager.BeginTransaction()
 	require.NotNil(t, tx)
 	defer tx.Commit()
 

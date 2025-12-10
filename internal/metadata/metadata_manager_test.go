@@ -33,7 +33,8 @@ func TestMetadataManager_BasicOperations(t *testing.T) {
 	transactionTable := transaction.NewTransactionTable()
 
 	// Test 1: Create new MetadataManager (isNew = true)
-	tx1 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	transactionManager := transaction.NewTransactionManager(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx1 := transactionManager.BeginTransaction()
 	mm := NewManager(true, tx1)
 	require.NotNil(t, mm)
 	assert.NotNil(t, mm.tableManager)
@@ -43,7 +44,7 @@ func TestMetadataManager_BasicOperations(t *testing.T) {
 	tx1.Commit()
 
 	// Test 2: Create MetadataManager for existing database (isNew = false)
-	tx2 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx2 := transactionManager.BeginTransaction()
 	mm2 := NewManager(false, tx2)
 	require.NotNil(t, mm2)
 	assert.NotNil(t, mm2.tableManager)
@@ -53,7 +54,7 @@ func TestMetadataManager_BasicOperations(t *testing.T) {
 	tx2.Commit()
 
 	// Test 3: Create a table through MetadataManager
-	tx3 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx3 := transactionManager.BeginTransaction()
 	schema := record.NewSchema()
 	schema.AddIntField("id")
 	schema.AddStringField("name", 50)
@@ -63,7 +64,7 @@ func TestMetadataManager_BasicOperations(t *testing.T) {
 	tx3.Commit()
 
 	// Test 4: Get table layout through MetadataManager
-	tx4 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx4 := transactionManager.BeginTransaction()
 	layout, err := mm.GetTableLayout("users", tx4)
 	require.NoError(t, err, "Should retrieve layout successfully")
 	require.NotNil(t, layout)
@@ -82,27 +83,27 @@ func TestMetadataManager_BasicOperations(t *testing.T) {
 	tx4.Commit()
 
 	// Test 5: Create a view through MetadataManager
-	tx5 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx5 := transactionManager.BeginTransaction()
 	viewDef := "SELECT id, name FROM users WHERE id > 0"
 	err = mm.CreateView("user_view", viewDef, tx5)
 	require.NoError(t, err, "Should create view successfully")
 	tx5.Commit()
 
 	// Test 6: Get view definition through MetadataManager
-	tx6 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx6 := transactionManager.BeginTransaction()
 	retrievedViewDef, err := mm.GetViewDef("user_view", tx6)
 	require.NoError(t, err, "Should retrieve view definition successfully")
 	assert.Equal(t, viewDef, retrievedViewDef, "Retrieved view definition should match original")
 	tx6.Commit()
 
 	// Test 7: Create an index through MetadataManager
-	tx7 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx7 := transactionManager.BeginTransaction()
 	err = mm.CreateIndex("users_id_idx", "users", "id", tx7)
 	require.NoError(t, err, "Should create index successfully")
 	tx7.Commit()
 
 	// Test 8: Get index info through MetadataManager
-	tx8 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx8 := transactionManager.BeginTransaction()
 	indexInfo, err := mm.GetIndexInfo("users", tx8)
 	require.NoError(t, err, "Should get index info successfully")
 	require.NotNil(t, indexInfo)
@@ -112,7 +113,7 @@ func TestMetadataManager_BasicOperations(t *testing.T) {
 	tx8.Commit()
 
 	// Test 9: Get stat info through MetadataManager
-	tx9 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx9 := transactionManager.BeginTransaction()
 	statInfo, err := mm.GetStatInfo("users", layout, tx9)
 	require.NoError(t, err)
 	require.NotNil(t, statInfo)
@@ -121,14 +122,14 @@ func TestMetadataManager_BasicOperations(t *testing.T) {
 	tx9.Commit()
 
 	// Test 10: Try to get layout for non-existent table
-	tx10 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx10 := transactionManager.BeginTransaction()
 	_, err = mm.GetTableLayout("nonexistent", tx10)
 	require.Error(t, err, "Should return error for non-existent table")
 	assert.Contains(t, err.Error(), "not found")
 	tx10.Commit()
 
 	// Test 11: Try to get view definition for non-existent view
-	tx11 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx11 := transactionManager.BeginTransaction()
 	viewDef, err = mm.GetViewDef("nonexistent_view", tx11)
 	require.NoError(t, err, "Should not return error for non-existent view")
 	assert.Equal(t, "", viewDef, "Should return empty string for non-existent view")

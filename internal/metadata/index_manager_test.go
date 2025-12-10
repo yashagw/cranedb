@@ -31,9 +31,10 @@ func TestIndexManager_BasicOperations(t *testing.T) {
 	lockTable := transaction.NewLockTable()
 	dirtyPageTable := transaction.NewDirtyPageTable()
 	transactionTable := transaction.NewTransactionTable()
+	transactionManager := transaction.NewTransactionManager(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
 
 	// Test 1: Create new IndexManager with new database
-	tx1 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx1 := transactionManager.BeginTransaction()
 	tm := NewTableManager(true, tx1)
 	sm := NewStatsManager(tm, tx1)
 	im := NewIndexManager(true, tm, sm, tx1)
@@ -41,7 +42,7 @@ func TestIndexManager_BasicOperations(t *testing.T) {
 	tx1.Commit()
 
 	// Test 2: Create a new table
-	tx2 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx2 := transactionManager.BeginTransaction()
 	schema := record.NewSchema()
 	schema.AddIntField("id")
 	schema.AddStringField("name", 20)
@@ -50,13 +51,13 @@ func TestIndexManager_BasicOperations(t *testing.T) {
 	tx2.Commit()
 
 	// Test 3: Create an index
-	tx3 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx3 := transactionManager.BeginTransaction()
 	err = im.CreateIndex("users_id_idx", "users", "id", tx3)
 	require.NoError(t, err, "Should create index successfully")
 	tx3.Commit()
 
 	// Test 4: Get index info
-	tx4 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx4 := transactionManager.BeginTransaction()
 	indexInfo, err := im.GetIndexInfo("users", tx4)
 	require.NoError(t, err, "Should get index info successfully")
 	require.NotNil(t, indexInfo)

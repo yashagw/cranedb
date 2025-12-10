@@ -353,3 +353,167 @@ func TestSetBoolLogRecord_EncodeDecode(t *testing.T) {
 	assert.Equal(t, blockNum, decodedRecord.block.Number(), "Block number mismatch")
 	assert.Equal(t, LogRecordSetBool, decodedRecord.Op())
 }
+
+func TestCLRLogRecord_EncodeDecode(t *testing.T) {
+	// Test CLR for SetInt operation
+	t.Run("CLR_SetInt", func(t *testing.T) {
+		tempDir := t.TempDir()
+		fileManager, err := file.NewManager(tempDir, 400)
+		assert.NoError(t, err)
+		logManager, err := log.NewManager(fileManager, "log_test")
+		assert.NoError(t, err)
+
+		// Test data
+		fileName := "test_file"
+		blockNum := 5
+		blockID := file.NewBlockID(fileName, blockNum)
+
+		txNum := int64(42)
+		offset := 100
+		lsn := logManager.GetNextLatestLSN()
+		prevLSN := int64(10)
+		undoNextLSN := int64(5)
+		intValue := 12345
+
+		err = WriteCLRLogRecord(logManager, txNum, lsn, prevLSN, undoNextLSN,
+			LogRecordSetInt, blockID, offset, intValue, "", false)
+		assert.NoError(t, err)
+
+		// Get the last log record
+		iterator, err := logManager.Iterator()
+		assert.NoError(t, err)
+		var lastRecord []byte
+		for iterator.HasNext() {
+			lastRecord = iterator.Next()
+		}
+
+		// Make sure we got a record
+		require.NotNil(t, lastRecord, "No log record was written")
+
+		// Create a page from the log record
+		page := file.NewPageFromBytes(lastRecord)
+
+		// Decode the log record
+		decodedRecord := NewCLRLogRecord(page)
+
+		// Verify the decoded record matches the original
+		assert.Equal(t, txNum, decodedRecord.TxNumber(), "Transaction number mismatch")
+		assert.Equal(t, lsn, decodedRecord.LSN(), "LSN mismatch")
+		assert.Equal(t, prevLSN, decodedRecord.PrevLSN(), "PrevLSN mismatch")
+		assert.Equal(t, undoNextLSN, decodedRecord.UndoNextLSN(), "UndoNextLSN mismatch")
+		assert.Equal(t, LogRecordSetInt, decodedRecord.OriginalOp(), "OriginalOp mismatch")
+		assert.Equal(t, offset, decodedRecord.Offset(), "Offset mismatch")
+		assert.Equal(t, intValue, decodedRecord.GetIntValue(), "Int value mismatch")
+		assert.Equal(t, fileName, decodedRecord.Block().Filename(), "Filename mismatch")
+		assert.Equal(t, blockNum, decodedRecord.Block().Number(), "Block number mismatch")
+		assert.Equal(t, LogRecordCLR, decodedRecord.Op())
+	})
+
+	// Test CLR for SetString operation
+	t.Run("CLR_SetString", func(t *testing.T) {
+		tempDir := t.TempDir()
+		fileManager, err := file.NewManager(tempDir, 400)
+		assert.NoError(t, err)
+		logManager, err := log.NewManager(fileManager, "log_test")
+		assert.NoError(t, err)
+
+		// Test data
+		fileName := "test_file"
+		blockNum := 5
+		blockID := file.NewBlockID(fileName, blockNum)
+
+		txNum := int64(42)
+		offset := 100
+		lsn := logManager.GetNextLatestLSN()
+		prevLSN := int64(10)
+		undoNextLSN := int64(5)
+		stringValue := "test_undo_value"
+
+		err = WriteCLRLogRecord(logManager, txNum, lsn, prevLSN, undoNextLSN,
+			LogRecordSetString, blockID, offset, 0, stringValue, false)
+		assert.NoError(t, err)
+
+		// Get the last log record
+		iterator, err := logManager.Iterator()
+		assert.NoError(t, err)
+		var lastRecord []byte
+		for iterator.HasNext() {
+			lastRecord = iterator.Next()
+		}
+
+		// Make sure we got a record
+		require.NotNil(t, lastRecord, "No log record was written")
+
+		// Create a page from the log record
+		page := file.NewPageFromBytes(lastRecord)
+
+		// Decode the log record
+		decodedRecord := NewCLRLogRecord(page)
+
+		// Verify the decoded record matches the original
+		assert.Equal(t, txNum, decodedRecord.TxNumber(), "Transaction number mismatch")
+		assert.Equal(t, lsn, decodedRecord.LSN(), "LSN mismatch")
+		assert.Equal(t, prevLSN, decodedRecord.PrevLSN(), "PrevLSN mismatch")
+		assert.Equal(t, undoNextLSN, decodedRecord.UndoNextLSN(), "UndoNextLSN mismatch")
+		assert.Equal(t, LogRecordSetString, decodedRecord.OriginalOp(), "OriginalOp mismatch")
+		assert.Equal(t, offset, decodedRecord.Offset(), "Offset mismatch")
+		assert.Equal(t, stringValue, decodedRecord.GetStringValue(), "String value mismatch")
+		assert.Equal(t, fileName, decodedRecord.Block().Filename(), "Filename mismatch")
+		assert.Equal(t, blockNum, decodedRecord.Block().Number(), "Block number mismatch")
+		assert.Equal(t, LogRecordCLR, decodedRecord.Op())
+	})
+
+	// Test CLR for SetBool operation
+	t.Run("CLR_SetBool", func(t *testing.T) {
+		tempDir := t.TempDir()
+		fileManager, err := file.NewManager(tempDir, 400)
+		assert.NoError(t, err)
+		logManager, err := log.NewManager(fileManager, "log_test")
+		assert.NoError(t, err)
+
+		// Test data
+		fileName := "test_file"
+		blockNum := 5
+		blockID := file.NewBlockID(fileName, blockNum)
+
+		txNum := int64(42)
+		offset := 100
+		lsn := logManager.GetNextLatestLSN()
+		prevLSN := int64(10)
+		undoNextLSN := int64(5)
+		boolValue := true
+
+		err = WriteCLRLogRecord(logManager, txNum, lsn, prevLSN, undoNextLSN,
+			LogRecordSetBool, blockID, offset, 0, "", boolValue)
+		assert.NoError(t, err)
+
+		// Get the last log record
+		iterator, err := logManager.Iterator()
+		assert.NoError(t, err)
+		var lastRecord []byte
+		for iterator.HasNext() {
+			lastRecord = iterator.Next()
+		}
+
+		// Make sure we got a record
+		require.NotNil(t, lastRecord, "No log record was written")
+
+		// Create a page from the log record
+		page := file.NewPageFromBytes(lastRecord)
+
+		// Decode the log record
+		decodedRecord := NewCLRLogRecord(page)
+
+		// Verify the decoded record matches the original
+		assert.Equal(t, txNum, decodedRecord.TxNumber(), "Transaction number mismatch")
+		assert.Equal(t, lsn, decodedRecord.LSN(), "LSN mismatch")
+		assert.Equal(t, prevLSN, decodedRecord.PrevLSN(), "PrevLSN mismatch")
+		assert.Equal(t, undoNextLSN, decodedRecord.UndoNextLSN(), "UndoNextLSN mismatch")
+		assert.Equal(t, LogRecordSetBool, decodedRecord.OriginalOp(), "OriginalOp mismatch")
+		assert.Equal(t, offset, decodedRecord.Offset(), "Offset mismatch")
+		assert.Equal(t, boolValue, decodedRecord.GetBoolValue(), "Bool value mismatch")
+		assert.Equal(t, fileName, decodedRecord.Block().Filename(), "Filename mismatch")
+		assert.Equal(t, blockNum, decodedRecord.Block().Number(), "Block number mismatch")
+		assert.Equal(t, LogRecordCLR, decodedRecord.Op())
+	})
+}

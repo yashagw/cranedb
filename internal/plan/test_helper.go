@@ -30,7 +30,8 @@ func setupTestDB(t *testing.T) (string, *transaction.Transaction, *metadata.Mana
 	dirtyPageTable := transaction.NewDirtyPageTable()
 	transactionTable := transaction.NewTransactionTable()
 
-	tx := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	transactionManager := transaction.NewTransactionManager(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx := transactionManager.BeginTransaction()
 	md := metadata.NewManager(true, tx)
 
 	cleanup := func() {

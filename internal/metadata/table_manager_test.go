@@ -32,9 +32,10 @@ func TestTableManager_BasicOperations(t *testing.T) {
 	lockTable := transaction.NewLockTable()
 	dirtyPageTable := transaction.NewDirtyPageTable()
 	transactionTable := transaction.NewTransactionTable()
+	transactionManager := transaction.NewTransactionManager(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
 
 	// Test 1: Create new TableManager (isNew = true)
-	tx1 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx1 := transactionManager.BeginTransaction()
 	tm := NewTableManager(true, tx1)
 	require.NotNil(t, tm)
 	assert.NotNil(t, tm.tableCatelog)
@@ -42,7 +43,7 @@ func TestTableManager_BasicOperations(t *testing.T) {
 	tx1.Commit()
 
 	// Test 2: Create TableManager for existing database (isNew = false)
-	tx2 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx2 := transactionManager.BeginTransaction()
 	tm2 := NewTableManager(false, tx2)
 	require.NotNil(t, tm2)
 	assert.NotNil(t, tm2.tableCatelog)
@@ -50,7 +51,7 @@ func TestTableManager_BasicOperations(t *testing.T) {
 	tx2.Commit()
 
 	// Test 3: Create a new table
-	tx3 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx3 := transactionManager.BeginTransaction()
 	schema := record.NewSchema()
 	schema.AddIntField("id")
 	schema.AddStringField("name", 50)
@@ -60,7 +61,7 @@ func TestTableManager_BasicOperations(t *testing.T) {
 	tx3.Commit()
 
 	// Test 4: Retrieve table layout and verify it matches original schema
-	tx4 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx4 := transactionManager.BeginTransaction()
 	layout, err := tm.GetLayout("users", tx4)
 	require.NoError(t, err, "Should retrieve layout successfully")
 	require.NotNil(t, layout)
@@ -92,14 +93,14 @@ func TestTableManager_BasicOperations(t *testing.T) {
 	tx4.Commit()
 
 	// Test 5: Try to get layout for non-existent table
-	tx5 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx5 := transactionManager.BeginTransaction()
 	_, err = tm.GetLayout("nonexistent", tx5)
 	require.Error(t, err, "Should return error for non-existent table")
 	assert.Contains(t, err.Error(), "not found")
 	tx5.Commit()
 
 	// Test 6: Create another table with different schema
-	tx6 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx6 := transactionManager.BeginTransaction()
 
 	productSchema := record.NewSchema()
 	productSchema.AddStringField("product_id", 20)
@@ -111,7 +112,7 @@ func TestTableManager_BasicOperations(t *testing.T) {
 	tx6.Commit()
 
 	// Test 7: Verify both tables exist and have correct layouts
-	tx7 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx7 := transactionManager.BeginTransaction()
 
 	// Get users layout
 	usersLayout, err := tm.GetLayout("users", tx7)
@@ -128,7 +129,7 @@ func TestTableManager_BasicOperations(t *testing.T) {
 	tx7.Commit()
 
 	// Test 8: Verify catalog data by directly scanning the catalog tables
-	tx8 := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx8 := transactionManager.BeginTransaction()
 
 	// Verify table catalog contains correct data for both tables
 	tcat, err := table.NewTableScan(tx8, tm.tableCatelog, TableCatalogName)

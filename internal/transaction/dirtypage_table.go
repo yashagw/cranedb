@@ -32,6 +32,12 @@ func NewDirtyPageTable() *DirtyPageTable {
 func (dpt *DirtyPageTable) Add(block *file.BlockID, lsn int64) {
 	dpt.mu.Lock()
 	defer dpt.mu.Unlock()
+
+	if lsn < 0 {
+		// invalid LSN, do not add
+		return
+	}
+
 	key := file.MakeBlockKey(block)
 	// Only add if not already present (recLSN is set once when page becomes dirty)
 	if _, exists := dpt.table[key]; !exists {

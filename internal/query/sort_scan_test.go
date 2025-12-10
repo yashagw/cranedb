@@ -30,8 +30,8 @@ func setupSortScanTestDB(t *testing.T) (string, *transaction.Transaction, func()
 	lockTable := transaction.NewLockTable()
 	dirtyPageTable := transaction.NewDirtyPageTable()
 	transactionTable := transaction.NewTransactionTable()
-
-	tx := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	transactionManager := transaction.NewTransactionManager(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+	tx := transactionManager.BeginTransaction()
 
 	cleanup := func() {
 		tx.Commit()

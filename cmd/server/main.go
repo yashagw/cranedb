@@ -32,14 +32,15 @@ const (
 )
 
 type Server struct {
-	fileManager      *file.Manager
-	logManager       *dblog.Manager
-	bufferManager    *buffer.Manager
-	lockTable        *transaction.LockTable
-	dirtyPageTable   *transaction.DirtyPageTable
-	transactionTable *transaction.TransactionTable
-	metadataManager  *metadata.Manager
-	planner          *plan.Planner
+	fileManager        *file.Manager
+	logManager         *dblog.Manager
+	bufferManager      *buffer.Manager
+	lockTable          *transaction.LockTable
+	dirtyPageTable     *transaction.DirtyPageTable
+	transactionTable   *transaction.TransactionTable
+	transactionManager *transaction.TransactionManager
+	metadataManager    *metadata.Manager
+	planner            *plan.Planner
 }
 
 type QueryResponse struct {
@@ -78,6 +79,7 @@ func NewServer(dbDir string) (*Server, error) {
 	lockTable := transaction.NewLockTable()
 	dirtyPageTable := transaction.NewDirtyPageTable()
 	transactionTable := transaction.NewTransactionTable()
+	transactionManager := transaction.NewTransactionManager(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
 
 	isNew := true
 	metadataFile := filepath.Join(dbDir, "table_catelog.tbl")
@@ -85,12 +87,12 @@ func NewServer(dbDir string) (*Server, error) {
 		isNew = false
 	}
 
-	tx := transaction.NewTransaction(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
-	err = tx.DBRecovery()
+	err = transactionManager.PerformDBRecovery()
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform recovery: %w", err)
 	}
 
+	tx := transactionManager.BeginTransaction()
 	md := metadata.NewManager(isNew, tx)
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit initial transaction: %w", err)
@@ -101,14 +103,15 @@ func NewServer(dbDir string) (*Server, error) {
 	planner := plan.NewPlanner(queryPlanner, updatePlanner)
 
 	return &Server{
-		fileManager:      fm,
-		logManager:       lm,
-		bufferManager:    bm,
-		lockTable:        lockTable,
-		dirtyPageTable:   dirtyPageTable,
-		transactionTable: transactionTable,
-		metadataManager:  md,
-		planner:          planner,
+		fileManager:        fm,
+		logManager:         lm,
+		bufferManager:      bm,
+		lockTable:          lockTable,
+		dirtyPageTable:     dirtyPageTable,
+		transactionTable:   transactionTable,
+		transactionManager: transactionManager,
+		metadataManager:    md,
+		planner:            planner,
 	}, nil
 }
 
@@ -233,7 +236,7 @@ func (s *Server) executeQuery(sql string, sess *session.Session) QueryResponse {
 		}
 	}
 
-	tx := transaction.NewTransaction(s.fileManager, s.logManager, s.bufferManager, s.lockTable, s.dirtyPageTable, s.transactionTable)
+	tx := s.transactionManager.BeginTransaction()
 	committed := false
 	defer func() {
 		if !committed {
@@ -419,15 +422,7 @@ func main() {
 		defer ticker.Stop()
 		for {
 			<-ticker.C
-			tx := transaction.NewTransaction(
-				server.fileManager,
-				server.logManager,
-				server.bufferManager,
-				server.lockTable,
-				server.dirtyPageTable,
-				server.transactionTable,
-			)
-			err := tx.TakeCheckpoint()
+			err := server.transactionManager.PerformCheckpoint()
 			if err != nil {
 				slog.Error("Error saving checkpoint", "err", err)
 			} else {

@@ -32,48 +32,13 @@ type Transaction struct {
 	bufferManager      *buffer.Manager
 	recoveryManager    *RecoveryManager
 	concurrencyManager *ConcurrencyManager
-	transactionTable   *TransactionTable
-	dirtyPageTable     *DirtyPageTable
+	transactionManager *TransactionManager
+
+	dirtyPageTable *DirtyPageTable
 
 	txNum      int64
 	prevTxLSN  int64
 	bufferList *BufferList
-}
-
-// NewTransaction creates a new transaction
-func NewTransaction(fileManager *file.Manager, logManager *dblog.Manager, bufferManager *buffer.Manager, lockTable *LockTable, dirtyPageTable *DirtyPageTable, transactionTable *TransactionTable) *Transaction {
-	txNum := getNextTxNum()
-
-	concurrencyManager := NewConcurrencyManager(lockTable)
-	bufferList := NewBufferList(bufferManager)
-
-	transaction := &Transaction{
-		fileManager:        fileManager,
-		logManager:         logManager,
-		bufferManager:      bufferManager,
-		concurrencyManager: concurrencyManager,
-		txNum:              txNum,
-		prevTxLSN:          -1,
-		bufferList:         bufferList,
-		transactionTable:   transactionTable,
-		dirtyPageTable:     dirtyPageTable,
-	}
-	recoveryManager := NewRecoveryManager(txNum, transaction, logManager, bufferManager, dirtyPageTable, transactionTable)
-	transaction.recoveryManager = recoveryManager
-
-	lsn := logManager.GetNextLatestLSN()
-
-	// 1. Write log record first (WAL principle)
-	err := WriteStartLogRecord(logManager, txNum, lsn, -1)
-	if err != nil {
-		return nil
-	}
-	transaction.prevTxLSN = lsn
-
-	// 2. Update TransactionTable
-	transaction.transactionTable.Add(txNum, TransactionStatusRunning, lsn)
-
-	return transaction
 }
 
 func (t *Transaction) Commit() error {
@@ -86,6 +51,8 @@ func (t *Transaction) Commit() error {
 		return err
 	}
 	t.bufferList.UnpinAll()
+	t.transactionManager.EndTransaction(t.txNum, TransactionStatusCommitted)
+
 	return nil
 }
 
@@ -99,25 +66,9 @@ func (t *Transaction) Rollback() error {
 		return err
 	}
 	t.bufferList.UnpinAll()
+	t.transactionManager.EndTransaction(t.txNum, TransactionStatusAborted)
+
 	return nil
-}
-
-func (t *Transaction) DBRecovery() error {
-	return t.recoveryManager.DBRecovery()
-}
-
-// TakeCheckpoint performs a fuzzy checkpoint.
-// This should be called periodically during normal operation.
-func (t *Transaction) TakeCheckpoint() error {
-	return t.recoveryManager.TakeCheckpoint()
-}
-
-func (t *Transaction) Pin(blk *file.BlockID) (*buffer.Buffer, error) {
-	return t.bufferList.Pin(blk)
-}
-
-func (t *Transaction) Unpin(blk *file.BlockID) {
-	t.bufferList.Unpin(blk)
 }
 
 func (t *Transaction) GetInt(blk *file.BlockID, offset int) (int, error) {
@@ -125,7 +76,16 @@ func (t *Transaction) GetInt(blk *file.BlockID, offset int) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+
 	buff := t.bufferList.GetBuffer(blk)
+	if buff == nil {
+		// Buffer not pinned yet, pin it first
+		buff, err = t.bufferList.Pin(blk)
+		if err != nil {
+			return 0, err
+		}
+	}
+
 	val := buff.Contents().GetInt(offset)
 	return val, nil
 }
@@ -135,7 +95,16 @@ func (t *Transaction) GetBool(blk *file.BlockID, offset int) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+
 	buff := t.bufferList.GetBuffer(blk)
+	if buff == nil {
+		// Buffer not pinned yet, pin it first
+		buff, err = t.bufferList.Pin(blk)
+		if err != nil {
+			return false, err
+		}
+	}
+
 	val := buff.Contents().GetBool(offset)
 	return val, nil
 }
@@ -145,7 +114,16 @@ func (t *Transaction) GetString(blk *file.BlockID, offset int) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	buff := t.bufferList.GetBuffer(blk)
+	if buff == nil {
+		// Buffer not pinned yet, pin it first
+		buff, err = t.bufferList.Pin(blk)
+		if err != nil {
+			return "", err
+		}
+	}
+
 	val := buff.Contents().GetString(offset)
 	return val, nil
 }
@@ -157,16 +135,18 @@ func (t *Transaction) GetPageLSN(blk *file.BlockID) (int64, error) {
 	if err != nil {
 		return -1, err
 	}
+
 	buff := t.bufferList.GetBuffer(blk)
 	if buff == nil {
-		// Buffer not pinned yet, pin it first
 		var err error
 		buff, err = t.bufferList.Pin(blk)
 		if err != nil {
 			return -1, err
 		}
 	}
-	return buff.Contents().GetPageLSN(), nil
+
+	val := buff.Contents().GetPageLSN()
+	return val, nil
 }
 
 func (t *Transaction) SetInt(blk *file.BlockID, offset int, val int, log bool) error {
@@ -174,6 +154,7 @@ func (t *Transaction) SetInt(blk *file.BlockID, offset int, val int, log bool) e
 	if err != nil {
 		return err
 	}
+
 	buff := t.bufferList.GetBuffer(blk)
 	if buff == nil {
 		// Buffer not pinned yet, pin it first
@@ -182,19 +163,19 @@ func (t *Transaction) SetInt(blk *file.BlockID, offset int, val int, log bool) e
 			return err
 		}
 	}
+
 	lsn := int64(-1)
 	if log {
 		lsn, err = t.recoveryManager.SetInt(buff, offset, val)
 		if err != nil {
 			return err
 		}
+		t.dirtyPageTable.Add(blk, lsn)
 	}
+
 	page := buff.Contents()
 	page.SetInt(offset, val)
 	buff.SetModified(t.txNum, lsn)
-	if lsn >= 0 {
-		page.SetPageLSN(lsn)
-	}
 
 	return nil
 }
@@ -204,6 +185,7 @@ func (t *Transaction) SetBool(blk *file.BlockID, offset int, val bool, log bool)
 	if err != nil {
 		return err
 	}
+
 	buff := t.bufferList.GetBuffer(blk)
 	if buff == nil {
 		// Buffer not pinned yet, pin it first
@@ -212,19 +194,19 @@ func (t *Transaction) SetBool(blk *file.BlockID, offset int, val bool, log bool)
 			return err
 		}
 	}
+
 	lsn := int64(-1)
 	if log {
 		lsn, err = t.recoveryManager.SetBool(buff, offset, val)
 		if err != nil {
 			return err
 		}
+		t.dirtyPageTable.Add(blk, lsn)
 	}
+
 	page := buff.Contents()
 	page.SetBool(offset, val)
 	buff.SetModified(t.txNum, lsn)
-	if lsn >= 0 {
-		page.SetPageLSN(lsn)
-	}
 
 	return nil
 }
@@ -234,6 +216,7 @@ func (t *Transaction) SetString(blk *file.BlockID, offset int, val string, log b
 	if err != nil {
 		return err
 	}
+
 	buff := t.bufferList.GetBuffer(blk)
 	if buff == nil {
 		// Buffer not pinned yet, pin it first
@@ -242,21 +225,29 @@ func (t *Transaction) SetString(blk *file.BlockID, offset int, val string, log b
 			return err
 		}
 	}
+
 	lsn := int64(-1)
 	if log {
 		lsn, err = t.recoveryManager.SetString(buff, offset, val)
 		if err != nil {
 			return err
 		}
+		t.dirtyPageTable.Add(blk, lsn)
 	}
+
 	page := buff.Contents()
 	page.SetString(offset, val)
 	buff.SetModified(t.txNum, lsn)
-	if lsn >= 0 {
-		page.SetPageLSN(lsn)
-	}
 
 	return nil
+}
+
+func (t *Transaction) Pin(blk *file.BlockID) (*buffer.Buffer, error) {
+	return t.bufferList.Pin(blk)
+}
+
+func (t *Transaction) Unpin(blk *file.BlockID) {
+	t.bufferList.Unpin(blk)
 }
 
 func (t *Transaction) Size(filename string) (int, error) {

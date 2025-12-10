@@ -19,6 +19,7 @@ const (
 	LogRecordSetInt     LogRecordType = 4
 	LogRecordSetString  LogRecordType = 5
 	LogRecordSetBool    LogRecordType = 6
+	LogRecordCLR        LogRecordType = 7
 )
 
 // LogRecord interface
@@ -51,6 +52,8 @@ func CreateLogRecord(bytes []byte) LogRecord {
 		return NewSetStringLogRecord(page)
 	case LogRecordSetBool:
 		return NewSetBoolLogRecord(page)
+	case LogRecordCLR:
+		return NewCLRLogRecord(page)
 	default:
 		panic("invalid operation type")
 	}

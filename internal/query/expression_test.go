@@ -91,8 +91,8 @@ func TestExpressionEvaluate(t *testing.T) {
 	lockTable := transaction.NewLockTable()
 	dirtyPageTable := transaction.NewDirtyPageTable()
 	transactionTable := transaction.NewTransactionTable()
-
-	tx := transaction.NewTransaction(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
+	transactionManager := transaction.NewTransactionManager(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
+	tx := transactionManager.BeginTransaction()
 	require.NotNil(t, tx)
 
 	// Create schema with int and string fields
