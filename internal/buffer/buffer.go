@@ -9,27 +9,29 @@ import (
 
 // Buffer represents a buffer in the buffer pool.
 type Buffer struct {
-	number      int // unique buffer number
-	fileManager *file.Manager
-	logManager  *log.Manager
-	contents    *file.Page
-	blk         *file.BlockID
-	pins        int
-	txNum       int64
-	lsn         int64
+	number         int // unique buffer number
+	fileManager    *file.Manager
+	logManager     *log.Manager
+	dirtyPageTable *DirtyPageTable
+	contents       *file.Page
+	blk            *file.BlockID
+	pins           int
+	txNum          int64
+	lsn            int64
 }
 
-func NewBuffer(fm *file.Manager, lm *log.Manager, number int) *Buffer {
+func NewBuffer(number int, fm *file.Manager, lm *log.Manager, dirtyPageTable *DirtyPageTable) *Buffer {
 	// number will be set by Manager
 	return &Buffer{
-		number:      number,
-		fileManager: fm,
-		logManager:  lm,
-		contents:    file.NewPage(fm.BlockSize()),
-		blk:         nil,
-		pins:        0,
-		txNum:       -1,
-		lsn:         -1,
+		number:         number,
+		fileManager:    fm,
+		logManager:     lm,
+		dirtyPageTable: dirtyPageTable,
+		contents:       file.NewPage(fm.BlockSize()),
+		blk:            nil,
+		pins:           0,
+		txNum:          -1,
+		lsn:            -1,
 	}
 }
 
@@ -53,14 +55,21 @@ func (b *Buffer) unpin() {
 	b.pins--
 }
 
-// SetModified marks this buffer as modified by the specified transaction.
-// If lsn is non-negative, it also sets the log sequence number.
-// Note: pageLSN is only updated when the buffer is flushed to disk, not here.
-func (b *Buffer) SetModified(txnum int64, lsn int64) {
+// SetModifiedTx marks this buffer as modified by the specified transaction.
+func (b *Buffer) SetModifiedTx(txnum int64) {
 	b.txNum = txnum
+}
+
+// SetModifiedLSN marks this buffer as modified with the specified LSN.
+func (b *Buffer) SetModifiedLSN(lsn int64) {
 	if lsn >= 0 {
 		b.lsn = lsn
 	}
+}
+
+// SetBufferPageLSN sets the pageLSN of the buffer's contents.
+func (b *Buffer) SetBufferPageLSN(lsn int64) {
+	b.contents.SetPageLSN(lsn)
 }
 
 // ModifyingTx returns the transaction number that modified this buffer.
@@ -106,19 +115,30 @@ func (b *Buffer) loadBlock(blk *file.BlockID) error {
 }
 
 func (b *Buffer) flush() error {
+	// Only write data to disk if the buffer has been modified
 	if b.txNum >= 0 && b.lsn >= 0 {
+		// 1. Flush log records up to the buffer's LSN
 		err := b.logManager.Flush(b.lsn)
 		if err != nil {
 			return err
 		}
 
+		// 2. Update the pageLSN in the page before writing to disk
 		b.contents.SetPageLSN(b.lsn)
 
+		// 3. Write the buffer's contents to its assigned block on disk
 		err = b.fileManager.Write(b.blk, b.contents)
 		if err != nil {
 			return err
 		}
 
+		// 4. Remove from dirty page table
+		err = b.dirtyPageTable.Remove(b.blk)
+		if err != nil {
+			return err
+		}
+
+		// 5. Reset modification info
 		b.txNum = -1
 		b.lsn = -1
 

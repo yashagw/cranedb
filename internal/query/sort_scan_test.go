@@ -23,12 +23,16 @@ func setupSortScanTestDB(t *testing.T) (string, *transaction.Transaction, func()
 
 	fm, err := file.NewManager(dbPath, 400)
 	require.NoError(t, err)
+
 	lm, err := log.NewManager(fm, "testlog")
 	require.NoError(t, err)
-	bm, err := buffer.NewManager(fm, lm, 20)
+
+	dirtyPageTable := buffer.NewDirtyPageTable()
+
+	bm, err := buffer.NewManager(fm, lm, dirtyPageTable, 20)
 	require.NoError(t, err)
 	lockTable := transaction.NewLockTable()
-	dirtyPageTable := transaction.NewDirtyPageTable()
+
 	transactionTable := transaction.NewTransactionTable()
 	transactionManager := transaction.NewTransactionManager(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
 	tx := transactionManager.BeginTransaction()

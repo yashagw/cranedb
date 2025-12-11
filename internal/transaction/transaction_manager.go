@@ -14,7 +14,7 @@ type TransactionManager struct {
 	logManager       *dblog.Manager
 	bufferManager    *buffer.Manager
 	lockTable        *LockTable
-	dirtyPageTable   *DirtyPageTable
+	dirtyPageTable   *buffer.DirtyPageTable
 	transactionTable *TransactionTable
 
 	// Tracks all active transactions
@@ -23,7 +23,7 @@ type TransactionManager struct {
 }
 
 // NewTransactionManager creates a new transaction manager
-func NewTransactionManager(fileManager *file.Manager, logManager *dblog.Manager, bufferManager *buffer.Manager, lockTable *LockTable, dirtyPageTable *DirtyPageTable, transactionTable *TransactionTable) *TransactionManager {
+func NewTransactionManager(fileManager *file.Manager, logManager *dblog.Manager, bufferManager *buffer.Manager, lockTable *LockTable, dirtyPageTable *buffer.DirtyPageTable, transactionTable *TransactionTable) *TransactionManager {
 	return &TransactionManager{
 		fileManager:        fileManager,
 		logManager:         logManager,

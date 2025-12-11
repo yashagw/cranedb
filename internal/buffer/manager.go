@@ -20,14 +20,14 @@ type Manager struct {
 	flushStopCh  chan struct{}
 }
 
-func NewManager(fileManager *file.Manager, logManager *log.Manager, numOfBuffer int) (*Manager, error) {
+func NewManager(fileManager *file.Manager, logManager *log.Manager, dirtyPageTable *DirtyPageTable, numOfBuffer int) (*Manager, error) {
 	if numOfBuffer <= 0 {
 		return nil, errors.New("number of buffers must be positive")
 	}
 
 	bufferpool := make([]*Buffer, 0, numOfBuffer)
 	for i := 0; i < numOfBuffer; i++ {
-		buf := NewBuffer(fileManager, logManager, i)
+		buf := NewBuffer(i, fileManager, logManager, dirtyPageTable)
 		bufferpool = append(bufferpool, buf)
 	}
 
@@ -53,8 +53,10 @@ func (bm *Manager) StartBackgroundFlush(interval time.Duration) {
 				flushed := 0
 				bm.mu.Lock()
 				for _, buff := range bm.bufferpool {
-					if buff.ModifyingTx() >= 0 && !buff.IsPinned() {
-						_ = buff.flush() // ignore errors for background flush
+					// Only flush unpinned buffers
+					if !buff.IsPinned() {
+						// TODO: do not ignore errors here
+						_ = buff.flush()
 						flushed++
 					}
 				}

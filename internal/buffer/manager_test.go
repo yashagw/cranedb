@@ -23,7 +23,9 @@ func TestManager_BasicOperations(t *testing.T) {
 	assert.NoError(t, err)
 	defer lm.Close()
 
-	bm, err := NewManager(fm, lm, 3)
+	dpt := NewDirtyPageTable()
+
+	bm, err := NewManager(fm, lm, dpt, 3)
 	require.NoError(t, err)
 	assert.Equal(t, 3, bm.Available(), "Should have 3 available buffers initially")
 
@@ -57,8 +59,11 @@ func TestManager_BasicOperations(t *testing.T) {
 	assert.False(t, buff1.IsPinned(), "Buffer should not be pinned after unpinning twice")
 
 	// Test modification tracking
-	buff1.SetModified(123, 456)
+	buff1.SetModifiedTx(123)
 	assert.Equal(t, int64(123), buff1.ModifyingTx(), "Should track modifying transaction")
+
+	buff1.SetModifiedLSN(456)
+	assert.Equal(t, int64(456), buff1.ModifyingLSN(), "Should track LSN")
 
 	// Clean up
 	bm.Unpin(buff2)

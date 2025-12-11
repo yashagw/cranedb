@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/yashagw/cranedb/internal/buffer"
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
 )
@@ -248,13 +249,13 @@ func TestCheckpointLogRecord_EncodeDecode(t *testing.T) {
 		LastLSN: 300,
 	}
 
-	dpt := make(map[file.BlockID]*DirtyPageEntry)
+	dpt := make(map[file.BlockID]*buffer.DirtyPageEntry)
 	block1 := file.NewBlockID("students.tbl", 0)
 	block2 := file.NewBlockID("courses.tbl", 5)
 	block3 := file.NewBlockID("enrollments.tbl", 10)
-	dpt[file.MakeBlockKey(block1)] = &DirtyPageEntry{RecLSN: 50}
-	dpt[file.MakeBlockKey(block2)] = &DirtyPageEntry{RecLSN: 150}
-	dpt[file.MakeBlockKey(block3)] = &DirtyPageEntry{RecLSN: 250}
+	dpt[file.MakeBlockKey(block1)] = &buffer.DirtyPageEntry{RecLSN: 50}
+	dpt[file.MakeBlockKey(block2)] = &buffer.DirtyPageEntry{RecLSN: 150}
+	dpt[file.MakeBlockKey(block3)] = &buffer.DirtyPageEntry{RecLSN: 250}
 
 	err = WriteCheckpointLogRecord(logManager, lsn, txTable, dpt)
 	assert.NoError(t, err)

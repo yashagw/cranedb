@@ -16,11 +16,11 @@ type RecoveryManager struct {
 	transaction      *Transaction
 	logManager       *log.Manager
 	bufferManager    *buffer.Manager
-	dirtyPageTable   *DirtyPageTable
+	dirtyPageTable   *buffer.DirtyPageTable
 	transactionTable *TransactionTable
 }
 
-func NewRecoveryManager(txNum int64, transaction *Transaction, logManager *log.Manager, bufferManager *buffer.Manager, dirtyPageTable *DirtyPageTable, transactionTable *TransactionTable) *RecoveryManager {
+func NewRecoveryManager(txNum int64, transaction *Transaction, logManager *log.Manager, bufferManager *buffer.Manager, dirtyPageTable *buffer.DirtyPageTable, transactionTable *TransactionTable) *RecoveryManager {
 	return &RecoveryManager{
 		txNum:            txNum,
 		transaction:      transaction,
@@ -52,39 +52,48 @@ func (rm *RecoveryManager) Commit() error {
 }
 
 func (rm *RecoveryManager) Rollback() error {
-	// Perform undo operations first
+	// TODO: PERFORMANCE BOTTLENECK
+	// Currently, we scan the entire log file to find records for this transaction.
+	// This is inefficient (O(N) of total log size) and memory intensive.
+	// FUTURE OPTIMIZATION:
+	// 1. Implement random access in LogManager (ReadLogRecord(lsn)).
+	//    The LSN should map to a physical offset in the log file.
+	// 2. Instead of building this map, we should traverse the log chain backwards
+	//    one by one using the PrevLSN pointer in each record:
+	//    CurrentLSN -> Record.PrevLSN -> ... -> StartRecord.
+
+	// Build a map of log records for this transaction
 	lmIterator, err := rm.logManager.Iterator()
 	if err != nil {
 		return err
 	}
 
+	txLogRecords := make(map[int64]LogRecord)
 	for lmIterator.HasNext() {
 		logBytes := lmIterator.Next()
 		record := CreateLogRecord(logBytes)
 
 		if record.TxNumber() == rm.txNum {
-			// Stop at Start log record
-			if record.Op() == LogRecordStart {
-				break
-			}
-			err := record.Undo(rm.transaction)
-			if err != nil {
-				return err
-			}
+			txLogRecords[record.LSN()] = record
 		}
 	}
 
+	// Perform ARIES undo with CLR generation
+	err = rm.undoTransaction(rm.txNum, rm.transaction.prevTxLSN, txLogRecords)
+	if err != nil {
+		return err
+	}
+
+	// Write rollback log record
 	lsn := rm.logManager.GetNextLatestLSN()
 	prevLSN := rm.transaction.prevTxLSN
-
-	// Write rollback log record (WAL principle)
 	err = WriteRollbackLogRecord(rm.logManager, rm.txNum, lsn, prevLSN)
 	if err != nil {
 		return err
 	}
 	rm.transaction.prevTxLSN = lsn
 
-	// Flush log up to rollback record LSN (ARIES: no need to flush data buffers)
+	// Flush log up to rollback record LSN
 	err = rm.logManager.Flush(lsn)
 	if err != nil {
 		return err
@@ -154,7 +163,7 @@ func (rm *RecoveryManager) SetBool(buf *buffer.Buffer, offset int, newValue bool
 // This should be called periodically (e.g., every N seconds or after N transactions).
 // Checkpoint writes a fuzzy checkpoint log record for recovery purposes.
 // Accepts snapshots of TransactionTable and DirtyPageTable as input.
-func (rm *RecoveryManager) Checkpoint(txTableSnapshot map[int64]*TransactionEntry, dptSnapshot map[file.BlockID]*DirtyPageEntry) error {
+func (rm *RecoveryManager) Checkpoint(txTableSnapshot map[int64]*TransactionEntry, dptSnapshot map[file.BlockID]*buffer.DirtyPageEntry) error {
 	slog.Info("Saving fuzzy checkpoint...")
 	lsn := rm.logManager.GetNextLatestLSN()
 
@@ -186,16 +195,15 @@ func (rm *RecoveryManager) DBRecovery() error {
 		return err
 	}
 
-	// Step 2: Analysis pass - identify winner and loser transactions
-	// Winner: transactions that committed after checkpoint
-	// Loser: transactions that were active at checkpoint or started after but didn't commit
-	finishedTXs := make(map[int64]bool)
+	// Step 2: Analysis pass - rebuild Transaction Table and Dirty Page Table
+	// Scan from checkpoint to end of log, updating tables based on log records
 	lmIterator, err := rm.logManager.Iterator()
 	if err != nil {
 		return err
 	}
 
-	// Find all committed/rolled back transactions after checkpoint
+	// Collect all log records from end of log back to checkpoint
+	var logRecords []LogRecord
 	for lmIterator.HasNext() {
 		logBytes := lmIterator.Next()
 		record := CreateLogRecord(logBytes)
@@ -208,9 +216,77 @@ func (rm *RecoveryManager) DBRecovery() error {
 				}
 			}
 		}
+		logRecords = append(logRecords, record)
+	}
 
-		if record.Op() == LogRecordCommit || record.Op() == LogRecordRollback {
-			finishedTXs[record.TxNumber()] = true
+	// Process records in forward order (reverse since iterator goes backward)
+	finishedTXs := make(map[int64]bool)
+	for i := len(logRecords) - 1; i >= 0; i-- {
+		record := logRecords[i]
+		txNum := record.TxNumber()
+
+		switch record.Op() {
+		case LogRecordStart:
+			// Add new transaction to Transaction Table
+			if startRecord, ok := record.(*StartLogRecord); ok {
+				rm.transactionTable.Add(txNum, TransactionStatusRunning, startRecord.LSN())
+			}
+
+		case LogRecordCommit:
+			// Mark transaction as committed and update lastLSN
+			finishedTXs[txNum] = true
+			if commitRecord, ok := record.(*CommitLogRecord); ok {
+				rm.transactionTable.UpdateStatus(txNum, TransactionStatusCommitted)
+				rm.transactionTable.UpdateLastLSN(txNum, commitRecord.LSN())
+			}
+
+		case LogRecordRollback:
+			// Mark transaction as aborted and update lastLSN
+			finishedTXs[txNum] = true
+			if rollbackRecord, ok := record.(*RollbackLogRecord); ok {
+				rm.transactionTable.UpdateStatus(txNum, TransactionStatusAborted)
+				rm.transactionTable.UpdateLastLSN(txNum, rollbackRecord.LSN())
+			}
+
+		case LogRecordSetInt, LogRecordSetString, LogRecordSetBool:
+			// Update Transaction Table lastLSN for data modification records
+			if dataRecord, ok := record.(DataModificationRecord); ok {
+				recordLSN := record.LSN()
+				blockID := dataRecord.Block()
+
+				// Update transaction's lastLSN
+				if entry, exists := rm.transactionTable.Get(txNum); exists {
+					if recordLSN > entry.LastLSN {
+						rm.transactionTable.UpdateLastLSN(txNum, recordLSN)
+					}
+				} else {
+					// Transaction not in table - add it as running
+					rm.transactionTable.Add(txNum, TransactionStatusRunning, recordLSN)
+				}
+
+				// Add page to Dirty Page Table if not already present
+				rm.dirtyPageTable.Add(blockID, recordLSN)
+			}
+
+		case LogRecordCLR:
+			// Update Transaction Table lastLSN for CLR records
+			if dataRecord, ok := record.(DataModificationRecord); ok {
+				recordLSN := record.LSN()
+				blockID := dataRecord.Block()
+
+				// Update transaction's lastLSN
+				if entry, exists := rm.transactionTable.Get(txNum); exists {
+					if recordLSN > entry.LastLSN {
+						rm.transactionTable.UpdateLastLSN(txNum, recordLSN)
+					}
+				} else {
+					// Transaction not in table - add it as running
+					rm.transactionTable.Add(txNum, TransactionStatusRunning, recordLSN)
+				}
+
+				// Add page to Dirty Page Table if not already present
+				rm.dirtyPageTable.Add(blockID, recordLSN)
+			}
 		}
 	}
 
@@ -254,19 +330,9 @@ func (rm *RecoveryManager) DBRecovery() error {
 			}
 		}
 
-		// Only redo data modification records (SetInt, SetString, SetBool)
-		if record.Op() == LogRecordSetInt || record.Op() == LogRecordSetString || record.Op() == LogRecordSetBool {
-			var recordLSN int64
-			switch r := record.(type) {
-			case *SetIntLogRecord:
-				recordLSN = r.LSN()
-			case *SetStringLogRecord:
-				recordLSN = r.LSN()
-			case *SetBoolLogRecord:
-				recordLSN = r.LSN()
-			default:
-				continue
-			}
+		// Only redo data modification records (SetInt, SetString, SetBool, CLR)
+		if record.Op() == LogRecordSetInt || record.Op() == LogRecordSetString || record.Op() == LogRecordSetBool || record.Op() == LogRecordCLR {
+			recordLSN := record.LSN()
 
 			// Only redo if record LSN >= minRecLSN
 			if recordLSN >= minRecLSN {
@@ -291,12 +357,26 @@ func (rm *RecoveryManager) DBRecovery() error {
 				rm.transaction.Unpin(r.Block())
 			case *SetBoolLogRecord:
 				rm.transaction.Unpin(r.Block())
+			case *CLRLogRecord:
+				rm.transaction.Unpin(r.Block())
 			}
 		}
 	}
 
-	// Step 4: Undo pass - undo all loser transactions
+	// Step 4: Undo pass - undo all loser transactions using CLRs
 	// Loser transactions are those in TransactionTable that are not in finishedTXs
+
+	// Get all loser transactions with their lastLSN values
+	loserTxs := make(map[int64]int64) // txNum -> lastLSN
+	txTableSnapshot := rm.transactionTable.GetAll()
+	for txNum, entry := range txTableSnapshot {
+		if !finishedTXs[txNum] {
+			loserTxs[txNum] = entry.LastLSN
+		}
+	}
+
+	// Build a map of all log records for efficient lookup by LSN
+	allLogRecords := make(map[int64]LogRecord)
 	lmIterator, err = rm.logManager.Iterator()
 	if err != nil {
 		return err
@@ -306,36 +386,15 @@ func (rm *RecoveryManager) DBRecovery() error {
 		logBytes := lmIterator.Next()
 		record := CreateLogRecord(logBytes)
 
-		// Stop at checkpoint
-		if record.Op() == LogRecordCheckpoint {
-			if checkpointRecord, ok := record.(*CheckpointLogRecord); ok {
-				if checkpointRecord.LSN() == checkpointLSN {
-					break
-				}
-			}
-		}
+		// All log records now have LSN() method from the interface
+		allLogRecords[record.LSN()] = record
+	}
 
-		txNum := record.TxNumber()
-		// Undo if this is a loser transaction (not finished)
-		if txNum >= 0 && !finishedTXs[txNum] {
-			err := record.Undo(rm.transaction)
-			if err != nil {
-				return err
-			}
-			// Unpin the buffer after undo to prevent buffer pool exhaustion during recovery
-			if record.Op() == LogRecordSetInt {
-				if setIntRecord, ok := record.(*SetIntLogRecord); ok {
-					rm.transaction.Unpin(setIntRecord.block)
-				}
-			} else if record.Op() == LogRecordSetString {
-				if setStringRecord, ok := record.(*SetStringLogRecord); ok {
-					rm.transaction.Unpin(setStringRecord.block)
-				}
-			} else if record.Op() == LogRecordSetBool {
-				if setBoolRecord, ok := record.(*SetBoolLogRecord); ok {
-					rm.transaction.Unpin(setBoolRecord.block)
-				}
-			}
+	// Undo each loser transaction by following its LSN chain backwards
+	for txNum, lastLSN := range loserTxs {
+		err = rm.undoTransaction(txNum, lastLSN, allLogRecords)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -386,4 +445,148 @@ func (rm *RecoveryManager) findAndRestoreCheckpoint() (int64, error) {
 	}
 
 	return checkpointLSN, nil
+}
+
+// undoTransaction performs ARIES undo for a single transaction
+// Follows the transaction's LSN chain backwards, undoing operations and generating CLRs
+func (rm *RecoveryManager) undoTransaction(txNum int64, lastLSN int64, allLogRecords map[int64]LogRecord) error {
+	currentLSN := lastLSN
+
+undoLoop:
+	for currentLSN >= 0 {
+		record, exists := allLogRecords[currentLSN]
+		if !exists {
+			// LSN not found - this shouldn't happen in a correct log
+			slog.Warn("LSN not found in log records during undo", "txNum", txNum, "LSN", currentLSN)
+			break undoLoop
+		}
+
+		// Only process records for this transaction
+		if record.TxNumber() != txNum {
+			// Mismatched transaction - this shouldn't happen in a correct log
+			slog.Warn("Mismatched transaction in log records during undo", "expectedTxNum", txNum, "foundTxNum", record.TxNumber(), "LSN", currentLSN)
+			break undoLoop
+		}
+
+		var nextLSN int64 = -1
+
+		switch record.Op() {
+		case LogRecordSetInt, LogRecordSetString, LogRecordSetBool:
+			// Undo the operation and generate a CLR
+			err := rm.undoDataModification(record)
+			if err != nil {
+				return err
+			}
+			nextLSN = record.PrevLSN()
+		case LogRecordCLR:
+			// For CLR, follow undoNextLSN instead of prevLSN
+			if clrRecord, ok := record.(*CLRLogRecord); ok {
+				nextLSN = clrRecord.UndoNextLSN()
+			}
+		case LogRecordStart:
+			// Reached start of transaction - we're done
+			break undoLoop
+		case LogRecordRollback:
+			nextLSN = record.PrevLSN()
+		case LogRecordCommit:
+			// It should not happen to encounter a commit record during undo
+			slog.Error("Encountered commit record during undo", "txNum", txNum, "LSN", currentLSN)
+			break undoLoop
+		default:
+			// Unexpected record type
+			slog.Error("Unexpected log record type during undo", "txNum", txNum, "LSN", currentLSN, "Op", record.Op())
+			break undoLoop
+		}
+
+		currentLSN = nextLSN
+	}
+
+	return nil
+}
+
+// undoDataModification undoes a data modification operation and generates a CLR
+func (rm *RecoveryManager) undoDataModification(record LogRecord) error {
+	switch r := record.(type) {
+	case *SetIntLogRecord:
+		// Perform the undo operation (restore old value)
+		err := rm.transaction.SetInt(r.Block(), r.Offset(), r.OldValue(), false)
+		if err != nil {
+			return err
+		}
+
+		// Generate CLR
+		clrLSN := rm.logManager.GetNextLatestLSN()
+		prevLSN := rm.transaction.prevTxLSN
+		undoNextLSN := r.PrevLSN()
+
+		err = WriteCLRLogRecord(rm.logManager, rm.txNum, clrLSN, prevLSN, undoNextLSN,
+			LogRecordSetInt, r.Block(), r.Offset(), r.OldValue(), "", false)
+		if err != nil {
+			return err
+		}
+		rm.transaction.prevTxLSN = clrLSN
+
+		// Update LSN on the page after undo
+		err = rm.transaction.ForceUpdatePageLSN(r.Block(), clrLSN)
+		if err != nil {
+			return err
+		}
+
+		// Unpin the buffer after undo
+		rm.transaction.Unpin(r.Block())
+	case *SetStringLogRecord:
+		// Perform the undo operation (restore old value)
+		err := rm.transaction.SetString(r.Block(), r.Offset(), r.OldValue(), false)
+		if err != nil {
+			return err
+		}
+
+		// Generate CLR
+		clrLSN := rm.logManager.GetNextLatestLSN()
+		prevLSN := rm.transaction.prevTxLSN
+		undoNextLSN := r.PrevLSN()
+
+		err = WriteCLRLogRecord(rm.logManager, rm.txNum, clrLSN, prevLSN, undoNextLSN,
+			LogRecordSetString, r.Block(), r.Offset(), 0, r.OldValue(), false)
+		if err != nil {
+			return err
+		}
+		rm.transaction.prevTxLSN = clrLSN
+
+		err = rm.transaction.ForceUpdatePageLSN(r.Block(), clrLSN)
+		if err != nil {
+			return err
+		}
+
+		// Unpin the buffer after undo
+		rm.transaction.Unpin(r.Block())
+	case *SetBoolLogRecord:
+		// Perform the undo operation (restore old value)
+		err := rm.transaction.SetBool(r.Block(), r.Offset(), r.OldValue(), false)
+		if err != nil {
+			return err
+		}
+
+		// Generate CLR
+		clrLSN := rm.logManager.GetNextLatestLSN()
+		prevLSN := rm.transaction.prevTxLSN
+		undoNextLSN := r.PrevLSN()
+
+		err = WriteCLRLogRecord(rm.logManager, rm.txNum, clrLSN, prevLSN, undoNextLSN,
+			LogRecordSetBool, r.Block(), r.Offset(), 0, "", r.OldValue())
+		if err != nil {
+			return err
+		}
+		rm.transaction.prevTxLSN = clrLSN
+
+		err = rm.transaction.ForceUpdatePageLSN(r.Block(), clrLSN)
+		if err != nil {
+			return err
+		}
+
+		// Unpin the buffer after undo
+		rm.transaction.Unpin(r.Block())
+	}
+
+	return nil
 }

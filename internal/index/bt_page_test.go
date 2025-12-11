@@ -23,11 +23,12 @@ func setupBTPageTest(t *testing.T) (*transaction.Transaction, *record.Layout, fu
 	logManager, err := log.NewManager(fileManager, "btpage_test.log")
 	require.NoError(t, err)
 
-	bufferManager, err := buffer.NewManager(fileManager, logManager, 10)
+	dpt := buffer.NewDirtyPageTable()
+	bufferManager, err := buffer.NewManager(fileManager, logManager, dpt, 10)
 	require.NoError(t, err)
 
 	lockTable := transaction.NewLockTable()
-	dirtyPageTable := transaction.NewDirtyPageTable()
+	dirtyPageTable := buffer.NewDirtyPageTable()
 	transactionTable := transaction.NewTransactionTable()
 	transactionManager := transaction.NewTransactionManager(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
 	tx := transactionManager.BeginTransaction()

@@ -34,7 +34,7 @@ type Transaction struct {
 	concurrencyManager *ConcurrencyManager
 	transactionManager *TransactionManager
 
-	dirtyPageTable *DirtyPageTable
+	dirtyPageTable *buffer.DirtyPageTable
 
 	txNum      int64
 	prevTxLSN  int64
@@ -149,6 +149,32 @@ func (t *Transaction) GetPageLSN(blk *file.BlockID) (int64, error) {
 	return val, nil
 }
 
+// ForceUpdatePageLSN is used exclusively during the ARIES Undo Pass
+// after a CLR is written.
+func (t *Transaction) ForceUpdatePageLSN(blk *file.BlockID, clrLSN int64) error {
+	err := t.concurrencyManager.xLock(blk)
+	if err != nil {
+		return err
+	}
+
+	buff := t.bufferList.GetBuffer(blk)
+	if buff == nil {
+		// Buffer not pinned yet, pin it first
+		buff, err = t.bufferList.Pin(blk)
+		if err != nil {
+			return err
+		}
+	}
+
+	buff.SetModifiedTx(t.txNum)
+	buff.SetModifiedLSN(clrLSN)
+
+	// TODO: Do we need it here?
+	buff.SetBufferPageLSN(clrLSN)
+
+	return nil
+}
+
 func (t *Transaction) SetInt(blk *file.BlockID, offset int, val int, log bool) error {
 	err := t.concurrencyManager.xLock(blk)
 	if err != nil {
@@ -175,7 +201,8 @@ func (t *Transaction) SetInt(blk *file.BlockID, offset int, val int, log bool) e
 
 	page := buff.Contents()
 	page.SetInt(offset, val)
-	buff.SetModified(t.txNum, lsn)
+	buff.SetModifiedTx(t.txNum)
+	buff.SetBufferPageLSN(lsn)
 
 	return nil
 }
@@ -206,7 +233,8 @@ func (t *Transaction) SetBool(blk *file.BlockID, offset int, val bool, log bool)
 
 	page := buff.Contents()
 	page.SetBool(offset, val)
-	buff.SetModified(t.txNum, lsn)
+	buff.SetModifiedTx(t.txNum)
+	buff.SetModifiedLSN(lsn)
 
 	return nil
 }
@@ -232,12 +260,17 @@ func (t *Transaction) SetString(blk *file.BlockID, offset int, val string, log b
 		if err != nil {
 			return err
 		}
+		// TODO: maybe move it to buffer.SetModified?
+		// Also dirtyPageTable is in the hotPath here
+		// Each SetXXX calls dirtyPageTable.Add which acquires a global lock
+		// Consider optimizing this later if it becomes a bottleneck
 		t.dirtyPageTable.Add(blk, lsn)
 	}
 
 	page := buff.Contents()
 	page.SetString(offset, val)
-	buff.SetModified(t.txNum, lsn)
+	buff.SetModifiedTx(t.txNum)
+	buff.SetModifiedLSN(lsn)
 
 	return nil
 }

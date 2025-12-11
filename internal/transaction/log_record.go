@@ -26,9 +26,26 @@ const (
 type LogRecord interface {
 	Op() LogRecordType
 	TxNumber() int64
+	LSN() int64
+	PrevLSN() int64
 	Undo(tx *Transaction) error
 	Redo(tx *Transaction) (bool, error)
 }
+
+// DataModificationRecord interface for records that modify data blocks
+type DataModificationRecord interface {
+	LogRecord
+	Block() *file.BlockID
+}
+
+var _ LogRecord = (*StartLogRecord)(nil)
+var _ LogRecord = (*CommitLogRecord)(nil)
+var _ LogRecord = (*RollbackLogRecord)(nil)
+var _ LogRecord = (*CheckpointLogRecord)(nil)
+var _ DataModificationRecord = (*SetIntLogRecord)(nil)
+var _ DataModificationRecord = (*SetStringLogRecord)(nil)
+var _ DataModificationRecord = (*SetBoolLogRecord)(nil)
+var _ DataModificationRecord = (*CLRLogRecord)(nil)
 
 // CreateLogRecord returns the correct LogRecord based on the operation type
 func CreateLogRecord(bytes []byte) LogRecord {

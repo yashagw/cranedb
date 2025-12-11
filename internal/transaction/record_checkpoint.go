@@ -1,15 +1,20 @@
 package transaction
 
 import (
+	"github.com/yashagw/cranedb/internal/buffer"
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
 )
 
+// TODO: Optimize it and break it into BEGIN and END checkpoint records
+// So that a long TT and DPT can be written in multiple log records
+// Also crash might happen while writing big checkpoint record
+// so it is always good to have smaller records
 type CheckpointLogRecord struct {
 	LogRecord
 	lsn              int64
 	transactionTable map[int64]*TransactionEntry
-	dirtyPageTable   map[file.BlockID]*DirtyPageEntry
+	dirtyPageTable   map[file.BlockID]*buffer.DirtyPageEntry
 }
 
 // NewCheckpointLogRecord creates a new CheckpointLogRecord
@@ -44,7 +49,7 @@ func NewCheckpointLogRecord(page *file.Page) *CheckpointLogRecord {
 	dptSize := int(page.GetIntRaw(dptSizePos))
 	dptPos := dptSizePos + 4
 
-	dirtyPageTable := make(map[file.BlockID]*DirtyPageEntry, dptSize)
+	dirtyPageTable := make(map[file.BlockID]*buffer.DirtyPageEntry, dptSize)
 	for i := 0; i < dptSize; i++ {
 		filenameBytes := page.GetBytesArrayRaw(dptPos)
 		filename := string(filenameBytes)
@@ -60,7 +65,7 @@ func NewCheckpointLogRecord(page *file.Page) *CheckpointLogRecord {
 
 		blockID := file.NewBlockID(filename, blkNum)
 		key := file.MakeBlockKey(blockID)
-		dirtyPageTable[key] = &DirtyPageEntry{
+		dirtyPageTable[key] = &buffer.DirtyPageEntry{
 			RecLSN: recLSN,
 		}
 	}
@@ -94,7 +99,7 @@ func (s *CheckpointLogRecord) TransactionTable() map[int64]*TransactionEntry {
 }
 
 // DirtyPageTable returns the dirty page table snapshot from the checkpoint
-func (s *CheckpointLogRecord) DirtyPageTable() map[file.BlockID]*DirtyPageEntry {
+func (s *CheckpointLogRecord) DirtyPageTable() map[file.BlockID]*buffer.DirtyPageEntry {
 	return s.dirtyPageTable
 }
 
@@ -111,7 +116,7 @@ func (s *CheckpointLogRecord) Redo(tx *Transaction) (bool, error) {
 }
 
 // WriteCheckpointLogRecord writes a CheckpointLogRecord to the log manager
-func WriteCheckpointLogRecord(lm *log.Manager, lsn int64, transactionTable map[int64]*TransactionEntry, dirtyPageTable map[file.BlockID]*DirtyPageEntry) error {
+func WriteCheckpointLogRecord(lm *log.Manager, lsn int64, transactionTable map[int64]*TransactionEntry, dirtyPageTable map[file.BlockID]*buffer.DirtyPageEntry) error {
 	opPos := 0
 	lsnPos := opPos + LogRecordTypeSize()
 	txTableSizePos := lsnPos + 8

@@ -15,7 +15,8 @@ func TestBufferList_PinAndUnpin(t *testing.T) {
 	assert.NoError(t, err)
 	logManager, err := log.NewManager(fileManager, "test.log")
 	assert.NoError(t, err)
-	bufferManager, err := buffer.NewManager(fileManager, logManager, 10) // 10 buffers
+	dpt := buffer.NewDirtyPageTable()
+	bufferManager, err := buffer.NewManager(fileManager, logManager, dpt, 10) // 10 buffers
 	assert.NoError(t, err)
 	bufferList := NewBufferList(bufferManager)
 	block := file.NewBlockID("testfile", 1)

@@ -27,10 +27,12 @@ func TestStatsManager_BasicOperations(t *testing.T) {
 	assert.NoError(t, err)
 	defer lm.Close()
 
-	bm, err := buffer.NewManager(fm, lm, 10)
+	dirtyPageTable := buffer.NewDirtyPageTable()
+
+	bm, err := buffer.NewManager(fm, lm, dirtyPageTable, 10)
 	require.NoError(t, err)
 	lockTable := transaction.NewLockTable()
-	dirtyPageTable := transaction.NewDirtyPageTable()
+
 	transactionTable := transaction.NewTransactionTable()
 
 	// Test 1: Create new StatsManager
@@ -136,10 +138,12 @@ func TestStatsManager_DistinctValues(t *testing.T) {
 	assert.NoError(t, err)
 	defer lm.Close()
 
-	bm, err := buffer.NewManager(fm, lm, 10)
+	dirtyPageTable := buffer.NewDirtyPageTable()
+
+	bm, err := buffer.NewManager(fm, lm, dirtyPageTable, 10)
 	require.NoError(t, err, "Should create buffer manager successfully")
+
 	lockTable := transaction.NewLockTable()
-	dirtyPageTable := transaction.NewDirtyPageTable()
 	transactionTable := transaction.NewTransactionTable()
 
 	// Setup database

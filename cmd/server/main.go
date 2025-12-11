@@ -36,7 +36,7 @@ type Server struct {
 	logManager         *dblog.Manager
 	bufferManager      *buffer.Manager
 	lockTable          *transaction.LockTable
-	dirtyPageTable     *transaction.DirtyPageTable
+	dirtyPageTable     *buffer.DirtyPageTable
 	transactionTable   *transaction.TransactionTable
 	transactionManager *transaction.TransactionManager
 	metadataManager    *metadata.Manager
@@ -71,13 +71,15 @@ func NewServer(dbDir string) (*Server, error) {
 		return nil, fmt.Errorf("failed to create log manager: %w", err)
 	}
 
-	bm, err := buffer.NewManager(fm, lm, DefaultBufferSize)
+	dirtyPageTable := buffer.NewDirtyPageTable()
+
+	bm, err := buffer.NewManager(fm, lm, dirtyPageTable, DefaultBufferSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create buffer manager: %w", err)
 	}
 
 	lockTable := transaction.NewLockTable()
-	dirtyPageTable := transaction.NewDirtyPageTable()
+
 	transactionTable := transaction.NewTransactionTable()
 	transactionManager := transaction.NewTransactionManager(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
 
