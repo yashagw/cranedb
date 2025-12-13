@@ -9,6 +9,7 @@ import (
 
 // Manager manages the log file for the database.
 // It provides methods to append log records and iterate over them.
+// TODO: Implement ReadRecord(lsn) to allow random access to log records.
 type Manager struct {
 	fileManager  *file.Manager
 	logFilename  string

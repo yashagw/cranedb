@@ -321,13 +321,9 @@ func (rm *RecoveryManager) DBRecovery() error {
 		logBytes := lmIterator.Next()
 		record := CreateLogRecord(logBytes)
 
-		// Stop at checkpoint
-		if record.Op() == LogRecordCheckpoint {
-			if checkpointRecord, ok := record.(*CheckpointLogRecord); ok {
-				if checkpointRecord.LSN() == checkpointLSN {
-					break
-				}
-			}
+		// Stop if we've gone past the minRecLSN
+		if record.LSN() < minRecLSN {
+			break
 		}
 
 		// Only redo data modification records (SetInt, SetString, SetBool, CLR)

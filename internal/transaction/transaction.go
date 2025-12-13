@@ -202,7 +202,7 @@ func (t *Transaction) SetInt(blk *file.BlockID, offset int, val int, log bool) e
 	page := buff.Contents()
 	page.SetInt(offset, val)
 	buff.SetModifiedTx(t.txNum)
-	buff.SetBufferPageLSN(lsn)
+	buff.SetModifiedLSN(lsn)
 
 	return nil
 }
