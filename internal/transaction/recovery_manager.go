@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/yashagw/cranedb/internal/buffer"
+	"github.com/yashagw/cranedb/internal/failpoint"
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
 )
@@ -35,12 +36,16 @@ func (rm *RecoveryManager) Commit() error {
 	lsn := rm.logManager.GetNextLatestLSN()
 	prevLSN := rm.transaction.prevTxLSN
 
+	failpoint.InjectPanic("before-commit-log-record-write", nil)
+
 	// Write commit log record (WAL principle)
 	err := WriteCommitLogRecord(rm.logManager, rm.txNum, lsn, prevLSN)
 	if err != nil {
 		return err
 	}
 	rm.transaction.prevTxLSN = lsn
+
+	failpoint.InjectPanic("before-commit-log-flush", nil)
 
 	// Flush log up to commit record LSN (ARIES: no need to flush data buffers)
 	err = rm.logManager.Flush(lsn)
@@ -92,6 +97,8 @@ func (rm *RecoveryManager) Rollback() error {
 		return err
 	}
 	rm.transaction.prevTxLSN = lsn
+
+	failpoint.InjectPanic("before-rollback-log-flush", nil)
 
 	// Flush log up to rollback record LSN
 	err = rm.logManager.Flush(lsn)
@@ -172,6 +179,8 @@ func (rm *RecoveryManager) Checkpoint(txTableSnapshot map[int64]*TransactionEntr
 	if err != nil {
 		return err
 	}
+
+	failpoint.InjectPanic("before-checkpoint-log-flush", nil)
 
 	// Flush log up to checkpoint LSN
 	err = rm.logManager.Flush(lsn)

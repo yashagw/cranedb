@@ -73,6 +73,39 @@ func (bm *Manager) StopBackgroundFlush() {
 	close(bm.flushStopCh)
 }
 
+// CountDirtyBuffers returns the number of dirty, unpinned buffers.
+// A buffer is dirty if it has txNum >= 0 and lsn >= 0.
+func (bm *Manager) CountDirtyBuffers() int {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+
+	count := 0
+	for _, buff := range bm.bufferpool {
+		if !buff.IsPinned() && buff.ModifyingTx() >= 0 && buff.ModifyingLSN() >= 0 {
+			count++
+		}
+	}
+	return count
+}
+
+// FlushAllDirtyBuffers flushes all dirty, unpinned buffers synchronously.
+// This is useful for testing or forcing immediate persistence.
+func (bm *Manager) FlushAllDirtyBuffers() error {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+
+	for _, buff := range bm.bufferpool {
+		// Only flush unpinned buffers
+		if !buff.IsPinned() && buff.ModifyingTx() >= 0 && buff.ModifyingLSN() >= 0 {
+			err := buff.flush()
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (bm *Manager) Available() int {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()

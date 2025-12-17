@@ -107,16 +107,17 @@ func (tm *TransactionManager) GetActiveTransactions() []int64 {
 // The TransactionTable is updated here with current transaction states.
 func (tm *TransactionManager) PerformCheckpoint() error {
 	tm.mu.RLock()
-	defer tm.mu.RUnlock()
 
 	// Update TransactionTable with current active transactions
 	for txNum, tx := range tm.activeTransactions {
 		err := tm.transactionTable.UpdateStatus(txNum, TransactionStatusRunning)
 		if err != nil {
+			tm.mu.RUnlock()
 			return err
 		}
 		err = tm.transactionTable.UpdateLastLSN(txNum, tx.prevTxLSN)
 		if err != nil {
+			tm.mu.RUnlock()
 			return err
 		}
 	}
@@ -125,13 +126,20 @@ func (tm *TransactionManager) PerformCheckpoint() error {
 	txTableSnapshot := tm.transactionTable.GetAll()
 	dptSnapshot := tm.dirtyPageTable.GetAll()
 
+	tm.mu.RUnlock()
+
 	tempTx := tm.BeginTransaction()
 	if tempTx == nil {
 		return nil
 	}
-	defer tempTx.Commit()
 
-	return tempTx.recoveryManager.Checkpoint(txTableSnapshot, dptSnapshot)
+	err := tempTx.recoveryManager.Checkpoint(txTableSnapshot, dptSnapshot)
+	if err != nil {
+		_ = tempTx.Rollback()
+		return err
+	}
+
+	return tempTx.Commit()
 }
 
 // PerformDBRecovery performs database-wide ARIES recovery.

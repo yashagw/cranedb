@@ -19,22 +19,28 @@ build: build-server build-client
 	@echo "✓ Build complete"
 
 build-server:
-	@echo "Building server..."
+	@echo "Building server (release)..."
 	@mkdir -p bin
-	@go build -o bin/server ./cmd/server
+	@go build -tags release -o bin/server ./cmd/server
 	@echo "✓ Server built: bin/server"
 
 build-client:
-	@echo "Building client..."
+	@echo "Building client (release)..."
 	@mkdir -p bin
-	@go build -o bin/client ./cmd/client
+	@go build -tags release -o bin/client ./cmd/client
 	@echo "✓ Client built: bin/client"
 
 build-logviewer:
-	@echo "Building logviewer..."
+	@echo "Building logviewer (release)..."
 	@mkdir -p bin
-	@go build -o bin/logviewer ./cmd/logviewer
+	@go build -tags release -o bin/logviewer ./cmd/logviewer
 	@echo "✓ Logviewer built: bin/logviewer"
+
+build-debug:
+	@echo "Building server (debug)..."
+	@mkdir -p bin
+	@go build -o bin/server_debug ./cmd/server
+	@echo "✓ Debug Server built: bin/server_debug"
 
 # Clean target
 clean:

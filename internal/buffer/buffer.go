@@ -3,6 +3,7 @@ package buffer
 import (
 	"log/slog"
 
+	"github.com/yashagw/cranedb/internal/failpoint"
 	"github.com/yashagw/cranedb/internal/file"
 	"github.com/yashagw/cranedb/internal/log"
 )
@@ -117,6 +118,8 @@ func (b *Buffer) loadBlock(blk *file.BlockID) error {
 func (b *Buffer) flush() error {
 	// Only write data to disk if the buffer has been modified
 	if b.txNum >= 0 && b.lsn >= 0 {
+		failpoint.InjectPanic("before-buffer-log-flush", failpoint.With("file", b.blk.Filename()))
+
 		// 1. Flush log records up to the buffer's LSN
 		err := b.logManager.Flush(b.lsn)
 		if err != nil {
@@ -126,11 +129,15 @@ func (b *Buffer) flush() error {
 		// 2. Update the pageLSN in the page before writing to disk
 		b.contents.SetPageLSN(b.lsn)
 
+		failpoint.InjectPanic("before-buffer-write-to-disk", failpoint.With("file", b.blk.Filename()))
+
 		// 3. Write the buffer's contents to its assigned block on disk
 		err = b.fileManager.Write(b.blk, b.contents)
 		if err != nil {
 			return err
 		}
+
+		failpoint.InjectPanic("before-buffer-remove-from-dirty-page-table", failpoint.With("file", b.blk.Filename()))
 
 		// 4. Remove from dirty page table
 		err = b.dirtyPageTable.Remove(b.blk)
