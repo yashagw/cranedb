@@ -518,3 +518,44 @@ func TestCLRLogRecord_EncodeDecode(t *testing.T) {
 		assert.Equal(t, LogRecordCLR, decodedRecord.Op())
 	})
 }
+
+func TestCorruptedLogRecord_DetectedByCRC32(t *testing.T) {
+	tempDir := t.TempDir()
+	fileManager, err := file.NewManager(tempDir, 400)
+	assert.NoError(t, err)
+	logManager, err := log.NewManager(fileManager, "log_test")
+	assert.NoError(t, err)
+
+	// Write a valid log record
+	txNum := int64(42)
+	lsn := logManager.GetNextLatestLSN()
+	prevLSN := int64(-1)
+
+	err = WriteStartLogRecord(logManager, txNum, lsn, prevLSN)
+	assert.NoError(t, err)
+
+	// Get the log record bytes
+	iterator, err := logManager.Iterator()
+	assert.NoError(t, err)
+	var lastRecord []byte
+	for iterator.HasNext() {
+		lastRecord = iterator.Next()
+	}
+
+	require.NotNil(t, lastRecord, "No log record was written")
+	require.Greater(t, len(lastRecord), 10, "Record too short to corrupt")
+
+	// Corrupt a byte in the middle of the record data (not the checksum)
+	corruptedRecord := make([]byte, len(lastRecord))
+	copy(corruptedRecord, lastRecord)
+	// Corrupt the txNum field (at position 4-11)
+	corruptedRecord[8] ^= 0xFF // Flip all bits in one byte
+
+	// Attempt to parse the corrupted record - should return error
+	_, err = CreateLogRecord(corruptedRecord)
+	require.Error(t, err, "Expected error when parsing corrupted record")
+
+	// Verify the error message mentions CRC32
+	assert.Contains(t, err.Error(), "CRC32", "Error message should mention CRC32")
+	assert.Contains(t, err.Error(), "corrupted", "Error message should mention corruption")
+}

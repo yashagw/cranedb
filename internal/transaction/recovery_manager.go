@@ -76,7 +76,11 @@ func (rm *RecoveryManager) Rollback() error {
 	txLogRecords := make(map[int64]LogRecord)
 	for lmIterator.HasNext() {
 		logBytes := lmIterator.Next()
-		record := CreateLogRecord(logBytes)
+		record, err := CreateLogRecord(logBytes)
+		if err != nil {
+			slog.Warn("Skipping corrupted log record during rollback", "error", err)
+			continue
+		}
 
 		if record.TxNumber() == rm.txNum {
 			txLogRecords[record.LSN()] = record
@@ -215,7 +219,11 @@ func (rm *RecoveryManager) DBRecovery() error {
 	var logRecords []LogRecord
 	for lmIterator.HasNext() {
 		logBytes := lmIterator.Next()
-		record := CreateLogRecord(logBytes)
+		record, err := CreateLogRecord(logBytes)
+		if err != nil {
+			slog.Warn("Skipping corrupted log record during analysis pass", "error", err)
+			continue
+		}
 
 		// Stop if we've gone past the checkpoint
 		if record.Op() == LogRecordCheckpoint {
@@ -328,7 +336,11 @@ func (rm *RecoveryManager) DBRecovery() error {
 	var records []LogRecord
 	for lmIterator.HasNext() {
 		logBytes := lmIterator.Next()
-		record := CreateLogRecord(logBytes)
+		record, err := CreateLogRecord(logBytes)
+		if err != nil {
+			slog.Warn("Skipping corrupted log record during redo pass", "error", err)
+			continue
+		}
 
 		// Stop if we've gone past the minRecLSN
 		if record.LSN() < minRecLSN {
@@ -389,7 +401,11 @@ func (rm *RecoveryManager) DBRecovery() error {
 
 	for lmIterator.HasNext() {
 		logBytes := lmIterator.Next()
-		record := CreateLogRecord(logBytes)
+		record, err := CreateLogRecord(logBytes)
+		if err != nil {
+			slog.Warn("Skipping corrupted log record during undo pass", "error", err)
+			continue
+		}
 
 		// All log records now have LSN() method from the interface
 		allLogRecords[record.LSN()] = record
@@ -421,7 +437,11 @@ func (rm *RecoveryManager) findAndRestoreCheckpoint() (int64, error) {
 	// Find the most recent checkpoint
 	for lmIterator.HasNext() {
 		logBytes := lmIterator.Next()
-		record := CreateLogRecord(logBytes)
+		record, err := CreateLogRecord(logBytes)
+		if err != nil {
+			slog.Warn("Skipping corrupted log record while searching for checkpoint", "error", err)
+			continue
+		}
 
 		if record.Op() == LogRecordCheckpoint {
 			if cr, ok := record.(*CheckpointLogRecord); ok {

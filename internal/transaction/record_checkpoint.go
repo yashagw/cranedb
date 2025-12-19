@@ -116,6 +116,7 @@ func (s *CheckpointLogRecord) Redo(tx *Transaction) (bool, error) {
 }
 
 // WriteCheckpointLogRecord writes a CheckpointLogRecord to the log manager
+// Page format: [op(4)] [lsn(8)] [txTableSize(4)] [txTableData...] [dptSize(4)] [dptData...] [crc32(4)]
 func WriteCheckpointLogRecord(lm *log.Manager, lsn int64, transactionTable map[int64]*TransactionEntry, dirtyPageTable map[file.BlockID]*buffer.DirtyPageEntry) error {
 	opPos := 0
 	lsnPos := opPos + LogRecordTypeSize()
@@ -136,7 +137,8 @@ func WriteCheckpointLogRecord(lm *log.Manager, lsn int64, transactionTable map[i
 		dptDataSize += 4 + len(blockID.Filename()) + 4 + 8
 	}
 
-	finalLen := dptDataPos + dptDataSize
+	dataLen := dptDataPos + dptDataSize
+	finalLen := dataLen + CRC32ChecksumSize()
 
 	page := file.NewPage(finalLen)
 	page.SetIntRaw(opPos, int(LogRecordCheckpoint))
@@ -169,6 +171,9 @@ func WriteCheckpointLogRecord(lm *log.Manager, lsn int64, transactionTable map[i
 		page.SetInt64Raw(pos, entry.RecLSN)
 		pos += 8
 	}
+
+	// Append CRC32 checksum
+	appendCRC32(page, dataLen)
 
 	return lm.Append(page.Bytes(), lsn)
 }

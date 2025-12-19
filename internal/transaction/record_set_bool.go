@@ -124,6 +124,7 @@ func (s *SetBoolLogRecord) Redo(tx *Transaction) (bool, error) {
 }
 
 // WriteSetBoolLogRecord writes a SetBoolLogRecord to the log manager
+// Page format: [op(4)] [txNum(8)] [lsn(8)] [prevLSN(8)] [filename(4+len(filename))] [blockNum(4)] [offset(4)] [oldvalue(1)] [newvalue(1)] [crc32(4)]
 func WriteSetBoolLogRecord(lm *log.Manager, txNum int64, lsn int64, prevLSN int64, blk *file.BlockID, offset int, oldValue bool, newValue bool) error {
 	opPos := 0
 	txNumPos := opPos + LogRecordTypeSize()
@@ -134,7 +135,8 @@ func WriteSetBoolLogRecord(lm *log.Manager, txNum int64, lsn int64, prevLSN int6
 	offsetPos := blockNumPos + 4
 	oldValuePos := offsetPos + 4
 	newValuePos := oldValuePos + 1
-	finalLen := newValuePos + 1
+	dataLen := newValuePos + 1
+	finalLen := dataLen + CRC32ChecksumSize()
 
 	page := file.NewPage(finalLen)
 	page.SetIntRaw(opPos, int(LogRecordSetBool))
@@ -146,6 +148,9 @@ func WriteSetBoolLogRecord(lm *log.Manager, txNum int64, lsn int64, prevLSN int6
 	page.SetIntRaw(offsetPos, offset)
 	page.SetBoolRaw(oldValuePos, oldValue)
 	page.SetBoolRaw(newValuePos, newValue)
+
+	// Append CRC32 checksum
+	appendCRC32(page, dataLen)
 
 	return lm.Append(page.Bytes(), lsn)
 }

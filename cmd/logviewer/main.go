@@ -70,18 +70,23 @@ func main() {
 
 	// Iterate through all log records
 	for iter.HasNext() {
-		recordBytes := iter.Next()
-		if recordBytes == nil {
+		logBytes := iter.Next()
+		if logBytes == nil {
 			break
 		}
 
+		record, err := transaction.CreateLogRecord(logBytes)
+		if err != nil {
+			fmt.Printf("[CORRUPTED] Error parsing log record: %v\n", err)
+			continue
+		}
+
 		recordCount++
-		logRecord := transaction.CreateLogRecord(recordBytes)
 
 		// Format record as table row
 		var tx, lsn, prevLSN, block, offset, oldVal, newVal string
 
-		switch rec := logRecord.(type) {
+		switch rec := record.(type) {
 		case *transaction.CheckpointLogRecord:
 			tx = "-"
 			lsn = fmt.Sprintf("%d", rec.LSN())
@@ -146,7 +151,7 @@ func main() {
 			newVal = fmt.Sprintf("%t", rec.NewValue())
 		}
 
-		recordType := getLogRecordTypeName(logRecord.Op())
+		recordType := getLogRecordTypeName(record.Op())
 		fmt.Fprint(w, lsn, "\t", recordType, "\t", tx, "\t", prevLSN, "\t", block, "\t", offset, "\t", oldVal, "\t", newVal, "\n")
 	}
 

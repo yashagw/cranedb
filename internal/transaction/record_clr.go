@@ -167,6 +167,7 @@ func (c *CLRLogRecord) Redo(tx *Transaction) (bool, error) {
 }
 
 // WriteCLRLogRecord writes a CLR log record to the log manager
+// Page format: [op(4)] [txNum(8)] [lsn(8)] [prevLSN(8)] [undoNextLSN(8)] [originalOp(4)] [filename(4+len)] [blockNum(4)] [offset(4)] [value...] [crc32(4)]
 func WriteCLRLogRecord(lm *log.Manager, txNum int64, lsn int64, prevLSN int64, undoNextLSN int64, originalOp LogRecordType, blk *file.BlockID, offset int, intVal int, stringVal string, boolVal bool) error {
 	opPos := 0
 	txNumPos := opPos + LogRecordTypeSize()
@@ -179,17 +180,18 @@ func WriteCLRLogRecord(lm *log.Manager, txNum int64, lsn int64, prevLSN int64, u
 	offsetPos := blockNumPos + 4
 	valuePos := offsetPos + 4
 
-	var finalLen int
+	var dataLen int
 	switch originalOp {
 	case LogRecordSetInt:
-		finalLen = valuePos + 4
+		dataLen = valuePos + 4
 	case LogRecordSetString:
-		finalLen = valuePos + 4 + len(stringVal)
+		dataLen = valuePos + 4 + len(stringVal)
 	case LogRecordSetBool:
-		finalLen = valuePos + 1
+		dataLen = valuePos + 1
 	default:
-		finalLen = valuePos
+		dataLen = valuePos
 	}
+	finalLen := dataLen + CRC32ChecksumSize()
 
 	page := file.NewPage(finalLen)
 	page.SetIntRaw(opPos, int(LogRecordCLR))
@@ -213,6 +215,9 @@ func WriteCLRLogRecord(lm *log.Manager, txNum int64, lsn int64, prevLSN int64, u
 	default:
 		// No value to write for unknown operations
 	}
+
+	// Append CRC32 checksum
+	appendCRC32(page, dataLen)
 
 	return lm.Append(page.Bytes(), lsn)
 }
