@@ -1,6 +1,6 @@
 # CraneDB
 
-A relational database implementation written in Go, built by following the principles and concepts from the "Database Design and Implementation" book.
+A relational database implementation written in Go. While the initial design follows the principles and concepts from the "Database Design and Implementation" book, it has been significantly enhanced with advanced features like ARIES recovery, fuzzy checkpointing, and more.
 
 ## About
 
@@ -51,18 +51,19 @@ CRANEDB_PORT=8082 make run-client
 ### Core Storage Engine
 - **File Management**: Fixed-size block storage with efficient read/write operations
 - **Page Management**: In-memory page abstraction with binary data serialization
-- **Buffer Pool**: LRU-style buffer management with pin/unpin mechanism and timeout handling
+- **Buffer Pool**: LRU-style buffer management with pin/unpin mechanism, timeout handling, and background flush for dirty buffers
 
 ### Transaction Management
 - **ACID Properties**: Transaction support with atomicity (commit/rollback), durability (write-ahead logging), basic isolation (two-phase locking), and transaction-level consistency
 - **Concurrency Control**: Two-phase locking with shared and exclusive locks
 - **Deadlock Prevention**: Timeout-based lock management to prevent indefinite waiting
-- **Recovery**: Undo-only recovery algorithm for crash recovery and transaction rollback
+- **Recovery**: ARIES recovery algorithm (Analysis, Redo, Undo) for advanced crash recovery and transaction rollback
 
 ### Logging and Recovery
-- **Write-Ahead Logging**: All changes logged before being written to disk
-- **Log Records**: Support for checkpoint, start, commit, rollback, and data modification records
-- **Crash Recovery**: Automatic recovery from system crashes using log replay
+- **Log Records**: Support for checkpoint, start, commit, rollback, data modification, and compensation records (CLRs)
+- **Crash Recovery**: Automatic recovery from system crashes using ARIES (redo all necessary changes and undo uncommitted transactions)
+- **Corruption Detection**: CRC32 checksum verification for log records to ensure data integrity during recovery
+- **Checkpoints**: Periodic fuzzy checkpointing to reduce recovery time by flushing dirty pages and logging system state
 
 ### Record Management
 - **Schema Support**: Dynamic schema definition with integer, boolean, and string field types
@@ -83,11 +84,15 @@ CRANEDB_PORT=8082 make run-client
 - **Expression and Predicate Evaluation**: Support for field references, constant values, and WHERE clause filtering with all comparison operators (=, !=, >, <, >=, <=) and AND/OR conditions
 - **Sorting**: ORDER BY clause support using external merge sort for sorting query results by one or more fields
 - **Grouping**: GROUP BY clause support for grouping records by specified fields
-- **Aggregation Functions**: Support for MAX, MIN, COUNT, and SUM aggregation functions in GROUP BY queries
+- **Aggregation Functions**: Support for MAX, MIN, COUNT, SUM, and DISTINCT aggregation functions in GROUP BY queries
 - **Update Operations**: Execution of INSERT, UPDATE, and DELETE statements with predicate support and automatic index maintenance
 - **Materialization**: Temporary table materialization for query optimization, especially beneficial for nested loop joins
 - **B-tree Indexes**: Efficient B-tree index implementation for fast lookups and range queries
 - **EXPLAIN**: Query plan visualization to understand execution strategies
+
+### Reliability and Testing
+- **Failpoints**: Injectable failpoints for simulating system crashes at specific points to verify recovery correctness
+- **End-to-End Recovery Tests**: Automated tests that simulate random crashes and verify durability and consistency
 
 ## SQL Reference
 
@@ -132,7 +137,7 @@ Query data from tables with support for:
 - WHERE clauses with all comparison operators (=, !=, >, <, >=, <=)
 - AND/OR logical operators
 - ORDER BY for sorting (single or multiple fields)
-- GROUP BY with aggregation functions (MAX, MIN, COUNT, SUM)
+- GROUP BY with aggregation functions (MAX, MIN, COUNT, SUM, DISTINCT)
 - Joins (using Cartesian product with WHERE clause)
 
 ```sql
@@ -154,6 +159,7 @@ SELECT name, course, grade FROM courses ORDER BY grade, name;
 -- GROUP BY with aggregations
 SELECT student_id, MAX(grade), MIN(grade) FROM courses GROUP BY student_id;
 SELECT student_id, COUNT(grade), SUM(grade) FROM courses GROUP BY student_id;
+SELECT COUNT(DISTINCT student_id) FROM courses;
 
 -- Joins
 SELECT name, course, grade FROM students, courses WHERE id = student_id;
@@ -190,3 +196,22 @@ Configure session variables.
 -- Disable materialization for query optimization
 SET no_materialize = true;  
 ```
+
+## Tools
+
+### Log Viewer
+
+CraneDB provides a utility to inspect the contents of the log file for debugging and educational purposes.
+
+1. **Build the logviewer**:
+   ```bash
+   make build-logviewer
+   ```
+
+2. **Run the logviewer**:
+   ```bash
+   ./bin/logviewer ./cranedb_data/cranedb.log
+   ```
+
+The output will show all log records along with their LSN, type, transaction ID, and the values before/after modification.
+
