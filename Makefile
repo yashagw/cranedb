@@ -1,4 +1,4 @@
-.PHONY: help build build-server build-client build-logviewer clean test run-server run-client
+.PHONY: help build build-server build-client build-logviewer build-btreeviewer build-gendata build-tools clean test run-server run-client
 
 # Default target
 help:
@@ -9,10 +9,15 @@ help:
 	@echo "  make build-server  - Build server binary"
 	@echo "  make build-client  - Build client binary"
 	@echo "  make build-logviewer - Build logviewer binary"
+	@echo "  make build-btreeviewer - Build B+Tree index explorer"
+	@echo "  make build-gendata   - Build data generation tool"
+	@echo "  make build-tools    - Build both btreeviewer and gendata"
 	@echo "  make clean         - Remove built binaries and database files"
 	@echo "  make test          - Run all tests"
 	@echo "  make run-server    - Start the database server"
 	@echo "  make run-client    - Start the database client"
+	@echo "  make gen           - Generate test B+Tree data (/tmp/btree_test_db)"
+	@echo "  make btree         - Start B+Tree explorer (/tmp/btree_test_db)"
 
 # Build targets
 build: build-server build-client
@@ -42,6 +47,18 @@ build-debug:
 	@go build -o bin/server_debug ./cmd/server
 	@echo "✓ Debug Server built: bin/server_debug"
 
+build-btreeviewer:
+	@echo "Building btreeviewer..."
+	@mkdir -p bin
+	@go build -o bin/btreeviewer ./cmd/btreeviewer/*.go
+	@echo "✓ B+Tree Viewer built: bin/btreeviewer"
+
+build-gendata:
+	@echo "Building gendata..."
+	@mkdir -p bin
+	@go build -o bin/gendata ./cmd/gendata/*.go
+	@echo "✓ Data Generator built: bin/gendata"
+
 # Clean target
 clean:
 	@echo "Cleaning up..."
@@ -61,3 +78,14 @@ run-server: build-server
 
 run-client: build-client
 	@./bin/client
+
+BTREE_TEST_DB = /tmp/test_db
+COUNT ?= 1000
+INDEX ?= idx_id
+
+gen: build-gendata
+	@rm -rf $(BTREE_TEST_DB)
+	@./bin/gendata -db $(BTREE_TEST_DB) -count $(COUNT) -random
+
+btree: build-btreeviewer
+	@./bin/btreeviewer -db $(BTREE_TEST_DB) -index $(INDEX)

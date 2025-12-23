@@ -27,6 +27,7 @@ make run-server
 Server starts on port `8080` by default.
 
 To use a different port and database directory:
+
 ```bash
 PORT=8082 DB_DIR=./cranedb_data make run-server
 ```
@@ -40,6 +41,7 @@ make run-client
 ```
 
 To connect to a different port:
+
 ```bash
 CRANEDB_PORT=8082 make run-client
 ```
@@ -49,35 +51,41 @@ CRANEDB_PORT=8082 make run-client
 ## Features
 
 ### Core Storage Engine
+
 - **File Management**: Fixed-size block storage with efficient read/write operations
 - **Page Management**: In-memory page abstraction with binary data serialization
 - **Buffer Pool**: LRU-style buffer management with pin/unpin mechanism, timeout handling, and background flush for dirty buffers
 
 ### Transaction Management
+
 - **ACID Properties**: Transaction support with atomicity (commit/rollback), durability (write-ahead logging), basic isolation (two-phase locking), and transaction-level consistency
 - **Concurrency Control**: Two-phase locking with shared and exclusive locks
 - **Deadlock Prevention**: Timeout-based lock management to prevent indefinite waiting
 - **Recovery**: ARIES recovery algorithm (Analysis, Redo, Undo) for advanced crash recovery and transaction rollback
 
 ### Logging and Recovery
+
 - **Log Records**: Support for checkpoint, start, commit, rollback, data modification, and compensation records (CLRs)
 - **Crash Recovery**: Automatic recovery from system crashes using ARIES (redo all necessary changes and undo uncommitted transactions)
 - **Corruption Detection**: CRC32 checksum verification for log records to ensure data integrity during recovery
 - **Checkpoints**: Periodic fuzzy checkpointing to reduce recovery time by flushing dirty pages and logging system state
 
 ### Record Management
+
 - **Schema Support**: Dynamic schema definition with integer, boolean, and string field types
 - **Record Layout**: Efficient record storage with offset-based field access
 - **Table Scanning**: Iterator-based table scanning with insert, update, and delete operations
 - **Record Identification**: Unique RID (Record ID) system for record addressing
 
 ### Metadata Management
+
 - **Table Management**: Create and query table metadata
 - **View Management**: Virtual table support with view definition storage
 - **Index Management**: Index metadata tracking and index creation
 - **Statistics**: Table statistics collection for cost estimation
 
 ### Query Processing
+
 - **SQL Parser**: Lexical analysis and parsing of SQL statements
 - **Query Planning**: Execution plan generation with cost estimation and index-aware optimization
 - **Query Execution**: Iterator-based query execution with lazy evaluation
@@ -91,12 +99,14 @@ CRANEDB_PORT=8082 make run-client
 - **EXPLAIN**: Query plan visualization to understand execution strategies
 
 ### Reliability and Testing
+
 - **Failpoints**: Injectable failpoints for simulating system crashes at specific points to verify recovery correctness
 - **End-to-End Recovery Tests**: Automated tests that simulate random crashes and verify durability and consistency
 
 ## SQL Reference
 
 ### Data Types
+
 - `INT` - 32-bit integer
 - `VARCHAR(n)` - Variable-length string with maximum length n
 - `BOOL` - Boolean value (true/false)
@@ -106,6 +116,7 @@ CRANEDB_PORT=8082 make run-client
 ### Statements
 
 #### CREATE TABLE
+
 Create a new table with specified columns and data types.
 
 ```sql
@@ -114,6 +125,7 @@ CREATE TABLE courses (student_id INT, course VARCHAR(20), grade INT);
 ```
 
 #### CREATE INDEX
+
 Create a B-tree index on a table column for faster queries.
 
 ```sql
@@ -122,6 +134,7 @@ CREATE INDEX courses_grade_idx ON courses (grade);
 ```
 
 #### INSERT INTO
+
 Insert records into a table. All fields must be provided in the VALUES clause.
 
 ```sql
@@ -132,7 +145,9 @@ INSERT INTO courses (student_id, course, grade) VALUES (1, 'CS', 88);
 ```
 
 #### SELECT
+
 Query data from tables with support for:
+
 - Field selection
 - WHERE clauses with all comparison operators (=, !=, >, <, >=, <=)
 - AND/OR logical operators
@@ -166,6 +181,7 @@ SELECT name, course, grade FROM students, courses WHERE id = student_id;
 ```
 
 #### UPDATE
+
 Modify existing records.
 
 ```sql
@@ -174,6 +190,7 @@ UPDATE students SET active = false WHERE id = 1;
 ```
 
 #### DELETE
+
 Remove records from a table.
 
 ```sql
@@ -182,6 +199,7 @@ DELETE FROM students WHERE age < 18;
 ```
 
 #### EXPLAIN
+
 View the query execution plan.
 
 ```sql
@@ -190,11 +208,12 @@ EXPLAIN SELECT student_id, course, grade FROM courses WHERE grade = 85;
 ```
 
 #### SET
+
 Configure session variables.
 
 ```sql
 -- Disable materialization for query optimization
-SET no_materialize = true;  
+SET no_materialize = true;
 ```
 
 ## Tools
@@ -204,6 +223,7 @@ SET no_materialize = true;
 CraneDB provides a utility to inspect the contents of the log file for debugging and educational purposes.
 
 1. **Build the logviewer**:
+
    ```bash
    make build-logviewer
    ```
@@ -215,3 +235,63 @@ CraneDB provides a utility to inspect the contents of the log file for debugging
 
 The output will show all log records along with their LSN, type, transaction ID, and the values before/after modification.
 
+### B+Tree Viewer
+
+CraneDB provides an interactive terminal UI to explore B+Tree index structures. This tool helps visualize the internal structure of B+Tree indexes, including internal nodes, leaf nodes, key ranges, and record identifiers (RIDs).
+
+1. **Build the btreeviewer**:
+
+   ```bash
+   make build-btreeviewer
+   ```
+
+2. **List available indices**:
+
+   ```bash
+   ./bin/btreeviewer -db ./cranedb_data
+   ```
+
+3. **Open interactive explorer for a specific index**:
+
+   ```bash
+   ./bin/btreeviewer -db ./cranedb_data -index idx_name
+   ```
+
+4. **Using the convenience make target** (uses `/tmp/test_db` and `idx_id` by default):
+   ```bash
+   make btree
+   ```
+
+### Data Generator
+
+A utility tool to quickly generate test databases with tables and indices for testing and exploration purposes.
+
+1. **Build the gendata tool**:
+
+   ```bash
+   make build-gendata
+   ```
+
+2. **Generate test data**:
+
+   ```bash
+   ./bin/gendata -db ./test_data -count 1000 -random
+   ```
+
+   Options:
+
+   - `-db` - Path to the database directory (default: `./test_data`)
+   - `-count` - Number of records to insert (default: `100`)
+   - `-random` - Randomize IDs and names (default: `true`)
+   - `-table` - Name of the table to create (default: `users`)
+
+3. **Using the convenience make target** (uses `/tmp/test_db` and generates 1000 records by default):
+   ```bash
+   make gen
+   ```
+
+The tool creates:
+
+- A table with `id` (INT) and `name` (VARCHAR(10)) columns
+- Two B+Tree indices: `idx_id` on the `id` field and `idx_name` on the `name` field
+- The specified number of records with either sequential or random data
