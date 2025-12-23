@@ -7,10 +7,11 @@ import (
 type AggregationType string
 
 const (
-	AggMax   AggregationType = "max"
-	AggMin   AggregationType = "min"
-	AggCount AggregationType = "count"
-	AggSum   AggregationType = "sum"
+	AggMax      AggregationType = "max"
+	AggMin      AggregationType = "min"
+	AggCount    AggregationType = "count"
+	AggSum      AggregationType = "sum"
+	AggDistinct AggregationType = "distinct"
 )
 
 type AggregationFn struct {

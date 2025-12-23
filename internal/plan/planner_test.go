@@ -401,3 +401,46 @@ func TestPlanner_ComplexPredicateScenario(t *testing.T) {
 	// 3. Join predicates are applied in Phase 3 after ProductPlan
 	// 4. All 4 types of predicates work together correctly
 }
+
+func TestPlanner_DistinctAggregation(t *testing.T) {
+	_, tx, md, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	queryPlanner := NewBasicQueryPlanner(md)
+	updatePlanner := NewBasicUpdatePlanner(md)
+	planner := NewPlanner(queryPlanner, updatePlanner)
+
+	planner.ExecuteUpdate("CREATE TABLE enrollments (student VARCHAR(20), course VARCHAR(20))", tx)
+
+	planner.ExecuteUpdate("INSERT INTO enrollments (student, course) VALUES ('Alice', 'Math')", tx)
+	planner.ExecuteUpdate("INSERT INTO enrollments (student, course) VALUES ('Alice', 'Physics')", tx)
+	planner.ExecuteUpdate("INSERT INTO enrollments (student, course) VALUES ('Bob', 'Math')", tx)
+	planner.ExecuteUpdate("INSERT INTO enrollments (student, course) VALUES ('Alice', 'Math')", tx) // Alice Math again
+
+	querySQL := "SELECT student, distinct(course) FROM enrollments GROUP BY student"
+	plan, err := planner.CreatePlan(querySQL, tx, nil)
+	require.NoError(t, err)
+
+	scan, err := plan.Open()
+	require.NoError(t, err)
+	defer scan.Close()
+
+	results := make(map[string]string)
+	for {
+		hasNext, err := scan.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		student, err := scan.GetString("student")
+		require.NoError(t, err)
+		courses, err := scan.GetString("distinctofcourse")
+		require.NoError(t, err)
+		results[student] = courses
+	}
+
+	assert.Equal(t, 2, len(results))
+	// Alice should have Math, Physics
+	assert.Equal(t, "Math, Physics", results["Alice"])
+	assert.Equal(t, "Math", results["Bob"])
+}

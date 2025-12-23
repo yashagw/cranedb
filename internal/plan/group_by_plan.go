@@ -33,7 +33,11 @@ func NewGroupByPlan(tx *transaction.Transaction, p Plan, groupFields []string, a
 		sch.Copy(p.Schema(), fldname)
 	}
 	for _, fn := range aggFns {
-		sch.AddIntField(fn.FieldName())
+		if _, ok := fn.(*aggregations.DistinctFn); ok {
+			sch.AddStringField(fn.FieldName(), 500)
+		} else {
+			sch.AddIntField(fn.FieldName())
+		}
 	}
 
 	return &GroupByPlan{

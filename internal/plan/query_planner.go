@@ -85,6 +85,8 @@ func (p *BasicQueryPlanner) CreatePlan(queryData *parserdata.QueryData, tx *tran
 				queryAggFns[i] = aggregations.NewCountFn(aggFn.FieldName)
 			case parserdata.AggSum:
 				queryAggFns[i] = aggregations.NewSumFn(aggFn.FieldName)
+			case parserdata.AggDistinct:
+				queryAggFns[i] = aggregations.NewDistinctFn(aggFn.FieldName)
 			}
 		}
 		plan = NewGroupByPlan(tx, plan, groupFields, queryAggFns)
@@ -116,6 +118,8 @@ func (p *BasicQueryPlanner) CreatePlan(queryData *parserdata.QueryData, tx *tran
 				projectFields = append(projectFields, aggregations.NewCountFn(aggFn.FieldName).FieldName())
 			case parserdata.AggSum:
 				projectFields = append(projectFields, aggregations.NewSumFn(aggFn.FieldName).FieldName())
+			case parserdata.AggDistinct:
+				projectFields = append(projectFields, aggregations.NewDistinctFn(aggFn.FieldName).FieldName())
 			}
 		}
 

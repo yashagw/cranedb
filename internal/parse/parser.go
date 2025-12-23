@@ -683,7 +683,7 @@ func (p *Parser) selectFieldList() ([]string, []parserdata.AggregationFn, error)
 
 // selectField parses a single SELECT field, which may be:
 // - A regular field: fieldname
-// - An aggregation function: max(fieldname), min(fieldname), count(fieldname), or sum(fieldname)
+// - An aggregation function: max(fieldname), min(fieldname), count(fieldname), sum(fieldname), or distinct(fieldname)
 // Returns: (field name or empty if aggregation, aggregation function or nil, error)
 func (p *Parser) selectField() (string, *parserdata.AggregationFn, error) {
 	// Check if it's an aggregation function: max(...) or min(...)
@@ -706,6 +706,30 @@ func (p *Parser) selectField() (string, *parserdata.AggregationFn, error) {
 		}
 		aggFn := parserdata.AggregationFn{
 			Type:      parserdata.AggMax,
+			FieldName: fieldName,
+		}
+		return "", &aggFn, nil
+	}
+
+	if p.lexer.MatchKeyword("distinct") {
+		err := p.lexer.EatKeyword("distinct")
+		if err != nil {
+			return "", nil, err
+		}
+		err = p.lexer.EatDelim('(')
+		if err != nil {
+			return "", nil, err
+		}
+		fieldName, err := p.field()
+		if err != nil {
+			return "", nil, err
+		}
+		err = p.lexer.EatDelim(')')
+		if err != nil {
+			return "", nil, err
+		}
+		aggFn := parserdata.AggregationFn{
+			Type:      parserdata.AggDistinct,
 			FieldName: fieldName,
 		}
 		return "", &aggFn, nil
