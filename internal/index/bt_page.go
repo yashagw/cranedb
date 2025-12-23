@@ -148,7 +148,8 @@ func (bp *BTPage) Format(flag int) error {
 	blockSize := bp.tx.BlockSize()
 
 	// Start after the header (flag + numRecords = 8 bytes)
-	for pos := 8; pos+recSize <= blockSize; pos += recSize {
+	dataAreaSize := blockSize - file.PageHeaderSize
+	for pos := 8; pos+recSize <= dataAreaSize; pos += recSize {
 		if err := bp.makeDefaultRecord(pos); err != nil {
 			return fmt.Errorf("failed to create default record at pos %d: %w", pos, err)
 		}
@@ -397,9 +398,9 @@ func (bp *BTPage) IsFull() (bool, error) {
 
 	// Calculate position where the next record would go
 	nextSlotPos := bp.GetSlotPosition(numRecs + 1)
-	blockSize := bp.tx.BlockSize()
+	dataAreaSize := bp.tx.BlockSize() - file.PageHeaderSize
 
-	return nextSlotPos >= blockSize, nil
+	return nextSlotPos >= dataAreaSize, nil
 }
 
 // Split splits the page at the specified position and returns the new block
@@ -543,16 +544,9 @@ func (bp *BTPage) appendNew(flag int) (*file.BlockID, error) {
 		return nil, fmt.Errorf("failed to append new block: %w", err)
 	}
 
-	// Pin the new block and format it
-	_, err = bp.tx.Pin(newBlk)
-	if err != nil {
-		return nil, fmt.Errorf("failed to pin new block: %w", err)
-	}
-
 	// Create a temporary BTPage to format the new block
 	tempPage, err := NewBTPage(bp.tx, newBlk, bp.layout)
 	if err != nil {
-		bp.tx.Unpin(newBlk) // Clean up on error
 		return nil, fmt.Errorf("failed to create temp page: %w", err)
 	}
 
