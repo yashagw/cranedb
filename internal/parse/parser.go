@@ -286,7 +286,36 @@ func (p *Parser) Query() (*parserdata.QueryData, error) {
 		}
 	}
 
-	return parserdata.NewQueryDataWithGroupBy(fields, tableNames, predicate, sortFields, groupFields, aggregationFns), nil
+	// Parse LIMIT clause if present
+	var limit int
+	if p.lexer.MatchKeyword("limit") {
+		err = p.lexer.EatKeyword("limit")
+		if err != nil {
+			return nil, err
+		}
+		limit, err = p.lexer.EatIntConstant()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Parse OFFSET clause if present
+	var offset int
+	if p.lexer.MatchKeyword("offset") {
+		err = p.lexer.EatKeyword("offset")
+		if err != nil {
+			return nil, err
+		}
+		offset, err = p.lexer.EatIntConstant()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	qd := parserdata.NewQueryDataWithGroupBy(fields, tableNames, predicate, sortFields, groupFields, aggregationFns)
+	qd.SetLimit(limit)
+	qd.SetOffset(offset)
+	return qd, nil
 }
 
 // Explain parses EXPLAIN <query> and returns the query data wrapped in ExplainData

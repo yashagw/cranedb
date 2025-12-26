@@ -96,6 +96,7 @@ CRANEDB_PORT=8082 make run-client
 - **Update Operations**: Execution of INSERT, UPDATE, and DELETE statements with predicate support and automatic index maintenance
 - **Materialization**: Temporary table materialization for query optimization, especially beneficial for nested loop joins
 - **B-tree Indexes**: Efficient B-tree index implementation for fast lookups and range queries
+- **Limit and Offset**: LIMIT and OFFSET clauses support for result pagination
 - **EXPLAIN**: Query plan visualization to understand execution strategies
 
 ### Reliability and Testing
@@ -153,6 +154,7 @@ Query data from tables with support for:
 - AND/OR logical operators
 - ORDER BY for sorting (single or multiple fields)
 - GROUP BY with aggregation functions (MAX, MIN, COUNT, SUM, DISTINCT)
+- LIMIT and OFFSET clauses for pagination
 - Joins (using Cartesian product with WHERE clause)
 
 ```sql
@@ -178,6 +180,10 @@ SELECT COUNT(DISTINCT student_id) FROM courses;
 
 -- Joins
 SELECT name, course, grade FROM students, courses WHERE id = student_id;
+
+-- LIMIT and OFFSET
+SELECT name FROM students LIMIT 5;
+SELECT name FROM students LIMIT 5 OFFSET 10;
 ```
 
 #### UPDATE

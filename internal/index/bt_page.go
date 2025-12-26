@@ -400,7 +400,7 @@ func (bp *BTPage) IsFull() (bool, error) {
 	nextSlotPos := bp.GetSlotPosition(numRecs + 1)
 	dataAreaSize := bp.tx.BlockSize() - file.PageHeaderSize
 
-	return nextSlotPos >= dataAreaSize, nil
+	return nextSlotPos > dataAreaSize, nil
 }
 
 // Split splits the page at the specified position and returns the new block

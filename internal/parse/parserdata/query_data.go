@@ -1,6 +1,8 @@
 package parserdata
 
 import (
+	"strconv"
+
 	"github.com/yashagw/cranedb/internal/query"
 )
 
@@ -26,6 +28,8 @@ type QueryData struct {
 	sortFields     []string
 	groupFields    []string
 	aggregationFns []AggregationFn
+	limit          int
+	offset         int
 }
 
 func NewQueryData(fields []string, tables []string, predicate *query.Predicate) *QueryData {
@@ -36,6 +40,8 @@ func NewQueryData(fields []string, tables []string, predicate *query.Predicate) 
 		sortFields:     nil,
 		groupFields:    nil,
 		aggregationFns: nil,
+		limit:          0,
+		offset:         0,
 	}
 }
 
@@ -47,6 +53,8 @@ func NewQueryDataWithSort(fields []string, tables []string, predicate *query.Pre
 		sortFields:     sortFields,
 		groupFields:    nil,
 		aggregationFns: nil,
+		limit:          0,
+		offset:         0,
 	}
 }
 
@@ -58,7 +66,17 @@ func NewQueryDataWithGroupBy(fields []string, tables []string, predicate *query.
 		sortFields:     sortFields,
 		groupFields:    groupFields,
 		aggregationFns: aggregationFns,
+		limit:          0,
+		offset:         0,
 	}
+}
+
+func (q *QueryData) SetLimit(limit int) {
+	q.limit = limit
+}
+
+func (q *QueryData) SetOffset(offset int) {
+	q.offset = offset
 }
 
 func (q *QueryData) Fields() []string {
@@ -83,6 +101,14 @@ func (q *QueryData) GroupFields() []string {
 
 func (q *QueryData) AggregationFns() []AggregationFn {
 	return q.aggregationFns
+}
+
+func (q *QueryData) Limit() int {
+	return q.limit
+}
+
+func (q *QueryData) Offset() int {
+	return q.offset
 }
 
 // String returns a SQL string representation of the query.
@@ -131,6 +157,16 @@ func (q *QueryData) String() string {
 			}
 			result += field
 		}
+	}
+
+	// Add LIMIT if present
+	if q.limit > 0 {
+		result += " LIMIT " + strconv.Itoa(q.limit)
+	}
+
+	// Add OFFSET if present
+	if q.offset > 0 {
+		result += " OFFSET " + strconv.Itoa(q.offset)
 	}
 
 	return result

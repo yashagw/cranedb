@@ -499,7 +499,7 @@ func TestBTPage_SpecializedOperations(t *testing.T) {
 	blockSize := tx.BlockSize()
 	slotSize := layout.GetSlotSize()
 	headerSize := 8 // flag + numRecs
-	maxRecords := (blockSize - headerSize) / slotSize
+	maxRecords := (blockSize - file.PageHeaderSize - headerSize) / slotSize
 
 	// Add records until we're close to full
 	for numRecs < maxRecords-1 {

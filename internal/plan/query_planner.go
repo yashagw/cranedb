@@ -147,6 +147,13 @@ func (p *BasicQueryPlanner) CreatePlan(queryData *parserdata.QueryData, tx *tran
 		plan = NewSortPlan(plan, sortFields, tx)
 	}
 
+	// Phase 7: Apply LIMIT/OFFSET if present
+	limit := queryData.Limit()
+	offset := queryData.Offset()
+	if limit > 0 || offset > 0 {
+		plan = NewLimitPlan(plan, limit, offset)
+	}
+
 	return plan, nil
 }
 

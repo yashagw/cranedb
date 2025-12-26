@@ -348,6 +348,39 @@ func TestParserQuery(t *testing.T) {
 		assert.Equal(t, []string{"dept"}, qd.SortFields())
 		assert.Equal(t, 1, len(qd.AggregationFns()))
 	})
+
+	t.Run("WithLimitAndOffset", func(t *testing.T) {
+		q := "select name, age from students limit 10 offset 5"
+		p := NewParser(NewLexer(q))
+		require.NotNil(t, p)
+		qd, err := p.Query()
+		require.NoError(t, err)
+		require.NotNil(t, qd)
+		assert.Equal(t, 10, qd.Limit())
+		assert.Equal(t, 5, qd.Offset())
+	})
+
+	t.Run("WithLimitOnly", func(t *testing.T) {
+		q := "select name from students limit 10"
+		p := NewParser(NewLexer(q))
+		require.NotNil(t, p)
+		qd, err := p.Query()
+		require.NoError(t, err)
+		require.NotNil(t, qd)
+		assert.Equal(t, 10, qd.Limit())
+		assert.Equal(t, 0, qd.Offset())
+	})
+
+	t.Run("WithOffsetOnly", func(t *testing.T) {
+		q := "select name from students offset 20"
+		p := NewParser(NewLexer(q))
+		require.NotNil(t, p)
+		qd, err := p.Query()
+		require.NoError(t, err)
+		require.NotNil(t, qd)
+		assert.Equal(t, 0, qd.Limit())
+		assert.Equal(t, 20, qd.Offset())
+	})
 }
 
 func TestParserInsert(t *testing.T) {
