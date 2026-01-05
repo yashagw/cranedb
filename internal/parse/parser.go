@@ -332,6 +332,15 @@ func (p *Parser) Explain() (*parserdata.ExplainData, error) {
 }
 
 func (p *Parser) UpdateCmd() (interface{}, error) {
+	if p.lexer.MatchKeyword("begin") {
+		return p.begin()
+	}
+	if p.lexer.MatchKeyword("commit") {
+		return p.commit()
+	}
+	if p.lexer.MatchKeyword("rollback") {
+		return p.rollback()
+	}
 	if p.lexer.MatchKeyword("insert") {
 		return p.insert()
 	}
@@ -987,4 +996,32 @@ func (p *Parser) fieldType(fieldName string) (*record.Schema, error) {
 	} else {
 		return nil, ErrBadSyntax
 	}
+}
+
+func (p *Parser) begin() (*parserdata.BeginData, error) {
+	err := p.lexer.EatKeyword("begin")
+	if err != nil {
+		return nil, err
+	}
+	// Optionally consume "transaction" keyword if present
+	if p.lexer.MatchKeyword("transaction") {
+		p.lexer.EatKeyword("transaction")
+	}
+	return parserdata.NewBeginData(), nil
+}
+
+func (p *Parser) commit() (*parserdata.CommitData, error) {
+	err := p.lexer.EatKeyword("commit")
+	if err != nil {
+		return nil, err
+	}
+	return parserdata.NewCommitData(), nil
+}
+
+func (p *Parser) rollback() (*parserdata.RollbackData, error) {
+	err := p.lexer.EatKeyword("rollback")
+	if err != nil {
+		return nil, err
+	}
+	return parserdata.NewRollbackData(), nil
 }

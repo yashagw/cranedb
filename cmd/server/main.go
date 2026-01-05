@@ -142,13 +142,24 @@ func removeTempTables(dbDir string) error {
 func (s *Server) handleConnection(conn net.Conn) {
 	remoteAddr := conn.RemoteAddr().String()
 	slog.Info("New connection", "remoteAddr", remoteAddr)
-	defer func() {
-		conn.Close()
-		slog.Info("Connection closed", "remoteAddr", remoteAddr)
-	}()
 
 	// Create a session for this connection
 	sess := session.NewSession()
+
+	defer func() {
+		// Rollback any uncommitted transaction on connection close
+		if sess.HasActiveTransaction() {
+			tx := sess.GetTransaction().(*transaction.Transaction)
+			if err := tx.Rollback(); err != nil {
+				slog.Error("Error rolling back transaction on connection close", "err", err)
+			} else {
+				slog.Warn("Transaction rolled back due to connection close", "remoteAddr", remoteAddr)
+			}
+			sess.ClearTransaction()
+		}
+		conn.Close()
+		slog.Info("Connection closed", "remoteAddr", remoteAddr)
+	}()
 
 	scanner := bufio.NewScanner(conn)
 	writer := bufio.NewWriter(conn)
@@ -238,16 +249,86 @@ func (s *Server) executeQuery(sql string, sess *session.Session) QueryResponse {
 		}
 	}
 
-	tx := s.transactionManager.BeginTransaction()
+	// Handle BEGIN command
+	if strings.HasPrefix(trimmedSQL, "begin") {
+		if sess.HasActiveTransaction() {
+			return QueryResponse{
+				Type:  "error",
+				Error: "there is already a transaction in progress",
+			}
+		}
+		tx := s.transactionManager.BeginTransaction()
+		sess.SetTransaction(tx)
+		return QueryResponse{
+			Type:    "transaction",
+			Message: "BEGIN",
+		}
+	}
+
+	// Handle COMMIT command
+	if strings.HasPrefix(trimmedSQL, "commit") {
+		if !sess.HasActiveTransaction() {
+			return QueryResponse{
+				Type:  "error",
+				Error: "there is no transaction in progress",
+			}
+		}
+		tx := sess.GetTransaction().(*transaction.Transaction)
+		if err := tx.Commit(); err != nil {
+			return QueryResponse{
+				Type:  "error",
+				Error: fmt.Sprintf("Failed to commit transaction: %v", err),
+			}
+		}
+		sess.ClearTransaction()
+		return QueryResponse{
+			Type:    "transaction",
+			Message: "COMMIT",
+		}
+	}
+
+	// Handle ROLLBACK command
+	if strings.HasPrefix(trimmedSQL, "rollback") {
+		if !sess.HasActiveTransaction() {
+			return QueryResponse{
+				Type:  "error",
+				Error: "there is no transaction in progress",
+			}
+		}
+		tx := sess.GetTransaction().(*transaction.Transaction)
+		if err := tx.Rollback(); err != nil {
+			return QueryResponse{
+				Type:  "error",
+				Error: fmt.Sprintf("Failed to rollback transaction: %v", err),
+			}
+		}
+		sess.ClearTransaction()
+		return QueryResponse{
+			Type:    "transaction",
+			Message: "ROLLBACK",
+		}
+	}
+
+	// Determine if we're in an explicit transaction or auto-commit mode
+	var tx *transaction.Transaction
+	explicitTx := sess.HasActiveTransaction()
+	if explicitTx {
+		tx = sess.GetTransaction().(*transaction.Transaction)
+	} else {
+		tx = s.transactionManager.BeginTransaction()
+	}
 	committed := false
 	defer func() {
-		if !committed {
-			if err := tx.Rollback(); err != nil {
-				slog.Error("Error rolling back transaction", "err", err)
+		// Only auto-rollback/commit if not in an explicit transaction
+		if !explicitTx {
+			if !committed {
+				if err := tx.Rollback(); err != nil {
+					slog.Error("Error rolling back transaction", "err", err)
+				}
+				slog.Warn("Query rolled back", "query", queryPreview)
+			} else {
+				slog.Info("Query committed", "query", queryPreview)
 			}
-			slog.Warn("Query rolled back", "query", queryPreview)
-		} else {
-			slog.Info("Query committed", "query", queryPreview)
 		}
 	}()
 
@@ -265,13 +346,16 @@ func (s *Server) executeQuery(sql string, sess *session.Session) QueryResponse {
 			}
 		}
 
-		if err := tx.Commit(); err != nil {
-			return QueryResponse{
-				Type:  "error",
-				Error: fmt.Sprintf("Failed to commit transaction: %v", err),
+		// Only auto-commit if not in an explicit transaction
+		if !explicitTx {
+			if err := tx.Commit(); err != nil {
+				return QueryResponse{
+					Type:  "error",
+					Error: fmt.Sprintf("Failed to commit transaction: %v", err),
+				}
 			}
+			committed = true
 		}
-		committed = true
 
 		// Return plan tree as a single row with a "plan" column
 		return QueryResponse{
@@ -360,13 +444,16 @@ func (s *Server) executeQuery(sql string, sess *session.Session) QueryResponse {
 			rows = append(rows, row)
 		}
 
-		if err := tx.Commit(); err != nil {
-			return QueryResponse{
-				Type:  "error",
-				Error: fmt.Sprintf("Failed to commit transaction: %v", err),
+		// Only auto-commit if not in an explicit transaction
+		if !explicitTx {
+			if err := tx.Commit(); err != nil {
+				return QueryResponse{
+					Type:  "error",
+					Error: fmt.Sprintf("Failed to commit transaction: %v", err),
+				}
 			}
+			committed = true
 		}
-		committed = true
 
 		return QueryResponse{
 			Type:    "query",
@@ -384,13 +471,16 @@ func (s *Server) executeQuery(sql string, sess *session.Session) QueryResponse {
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
-		return QueryResponse{
-			Type:  "error",
-			Error: fmt.Sprintf("Failed to commit transaction: %v", err),
+	// Only auto-commit if not in an explicit transaction
+	if !explicitTx {
+		if err := tx.Commit(); err != nil {
+			return QueryResponse{
+				Type:  "error",
+				Error: fmt.Sprintf("Failed to commit transaction: %v", err),
+			}
 		}
+		committed = true
 	}
-	committed = true
 
 	return QueryResponse{
 		Type:     "update",

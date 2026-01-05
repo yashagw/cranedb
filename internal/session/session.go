@@ -8,6 +8,8 @@ import (
 type Session struct {
 	mu        sync.RWMutex
 	variables map[string]interface{}
+	// stores *transaction.Transaction, kept as interface{} to avoid circular imports
+	activeTx interface{}
 }
 
 // NewSession creates a new session with default values
@@ -53,4 +55,32 @@ func (s *Session) GetStringVariable(name string) string {
 		return s
 	}
 	return ""
+}
+
+// SetTransaction sets the active transaction for this session
+func (s *Session) SetTransaction(tx interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.activeTx = tx
+}
+
+// GetTransaction returns the active transaction, or nil if none
+func (s *Session) GetTransaction() interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.activeTx
+}
+
+// ClearTransaction clears the active transaction
+func (s *Session) ClearTransaction() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.activeTx = nil
+}
+
+// HasActiveTransaction returns true if there is an active transaction
+func (s *Session) HasActiveTransaction() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.activeTx != nil
 }
