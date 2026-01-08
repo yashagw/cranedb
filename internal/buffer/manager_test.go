@@ -68,3 +68,56 @@ func TestManager_BasicOperations(t *testing.T) {
 	// Clean up
 	bm.Unpin(buff2)
 }
+
+func TestManager_LRUEvictionOrder(t *testing.T) {
+	dbDir := "testdata_lru"
+	blockSize := 400
+
+	fm, err := file.NewManager(dbDir, blockSize)
+	require.NoError(t, err)
+	defer fm.Close()
+	defer os.RemoveAll(dbDir)
+
+	lm, err := log.NewManager(fm, "testlog")
+	require.NoError(t, err)
+	defer lm.Close()
+
+	dpt := NewDirtyPageTable()
+
+	// Create a buffer pool with only 3 buffers
+	bm, err := NewManager(fm, lm, dpt, 3)
+	require.NoError(t, err)
+
+	blk0 := file.NewBlockID("testfile", 0)
+	blk1 := file.NewBlockID("testfile", 1)
+	blk2 := file.NewBlockID("testfile", 2)
+	blk3 := file.NewBlockID("testfile", 3)
+
+	// Pin 3 blocks - fills the buffer pool
+	buff0, err := bm.Pin(blk0)
+	require.NoError(t, err)
+	buff1, err := bm.Pin(blk1)
+	require.NoError(t, err)
+	buff2, err := bm.Pin(blk2)
+	require.NoError(t, err)
+
+	// Unpin all - LRU order should be: blk0 (oldest) -> blk1 -> blk2 (most recent)
+	bm.Unpin(buff0)
+	bm.Unpin(buff1)
+	bm.Unpin(buff2)
+
+	// Access blk0 again - this should move it to front of LRU
+	// LRU order now: blk1 (oldest) -> blk2 -> blk0 (most recent)
+	buff0Again, err := bm.Pin(blk0)
+	require.NoError(t, err)
+	assert.Same(t, buff0, buff0Again, "Should return same buffer for same block")
+	bm.Unpin(buff0Again)
+
+	// Pin a new block (blk3) - should evict blk1 (least recently used)
+	buff3, err := bm.Pin(blk3)
+	require.NoError(t, err)
+	assert.Same(t, buff1, buff3, "Block 3 should be in the buffer that previously held block 1 (LRU eviction)")
+	assert.Equal(t, blk3, buff3.Block(), "Buffer should now contain block 3")
+
+	bm.Unpin(buff3)
+}

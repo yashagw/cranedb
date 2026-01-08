@@ -13,6 +13,7 @@ import (
 // Manager manages a pool of buffers.
 type Manager struct {
 	bufferpool   []*Buffer
+	lruList      *LRUList
 	numAvailable int
 	maxTime      time.Duration
 	mu           sync.Mutex
@@ -25,14 +26,17 @@ func NewManager(fileManager *file.Manager, logManager *log.Manager, dirtyPageTab
 		return nil, errors.New("number of buffers must be positive")
 	}
 
+	lruList := NewLRUList()
 	bufferpool := make([]*Buffer, 0, numOfBuffer)
 	for i := 0; i < numOfBuffer; i++ {
 		buf := NewBuffer(i, fileManager, logManager, dirtyPageTable)
 		bufferpool = append(bufferpool, buf)
+		lruList.Add(buf) // Add all buffers to LRU list
 	}
 
 	bm := &Manager{
 		bufferpool:   bufferpool,
+		lruList:      lruList,
 		numAvailable: numOfBuffer,
 		maxTime:      10 * time.Second,
 		flushStopCh:  make(chan struct{}),
@@ -208,55 +212,36 @@ func (bm *Manager) tryToPin(blk *file.BlockID) (*Buffer, error) {
 	}
 
 	if buff == nil {
-		// Prefer buffers with no block assigned (empty buffer)
-		for _, b := range bm.bufferpool {
-			if b.Block() == nil {
-				buff = b
-				slog.Info("Buffer allocated (empty) for block", slog.Group("buffer",
-					slog.Int("id", b.number),
-					slog.String("block", blk.String()),
-					slog.Int64("txNum", b.ModifyingTx()),
-					slog.Int64("lsn", b.lsn),
-				))
-				break
-			}
-		}
-
-		// If no empty buffer, choose an unpinned buffer
-		if buff == nil {
-			for _, b := range bm.bufferpool {
-				if !b.IsPinned() {
-					buff = b
-					slog.Info("Buffer reallocated (unpinned) for block", slog.Group("buffer",
-						slog.Int("id", b.number),
-						slog.String("block", blk.String()),
-						slog.Int64("txNum", b.ModifyingTx()),
-						slog.Int64("lsn", b.lsn),
-					))
-					break
-				}
-			}
-		}
+		// Use LRU to find the least recently used unpinned buffer
+		buff = bm.lruList.GetLRUUnpinned()
 
 		// If still no buffer, return nil
 		if buff == nil {
 			return nil, nil
 		}
 
+		slog.Info("Buffer reallocated for block", slog.Group("buffer",
+			slog.Int("id", buff.number),
+			slog.String("oldBlock", func() string {
+				if buff.Block() != nil {
+					return buff.Block().String()
+				}
+				return "nil"
+			}()),
+			slog.String("newBlock", blk.String()),
+		))
+
 		// Assign the buffer to the block
 		err := buff.loadBlock(blk)
-		slog.Info("Block loaded into buffer", slog.Group("buffer",
-			slog.Int("id", buff.number),
-			slog.String("block", blk.String()),
-			slog.Int64("txNum", buff.ModifyingTx()),
-			slog.Int64("lsn", buff.lsn),
-		))
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	// 5. If the buffer wasn't already pinned, decrease available count
+	// Move to front of LRU list (most recently used)
+	bm.lruList.MoveToFront(buff)
+
+	// If the buffer wasn't already pinned, decrease available count
 	if !buff.IsPinned() {
 		bm.numAvailable--
 	}
