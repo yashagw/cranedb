@@ -74,10 +74,10 @@ test:
 
 # Run targets
 run-server: build-server
-	@./bin/server
+	PORT=8080 DB_DIR=/tmp/test_db ./bin/server
 
 run-client: build-client
-	@./bin/client
+	CRANEDB_PORT=8080 ./bin/client
 
 BTREE_TEST_DB = /tmp/test_db
 COUNT ?= 1000

@@ -101,6 +101,34 @@ func (rp *RecordPage) Delete(slot int) error {
 	return rp.setSlotStatus(slot, SlotStatusEmpty)
 }
 
+// GetXmin returns the xmin (creating transaction ID) for the given slot.
+func (rp *RecordPage) GetXmin(slot int) (int64, error) {
+	slotOffset := slot * rp.layout.GetSlotSize()
+	totalOffset := slotOffset + XminOffset
+	return rp.transaction.GetInt64(rp.block, totalOffset)
+}
+
+// SetXmin sets the xmin for the given slot.
+func (rp *RecordPage) SetXmin(slot int, txNum int64) error {
+	slotOffset := slot * rp.layout.GetSlotSize()
+	totalOffset := slotOffset + XminOffset
+	return rp.transaction.SetInt64(rp.block, totalOffset, txNum, true)
+}
+
+// GetXmax returns the xmax (deleting transaction ID) for the given slot.
+func (rp *RecordPage) GetXmax(slot int) (int64, error) {
+	slotOffset := slot * rp.layout.GetSlotSize()
+	totalOffset := slotOffset + XmaxOffset
+	return rp.transaction.GetInt64(rp.block, totalOffset)
+}
+
+// SetXmax sets the xmax for the given slot.
+func (rp *RecordPage) SetXmax(slot int, txNum int64) error {
+	slotOffset := slot * rp.layout.GetSlotSize()
+	totalOffset := slotOffset + XmaxOffset
+	return rp.transaction.SetInt64(rp.block, totalOffset, txNum, true)
+}
+
 // NextUsedSlot returns the index of the next slot after the given slot that is marked as USED.
 // If no such slot is found, it returns -1.
 func (rp *RecordPage) NextUsedSlot(slot int) (int, error) {
@@ -148,6 +176,15 @@ func (rp *RecordPage) Format() error {
 	slot := 0
 	for rp.isValidSlot(slot) {
 		err := rp.setSlotStatus(slot, SlotStatusEmpty)
+		if err != nil {
+			return err
+		}
+		// Zero out MVCC fields
+		err = rp.SetXmin(slot, 0)
+		if err != nil {
+			return err
+		}
+		err = rp.SetXmax(slot, 0)
 		if err != nil {
 			return err
 		}

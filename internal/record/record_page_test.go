@@ -147,3 +147,67 @@ func TestRecordPage_Format(t *testing.T) {
 	// Cleanup
 	tx.Commit()
 }
+
+func TestRecordPage_XminXmax(t *testing.T) {
+	// Setup test environment
+	fileManager, err := file.NewManager("/tmp/testdb_xminxmax", 400)
+	require.NoError(t, err)
+	logManager, err := log.NewManager(fileManager, "test_xminxmax.log")
+	require.NoError(t, err)
+	dpt := buffer.NewDirtyPageTable()
+	bufferManager, err := buffer.NewManager(fileManager, logManager, dpt, 10)
+	require.NoError(t, err)
+	lockTable := transaction.NewLockTable()
+	dirtyPageTable := buffer.NewDirtyPageTable()
+	transactionTable := transaction.NewTransactionTable()
+	transactionManager := transaction.NewTransactionManager(fileManager, logManager, bufferManager, lockTable, dirtyPageTable, transactionTable)
+	tx := transactionManager.BeginTransaction()
+	require.NotNil(t, tx)
+
+	schema := NewSchema()
+	schema.AddIntField("id")
+	layout := NewLayoutFromSchema(schema)
+	block, err := tx.Append("testfile_xminxmax")
+	require.NoError(t, err)
+	recordPage, err := NewRecordPage(tx, block, layout)
+	require.NoError(t, err)
+
+	slot, err := recordPage.InsertSlot(-1)
+	require.NoError(t, err)
+
+	// Test Xmin: set and get
+	err = recordPage.SetXmin(slot, 100)
+	require.NoError(t, err)
+	xmin, err := recordPage.GetXmin(slot)
+	require.NoError(t, err)
+	assert.Equal(t, int64(100), xmin)
+
+	// Test Xmax: set and get
+	err = recordPage.SetXmax(slot, 200)
+	require.NoError(t, err)
+	xmax, err := recordPage.GetXmax(slot)
+	require.NoError(t, err)
+	assert.Equal(t, int64(200), xmax)
+
+	// Verify xmin and xmax are independent
+	xmin, err = recordPage.GetXmin(slot)
+	require.NoError(t, err)
+	assert.Equal(t, int64(100), xmin)
+
+	// Test multiple slots
+	slot2, err := recordPage.InsertSlot(slot)
+	require.NoError(t, err)
+	err = recordPage.SetXmin(slot2, 300)
+	require.NoError(t, err)
+	err = recordPage.SetXmax(slot2, 400)
+	require.NoError(t, err)
+
+	xmin2, err := recordPage.GetXmin(slot2)
+	require.NoError(t, err)
+	assert.Equal(t, int64(300), xmin2)
+	xmax2, err := recordPage.GetXmax(slot2)
+	require.NoError(t, err)
+	assert.Equal(t, int64(400), xmax2)
+
+	tx.Commit()
+}

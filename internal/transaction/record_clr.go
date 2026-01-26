@@ -18,6 +18,7 @@ type CLRLogRecord struct {
 	offset      int
 	// Value to restore (union type - only one will be used based on originalOp)
 	intValue    int
+	int64Value  int64
 	stringValue string
 	boolValue   bool
 }
@@ -67,6 +68,8 @@ func NewCLRLogRecord(page *file.Page) *CLRLogRecord {
 	switch originalOp {
 	case LogRecordSetInt:
 		clr.intValue = page.GetIntRaw(valuePos)
+	case LogRecordSetInt64:
+		clr.int64Value = page.GetInt64Raw(valuePos)
 	case LogRecordSetString:
 		clr.stringValue = page.GetStringRaw(valuePos)
 	case LogRecordSetBool:
@@ -125,6 +128,10 @@ func (c *CLRLogRecord) GetStringValue() string {
 	return c.stringValue
 }
 
+func (c *CLRLogRecord) GetInt64Value() int64 {
+	return c.int64Value
+}
+
 func (c *CLRLogRecord) GetBoolValue() bool {
 	return c.boolValue
 }
@@ -150,6 +157,8 @@ func (c *CLRLogRecord) Redo(tx *Transaction) (bool, error) {
 	switch c.originalOp {
 	case LogRecordSetInt:
 		err = tx.SetInt(c.block, c.offset, c.intValue, false)
+	case LogRecordSetInt64:
+		err = tx.SetInt64(c.block, c.offset, c.int64Value, false)
 	case LogRecordSetString:
 		err = tx.SetString(c.block, c.offset, c.stringValue, false)
 	case LogRecordSetBool:
@@ -217,6 +226,38 @@ func WriteCLRLogRecord(lm *log.Manager, txNum int64, lsn int64, prevLSN int64, u
 	}
 
 	// Append CRC32 checksum
+	appendCRC32(page, dataLen)
+
+	return lm.Append(page.Bytes(), lsn)
+}
+
+// WriteCLRInt64LogRecord writes a CLR for an int64 operation.
+func WriteCLRInt64LogRecord(lm *log.Manager, txNum int64, lsn int64, prevLSN int64, undoNextLSN int64, blk *file.BlockID, offset int, int64Val int64) error {
+	opPos := 0
+	txNumPos := opPos + LogRecordTypeSize()
+	lsnPos := txNumPos + 8
+	prevLSNPos := lsnPos + 8
+	undoNextLSNPos := prevLSNPos + 8
+	originalOpPos := undoNextLSNPos + 8
+	fileNamePos := originalOpPos + 4
+	blockNumPos := fileNamePos + 4 + len(blk.Filename())
+	offsetPos := blockNumPos + 4
+	valuePos := offsetPos + 4
+	dataLen := valuePos + 8
+	finalLen := dataLen + CRC32ChecksumSize()
+
+	page := file.NewPage(finalLen)
+	page.SetIntRaw(opPos, int(LogRecordCLR))
+	page.SetInt64Raw(txNumPos, txNum)
+	page.SetInt64Raw(lsnPos, lsn)
+	page.SetInt64Raw(prevLSNPos, prevLSN)
+	page.SetInt64Raw(undoNextLSNPos, undoNextLSN)
+	page.SetIntRaw(originalOpPos, int(LogRecordSetInt64))
+	page.SetStringRaw(fileNamePos, blk.Filename())
+	page.SetIntRaw(blockNumPos, blk.Number())
+	page.SetIntRaw(offsetPos, offset)
+	page.SetInt64Raw(valuePos, int64Val)
+
 	appendCRC32(page, dataLen)
 
 	return lm.Append(page.Bytes(), lsn)

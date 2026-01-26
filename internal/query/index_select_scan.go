@@ -34,15 +34,27 @@ func (iss *IndexSelectScan) BeforeFirst() error {
 }
 
 func (iss *IndexSelectScan) Next() (bool, error) {
-	next, err := iss.index.Next()
-	if !next || err != nil {
-		return next, err
+	for {
+		next, err := iss.index.Next()
+		if !next || err != nil {
+			return next, err
+		}
+		dataRID, err := iss.index.GetDataRid()
+		if err != nil {
+			return false, err
+		}
+		err = iss.tableScan.MoveToRID(dataRID)
+		if err != nil {
+			return false, err
+		}
+		visible, err := iss.tableScan.IsCurrentSlotVisible()
+		if err != nil {
+			return false, err
+		}
+		if visible {
+			return true, nil
+		}
 	}
-	dataRID, err := iss.index.GetDataRid()
-	if err != nil {
-		return false, err
-	}
-	return true, iss.tableScan.MoveToRID(dataRID)
 }
 
 func (iss *IndexSelectScan) GetInt(fldname string) (int, error) {

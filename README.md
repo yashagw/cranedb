@@ -1,6 +1,6 @@
 # CraneDB
 
-A relational database implementation written in Go. While the initial design follows the principles and concepts from the "Database Design and Implementation" book, it has been significantly enhanced with advanced features like ARIES recovery, fuzzy checkpointing, and more.
+A relational database implementation written in Go. While the initial design follows the principles and concepts from the "Database Design and Implementation" book, it has been significantly enhanced with advanced features like MVCC (Multi-Version Concurrency Control), ARIES recovery, fuzzy checkpointing, and more.
 
 ## About
 
@@ -58,10 +58,19 @@ CRANEDB_PORT=8082 make run-client
 
 ### Transaction Management
 
-- **ACID Properties**: Transaction support with atomicity (commit/rollback), durability (write-ahead logging), basic isolation (two-phase locking), and transaction-level consistency
-- **Concurrency Control**: Two-phase locking with shared and exclusive locks
+- **ACID Properties**: Transaction support with atomicity (commit/rollback), durability (write-ahead logging), snapshot isolation (MVCC), and transaction-level consistency
+- **MVCC (Multi-Version Concurrency Control)**: 
+  - **Snapshot Isolation**: Each transaction sees a consistent point-in-time snapshot of the database
+  - **Non-blocking Reads**: Readers never block writers, and writers never block readers
+  - **Version Management**: Tuples maintain xmin (creator transaction) and xmax (deleter transaction) timestamps
+  - **Visibility Rules**: Automatic visibility determination based on transaction snapshots and commit status
+  - **Write-Write Conflict Detection**: First-writer-wins conflict resolution for concurrent updates
+  - **Update Semantics**: UPDATE operations create new tuple versions (delete old + insert new) rather than in-place modifications
+  - **Delete Semantics**: DELETE operations mark tuples with xmax rather than physically removing them
+- **Concurrency Control**: Exclusive locks for writers; readers use MVCC snapshots without acquiring locks
 - **Deadlock Prevention**: Timeout-based lock management to prevent indefinite waiting
 - **Recovery**: ARIES recovery algorithm (Analysis, Redo, Undo) for advanced crash recovery and transaction rollback
+- **Vacuum**: Automatic garbage collection of dead tuple versions that are no longer visible to any active transaction
 
 ### Logging and Recovery
 
@@ -176,7 +185,6 @@ SELECT name, course, grade FROM courses ORDER BY grade, name;
 -- GROUP BY with aggregations
 SELECT student_id, MAX(grade), MIN(grade) FROM courses GROUP BY student_id;
 SELECT student_id, COUNT(grade), SUM(grade) FROM courses GROUP BY student_id;
-SELECT COUNT(DISTINCT student_id) FROM courses;
 
 -- Joins
 SELECT name, course, grade FROM students, courses WHERE id = student_id;
@@ -285,7 +293,6 @@ A utility tool to quickly generate test databases with tables and indices for te
    ```
 
    Options:
-
    - `-db` - Path to the database directory (default: `./test_data`)
    - `-count` - Number of records to insert (default: `100`)
    - `-random` - Randomize IDs and names (default: `true`)

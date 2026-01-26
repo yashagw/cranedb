@@ -23,6 +23,7 @@ const (
 	LogRecordSetString  LogRecordType = 5
 	LogRecordSetBool    LogRecordType = 6
 	LogRecordCLR        LogRecordType = 7
+	LogRecordSetInt64   LogRecordType = 8
 )
 
 // LogRecord interface
@@ -49,6 +50,7 @@ var _ DataModificationRecord = (*SetIntLogRecord)(nil)
 var _ DataModificationRecord = (*SetStringLogRecord)(nil)
 var _ DataModificationRecord = (*SetBoolLogRecord)(nil)
 var _ DataModificationRecord = (*CLRLogRecord)(nil)
+var _ DataModificationRecord = (*SetInt64LogRecord)(nil)
 
 // CRC32ChecksumSize returns the size of the CRC32 checksum in bytes
 func CRC32ChecksumSize() int {
@@ -111,6 +113,8 @@ func CreateLogRecord(bytes []byte) (LogRecord, error) {
 		return NewSetBoolLogRecord(dataPage), nil
 	case LogRecordCLR:
 		return NewCLRLogRecord(dataPage), nil
+	case LogRecordSetInt64:
+		return NewSetInt64LogRecord(dataPage), nil
 	default:
 		return nil, fmt.Errorf("invalid log record operation type: %d", op)
 	}

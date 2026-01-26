@@ -1,7 +1,6 @@
 package plan
 
 import (
-	"github.com/yashagw/cranedb/internal/index"
 	"github.com/yashagw/cranedb/internal/metadata"
 	"github.com/yashagw/cranedb/internal/parse/parserdata"
 	"github.com/yashagw/cranedb/internal/query"
@@ -41,14 +40,6 @@ func (p *BasicUpdatePlanner) ExecuteDelete(deleteData *parserdata.DeleteData, tx
 		return 0, nil
 	}
 
-	// Get index info for the table
-	indexInfo, err := p.metadataManager.GetIndexInfo(deleteData.Table(), tx)
-	if err != nil {
-		us.Close()
-		return 0, err
-	}
-
-	// Delete all matching records
 	count := 0
 	for {
 		hasNext, err := us.Next()
@@ -60,42 +51,7 @@ func (p *BasicUpdatePlanner) ExecuteDelete(deleteData *parserdata.DeleteData, tx
 			break
 		}
 
-		// Get RID before deleting
-		rid, err := us.GetRID()
-		if err != nil {
-			us.Close()
-			return 0, err
-		}
-
-		// Delete from all indexes for this record
-		for fieldName, ii := range indexInfo {
-			// Get current field value
-			val, err := us.GetValue(fieldName)
-			if err != nil {
-				us.Close()
-				return 0, err
-			}
-
-			// Delete from index
-			index, err := ii.Open()
-			if err != nil {
-				us.Close()
-				return 0, err
-			}
-			err = index.Delete(val, rid)
-			if err != nil {
-				index.Close()
-				us.Close()
-				return 0, err
-			}
-			err = index.Close()
-			if err != nil {
-				us.Close()
-				return 0, err
-			}
-		}
-
-		// Delete the record
+		// Delete the record (sets xmax)
 		err = us.Delete()
 		if err != nil {
 			us.Close()
@@ -114,6 +70,7 @@ func (p *BasicUpdatePlanner) ExecuteModify(modifyData *parserdata.ModifyData, tx
 	if err != nil {
 		return 0, err
 	}
+	schema := tablePlan.Schema()
 	plan := NewSelectPlan(tablePlan, modifyData.Predicate())
 
 	s, err := plan.Open()
@@ -133,25 +90,8 @@ func (p *BasicUpdatePlanner) ExecuteModify(modifyData *parserdata.ModifyData, tx
 		return 0, err
 	}
 
-	fieldName := modifyData.FieldName()
+	targetField := modifyData.FieldName()
 
-	// Open index if it exists for the field being modified
-	var index index.Index
-	if ii, hasIndex := indexInfo[fieldName]; hasIndex {
-		var err error
-		index, err = ii.Open()
-		if err != nil {
-			us.Close()
-			return 0, err
-		}
-		defer func() {
-			if index != nil {
-				index.Close()
-			}
-		}()
-	}
-
-	// Update all matching records
 	count := 0
 	for {
 		hasNext, err := us.Next()
@@ -163,73 +103,89 @@ func (p *BasicUpdatePlanner) ExecuteModify(modifyData *parserdata.ModifyData, tx
 			break
 		}
 
-		// Get RID before modifying
-		rid, err := us.GetRID()
-		if err != nil {
-			us.Close()
-			return 0, err
+		oldValues := make(map[string]any)
+		for _, f := range schema.Fields() {
+			val, err := us.GetValue(f)
+			if err != nil {
+				us.Close()
+				return 0, err
+			}
+			oldValues[f] = val
 		}
 
-		// Evaluate new value
 		newValConstant, err := modifyData.NewValue().Evaluate(us)
 		if err != nil {
 			us.Close()
 			return 0, err
 		}
 
-		// If the field being modified has an index, handle index updates
-		if index != nil {
-			// Get old value before updating
-			oldVal, err := us.GetValue(fieldName)
-			if err != nil {
-				us.Close()
-				return 0, err
-			}
-
-			// Delete old index entry
-			err = index.Delete(oldVal, rid)
-			if err != nil {
-				us.Close()
-				return 0, err
-			}
+		err = us.Delete()
+		if err != nil {
+			us.Close()
+			return 0, err
 		}
 
-		// Update the record
-		if newValConstant.IsInt() {
-			err = us.SetInt(fieldName, newValConstant.AsInt())
-			if err != nil {
-				us.Close()
-				return 0, err
-			}
-		} else if newValConstant.IsBool() {
-			err = us.SetBool(fieldName, newValConstant.AsBool())
-			if err != nil {
-				us.Close()
-				return 0, err
-			}
-		} else {
-			err = us.SetString(fieldName, newValConstant.AsString())
-			if err != nil {
-				us.Close()
-				return 0, err
-			}
+		err = us.Insert()
+		if err != nil {
+			us.Close()
+			return 0, err
 		}
 
-		// Insert new index entry if index exists
-		if index != nil {
-			var newVal any
-			if newValConstant.IsInt() {
-				newVal = newValConstant.AsInt()
-			} else if newValConstant.IsBool() {
-				newVal = newValConstant.AsBool()
+		for _, f := range schema.Fields() {
+			if f == targetField {
+				if newValConstant.IsInt() {
+					err = us.SetInt(f, newValConstant.AsInt())
+				} else if newValConstant.IsBool() {
+					err = us.SetBool(f, newValConstant.AsBool())
+				} else {
+					err = us.SetString(f, newValConstant.AsString())
+				}
 			} else {
-				newVal = newValConstant.AsString()
+				switch v := oldValues[f].(type) {
+				case int:
+					err = us.SetInt(f, v)
+				case bool:
+					err = us.SetBool(f, v)
+				case string:
+					err = us.SetString(f, v)
+				}
 			}
-			err = index.Insert(newVal, rid)
 			if err != nil {
 				us.Close()
 				return 0, err
 			}
+		}
+
+		newRID, err := us.GetRID()
+		if err != nil {
+			us.Close()
+			return 0, err
+		}
+		for fieldName, ii := range indexInfo {
+			idx, err := ii.Open()
+			if err != nil {
+				us.Close()
+				return 0, err
+			}
+			var val any
+			if fieldName == targetField {
+				if newValConstant.IsInt() {
+					val = newValConstant.AsInt()
+				} else if newValConstant.IsBool() {
+					val = newValConstant.AsBool()
+				} else {
+					val = newValConstant.AsString()
+				}
+			} else {
+				val = oldValues[fieldName]
+			}
+			err = idx.Insert(val, newRID)
+			if err != nil {
+				idx.Close()
+				us.Close()
+				return 0, err
+			}
+			idx.Close()
 		}
 
 		count++

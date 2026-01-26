@@ -54,6 +54,10 @@ func (m *Manager) GetStatInfo(tableName string, layout *record.Layout, tx *trans
 	return m.statsManager.GetStatInfo(tableName, layout, tx)
 }
 
+func (m *Manager) GetAllTableNames(tx *transaction.Transaction) ([]string, error) {
+	return m.tableManager.GetAllTableNames(tx)
+}
+
 // InvalidateStats clears cached stats for a specific table
 func (m *Manager) InvalidateStats(tableName string) {
 	m.statsManager.InvalidateStats(tableName)

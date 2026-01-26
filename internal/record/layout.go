@@ -1,5 +1,15 @@
 package record
 
+const (
+	SlotFlagSize   = 4                                  // 4 bytes for empty/in-use flag
+	XminSize       = 8                                  // 8 bytes for xmin (creating transaction ID)
+	XmaxSize       = 8                                  // 8 bytes for xmax (deleting transaction ID)
+	MVCCHeaderSize = SlotFlagSize + XminSize + XmaxSize // 20 bytes total
+
+	XminOffset = SlotFlagSize            // 4
+	XmaxOffset = SlotFlagSize + XminSize // 12
+)
+
 type Layout struct {
 	schema   *Schema
 	offsets  map[string]int
@@ -9,7 +19,7 @@ type Layout struct {
 // NewLayoutFromSchema creates a new layout from a schema
 func NewLayoutFromSchema(schema *Schema) *Layout {
 	offsets := make(map[string]int)
-	pos := 4 // 4 bytes for the empty/inuse flag
+	pos := MVCCHeaderSize
 	for _, field := range schema.fields {
 		offsets[field] = pos
 		fieldInfo := schema.fieldInfo[field]

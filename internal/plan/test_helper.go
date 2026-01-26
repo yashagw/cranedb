@@ -20,7 +20,7 @@ func setupTestDB(t *testing.T) (string, *transaction.Transaction, *metadata.Mana
 
 	dbPath := filepath.Join(tempDir, "testdb")
 
-	fm, err := file.NewManager(dbPath, 400)
+	fm, err := file.NewManager(dbPath, 4096)
 	require.NoError(t, err)
 	lm, err := log.NewManager(fm, "testlog")
 	require.NoError(t, err)

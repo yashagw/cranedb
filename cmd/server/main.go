@@ -16,6 +16,7 @@ import (
 	"github.com/yashagw/cranedb/internal/file"
 	dblog "github.com/yashagw/cranedb/internal/log"
 	"github.com/yashagw/cranedb/internal/metadata"
+	"github.com/yashagw/cranedb/internal/mvcc"
 	"github.com/yashagw/cranedb/internal/parse"
 	"github.com/yashagw/cranedb/internal/parse/parserdata"
 	"github.com/yashagw/cranedb/internal/plan"
@@ -27,7 +28,7 @@ import (
 const (
 	DefaultPort       = "8080"
 	DefaultDBDir      = "./cranedb_data"
-	DefaultBlockSize  = 400
+	DefaultBlockSize  = 4096
 	DefaultBufferSize = 40
 )
 
@@ -488,6 +489,50 @@ func (s *Server) executeQuery(sql string, sess *session.Session) QueryResponse {
 	}
 }
 
+func (s *Server) runVacuum() {
+	oldestActiveTx := s.transactionManager.GetOldestActiveTx()
+	commitLog := s.transactionManager.GetCommitLog()
+
+	tx := s.transactionManager.BeginTransaction()
+	defer func() {
+		if err := tx.Commit(); err != nil {
+			slog.Error("vacuum: failed to commit transaction", "err", err)
+		}
+	}()
+
+	tableNames, err := s.metadataManager.GetAllTableNames(tx)
+	if err != nil {
+		slog.Error("vacuum: failed to get table names", "err", err)
+		return
+	}
+
+	totalReclaimed := 0
+	for _, tableName := range tableNames {
+		layout, err := s.metadataManager.GetTableLayout(tableName, tx)
+		if err != nil {
+			slog.Warn("vacuum: failed to get layout", "table", tableName, "err", err)
+			continue
+		}
+		indexInfo, err := s.metadataManager.GetIndexInfo(tableName, tx)
+		if err != nil {
+			slog.Warn("vacuum: failed to get index info", "table", tableName, "err", err)
+			continue
+		}
+		reclaimed, err := mvcc.Vacuum(tableName, layout, tx, commitLog, indexInfo, oldestActiveTx)
+		if err != nil {
+			slog.Warn("vacuum: error during vacuum", "table", tableName, "err", err)
+			continue
+		}
+		totalReclaimed += reclaimed
+	}
+
+	if totalReclaimed > 0 {
+		slog.Info("Vacuum completed", "reclaimed", totalReclaimed)
+	}
+
+	commitLog.Cleanup(oldestActiveTx)
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -520,6 +565,16 @@ func main() {
 			} else {
 				slog.Info("Checkpoint saved")
 			}
+		}
+	}()
+
+	// Start background vacuum every 5 minutes
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			<-ticker.C
+			server.runVacuum()
 		}
 	}()
 

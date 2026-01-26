@@ -1,6 +1,7 @@
 package transaction
 
 import (
+	"math"
 	"sync"
 
 	"github.com/yashagw/cranedb/internal/buffer"
@@ -16,6 +17,7 @@ type TransactionManager struct {
 	lockTable        *LockTable
 	dirtyPageTable   *buffer.DirtyPageTable
 	transactionTable *TransactionTable
+	commitLog        *CommitLog
 
 	// Tracks all active transactions
 	activeTransactions map[int64]*Transaction
@@ -31,6 +33,7 @@ func NewTransactionManager(fileManager *file.Manager, logManager *dblog.Manager,
 		lockTable:          lockTable,
 		dirtyPageTable:     dirtyPageTable,
 		transactionTable:   transactionTable,
+		commitLog:          NewCommitLog(),
 		activeTransactions: make(map[int64]*Transaction),
 	}
 }
@@ -42,6 +45,9 @@ func (tm *TransactionManager) BeginTransaction() *Transaction {
 	concurrencyManager := NewConcurrencyManager(tm.lockTable)
 	bufferList := NewBufferList(tm.bufferManager)
 
+	// Take snapshot before adding ourselves to active set
+	snapshot := tm.GetSnapshot(txNum)
+
 	transaction := &Transaction{
 		fileManager:        tm.fileManager,
 		logManager:         tm.logManager,
@@ -52,9 +58,11 @@ func (tm *TransactionManager) BeginTransaction() *Transaction {
 		bufferList:         bufferList,
 		dirtyPageTable:     tm.dirtyPageTable,
 		transactionManager: tm,
+		snapshot:           snapshot,
+		commitLog:          tm.commitLog,
 	}
 
-	recoveryManager := NewRecoveryManager(txNum, transaction, tm.logManager, tm.bufferManager, tm.dirtyPageTable, tm.transactionTable)
+	recoveryManager := NewRecoveryManager(txNum, transaction, tm.logManager, tm.bufferManager, tm.dirtyPageTable, tm.transactionTable, tm.commitLog)
 	transaction.recoveryManager = recoveryManager
 
 	// 1. Write log record first (WAL principle)
@@ -153,4 +161,38 @@ func (tm *TransactionManager) PerformDBRecovery() error {
 	defer tempTx.Commit()
 
 	return tempTx.recoveryManager.DBRecovery()
+}
+
+// GetSnapshot creates a snapshot for the given transaction.
+func (tm *TransactionManager) GetSnapshot(txNum int64) *Snapshot {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	activeIDs := make([]int64, 0, len(tm.activeTransactions))
+	for id := range tm.activeTransactions {
+		if id != txNum {
+			activeIDs = append(activeIDs, id)
+		}
+	}
+	txNumMutex.Lock()
+	nextTx := nextTxNum
+	txNumMutex.Unlock()
+	return NewSnapshot(txNum, activeIDs, nextTx)
+}
+
+// GetOldestActiveTx returns the minimum txNum among all active transactions.
+func (tm *TransactionManager) GetOldestActiveTx() int64 {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	oldest := int64(math.MaxInt64)
+	for txNum := range tm.activeTransactions {
+		if txNum < oldest {
+			oldest = txNum
+		}
+	}
+	return oldest
+}
+
+// GetCommitLog returns the global commit log.
+func (tm *TransactionManager) GetCommitLog() *CommitLog {
+	return tm.commitLog
 }

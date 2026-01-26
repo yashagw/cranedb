@@ -10,7 +10,7 @@ import (
 
 var (
 	txNumMutex sync.Mutex
-	nextTxNum  int64
+	nextTxNum  int64 = 1 // Start at 1; 0 is reserved as the "no transaction" marker for xmax
 )
 
 // getNextTxNum returns a unique transaction number using a global mutex
@@ -39,12 +39,18 @@ type Transaction struct {
 	txNum      int64
 	prevTxLSN  int64
 	bufferList *BufferList
+
+	snapshot  *Snapshot
+	commitLog *CommitLog
 }
 
 func (t *Transaction) Commit() error {
 	err := t.recoveryManager.Commit()
 	if err != nil {
 		return err
+	}
+	if t.commitLog != nil {
+		t.commitLog.MarkCommitted(t.txNum)
 	}
 	err = t.concurrencyManager.release()
 	if err != nil {
@@ -72,14 +78,9 @@ func (t *Transaction) Rollback() error {
 }
 
 func (t *Transaction) GetInt(blk *file.BlockID, offset int) (int, error) {
-	err := t.concurrencyManager.sLock(blk)
-	if err != nil {
-		return 0, err
-	}
-
 	buff := t.bufferList.GetBuffer(blk)
 	if buff == nil {
-		// Buffer not pinned yet, pin it first
+		var err error
 		buff, err = t.bufferList.Pin(blk)
 		if err != nil {
 			return 0, err
@@ -91,14 +92,9 @@ func (t *Transaction) GetInt(blk *file.BlockID, offset int) (int, error) {
 }
 
 func (t *Transaction) GetBool(blk *file.BlockID, offset int) (bool, error) {
-	err := t.concurrencyManager.sLock(blk)
-	if err != nil {
-		return false, err
-	}
-
 	buff := t.bufferList.GetBuffer(blk)
 	if buff == nil {
-		// Buffer not pinned yet, pin it first
+		var err error
 		buff, err = t.bufferList.Pin(blk)
 		if err != nil {
 			return false, err
@@ -110,14 +106,9 @@ func (t *Transaction) GetBool(blk *file.BlockID, offset int) (bool, error) {
 }
 
 func (t *Transaction) GetString(blk *file.BlockID, offset int) (string, error) {
-	err := t.concurrencyManager.sLock(blk)
-	if err != nil {
-		return "", err
-	}
-
 	buff := t.bufferList.GetBuffer(blk)
 	if buff == nil {
-		// Buffer not pinned yet, pin it first
+		var err error
 		buff, err = t.bufferList.Pin(blk)
 		if err != nil {
 			return "", err
@@ -128,14 +119,23 @@ func (t *Transaction) GetString(blk *file.BlockID, offset int) (string, error) {
 	return val, nil
 }
 
-// GetPageLSN reads the PageLSN from the page header with proper concurrency control.
-// This is used during recovery to check if a page already has a log record applied.
-func (t *Transaction) GetPageLSN(blk *file.BlockID) (int64, error) {
-	err := t.concurrencyManager.sLock(blk)
-	if err != nil {
-		return -1, err
+func (t *Transaction) GetInt64(blk *file.BlockID, offset int) (int64, error) {
+	buff := t.bufferList.GetBuffer(blk)
+	if buff == nil {
+		var err error
+		buff, err = t.bufferList.Pin(blk)
+		if err != nil {
+			return 0, err
+		}
 	}
 
+	val := buff.Contents().GetInt64(offset)
+	return val, nil
+}
+
+// GetPageLSN reads the PageLSN from the page header.
+// This is used during recovery to check if a page already has a log record applied.
+func (t *Transaction) GetPageLSN(blk *file.BlockID) (int64, error) {
 	buff := t.bufferList.GetBuffer(blk)
 	if buff == nil {
 		var err error
@@ -275,6 +275,37 @@ func (t *Transaction) SetString(blk *file.BlockID, offset int, val string, log b
 	return nil
 }
 
+func (t *Transaction) SetInt64(blk *file.BlockID, offset int, val int64, log bool) error {
+	err := t.concurrencyManager.xLock(blk)
+	if err != nil {
+		return err
+	}
+
+	buff := t.bufferList.GetBuffer(blk)
+	if buff == nil {
+		buff, err = t.bufferList.Pin(blk)
+		if err != nil {
+			return err
+		}
+	}
+
+	lsn := int64(-1)
+	if log {
+		lsn, err = t.recoveryManager.SetInt64(buff, offset, val)
+		if err != nil {
+			return err
+		}
+		t.dirtyPageTable.Add(blk, lsn)
+	}
+
+	page := buff.Contents()
+	page.SetInt64(offset, val)
+	buff.SetModifiedTx(t.txNum)
+	buff.SetModifiedLSN(lsn)
+
+	return nil
+}
+
 func (t *Transaction) Pin(blk *file.BlockID) (*buffer.Buffer, error) {
 	return t.bufferList.Pin(blk)
 }
@@ -284,11 +315,6 @@ func (t *Transaction) Unpin(blk *file.BlockID) {
 }
 
 func (t *Transaction) Size(filename string) (int, error) {
-	dummyBlock := file.NewBlockID(filename, END_OF_LOG_RECORD)
-	err := t.concurrencyManager.sLock(dummyBlock)
-	if err != nil {
-		return 0, err
-	}
 	return t.fileManager.GetTotalBlocks(filename)
 }
 
@@ -303,4 +329,19 @@ func (t *Transaction) Append(filename string) (*file.BlockID, error) {
 
 func (t *Transaction) BlockSize() int {
 	return t.fileManager.BlockSize()
+}
+
+// TxNum returns the transaction number.
+func (t *Transaction) TxNum() int64 {
+	return t.txNum
+}
+
+// GetSnapshot returns the transaction's MVCC snapshot.
+func (t *Transaction) GetSnapshot() *Snapshot {
+	return t.snapshot
+}
+
+// GetCommitLog returns the global commit log.
+func (t *Transaction) GetCommitLog() *CommitLog {
+	return t.commitLog
 }

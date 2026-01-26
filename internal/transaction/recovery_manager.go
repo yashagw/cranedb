@@ -19,15 +19,17 @@ type RecoveryManager struct {
 	bufferManager    *buffer.Manager
 	dirtyPageTable   *buffer.DirtyPageTable
 	transactionTable *TransactionTable
+	commitLog        *CommitLog
 }
 
-func NewRecoveryManager(txNum int64, transaction *Transaction, logManager *log.Manager, bufferManager *buffer.Manager, dirtyPageTable *buffer.DirtyPageTable, transactionTable *TransactionTable) *RecoveryManager {
+func NewRecoveryManager(txNum int64, transaction *Transaction, logManager *log.Manager, bufferManager *buffer.Manager, dirtyPageTable *buffer.DirtyPageTable, transactionTable *TransactionTable, commitLog *CommitLog) *RecoveryManager {
 	return &RecoveryManager{
 		txNum:            txNum,
 		transaction:      transaction,
 		logManager:       logManager,
 		bufferManager:    bufferManager,
 		dirtyPageTable:   dirtyPageTable,
+		commitLog:        commitLog,
 		transactionTable: transactionTable,
 	}
 }
@@ -170,6 +172,21 @@ func (rm *RecoveryManager) SetBool(buf *buffer.Buffer, offset int, newValue bool
 	return lsn, nil
 }
 
+// SetInt64 logs a 64-bit integer modification operation before it occurs.
+func (rm *RecoveryManager) SetInt64(buf *buffer.Buffer, offset int, newValue int64) (int64, error) {
+	lsn := rm.logManager.GetNextLatestLSN()
+	oldVal := buf.Contents().GetInt64(offset)
+	prevLSN := rm.transaction.prevTxLSN
+
+	err := WriteSetInt64LogRecord(rm.logManager, rm.txNum, lsn, prevLSN, buf.Block(), offset, oldVal, newValue)
+	if err != nil {
+		return 0, err
+	}
+	rm.transaction.prevTxLSN = lsn
+
+	return lsn, nil
+}
+
 // Checkpoint writes a fuzzy checkpoint log record for recovery purposes.
 // This should be called periodically (e.g., every N seconds or after N transactions).
 // Checkpoint writes a fuzzy checkpoint log record for recovery purposes.
@@ -256,6 +273,10 @@ func (rm *RecoveryManager) DBRecovery() error {
 				rm.transactionTable.UpdateStatus(txNum, TransactionStatusCommitted)
 				rm.transactionTable.UpdateLastLSN(txNum, commitRecord.LSN())
 			}
+			// Rebuild CommitLog
+			if rm.commitLog != nil {
+				rm.commitLog.MarkCommitted(txNum)
+			}
 
 		case LogRecordRollback:
 			// Mark transaction as aborted and update lastLSN
@@ -265,7 +286,7 @@ func (rm *RecoveryManager) DBRecovery() error {
 				rm.transactionTable.UpdateLastLSN(txNum, rollbackRecord.LSN())
 			}
 
-		case LogRecordSetInt, LogRecordSetString, LogRecordSetBool:
+		case LogRecordSetInt, LogRecordSetString, LogRecordSetBool, LogRecordSetInt64:
 			// Update Transaction Table lastLSN for data modification records
 			if dataRecord, ok := record.(DataModificationRecord); ok {
 				recordLSN := record.LSN()
@@ -347,8 +368,8 @@ func (rm *RecoveryManager) DBRecovery() error {
 			break
 		}
 
-		// Only redo data modification records (SetInt, SetString, SetBool, CLR)
-		if record.Op() == LogRecordSetInt || record.Op() == LogRecordSetString || record.Op() == LogRecordSetBool || record.Op() == LogRecordCLR {
+		// Only redo data modification records (SetInt, SetString, SetBool, SetInt64, CLR)
+		if record.Op() == LogRecordSetInt || record.Op() == LogRecordSetString || record.Op() == LogRecordSetBool || record.Op() == LogRecordSetInt64 || record.Op() == LogRecordCLR {
 			recordLSN := record.LSN()
 
 			// Only redo if record LSN >= minRecLSN
@@ -373,6 +394,8 @@ func (rm *RecoveryManager) DBRecovery() error {
 			case *SetStringLogRecord:
 				rm.transaction.Unpin(r.Block())
 			case *SetBoolLogRecord:
+				rm.transaction.Unpin(r.Block())
+			case *SetInt64LogRecord:
 				rm.transaction.Unpin(r.Block())
 			case *CLRLogRecord:
 				rm.transaction.Unpin(r.Block())
@@ -458,6 +481,10 @@ func (rm *RecoveryManager) findAndRestoreCheckpoint() (int64, error) {
 		txTableSnapshot := checkpointRecord.TransactionTable()
 		for txNum, entry := range txTableSnapshot {
 			rm.transactionTable.Add(txNum, entry.Status, entry.LastLSN)
+			// Rebuild CommitLog
+			if entry.Status == TransactionStatusCommitted && rm.commitLog != nil {
+				rm.commitLog.MarkCommitted(txNum)
+			}
 		}
 
 		// Restore DirtyPageTable
@@ -496,7 +523,7 @@ undoLoop:
 		var nextLSN int64 = -1
 
 		switch record.Op() {
-		case LogRecordSetInt, LogRecordSetString, LogRecordSetBool:
+		case LogRecordSetInt, LogRecordSetString, LogRecordSetBool, LogRecordSetInt64:
 			// Undo the operation and generate a CLR
 			err := rm.undoDataModification(record)
 			if err != nil {
@@ -610,6 +637,29 @@ func (rm *RecoveryManager) undoDataModification(record LogRecord) error {
 		}
 
 		// Unpin the buffer after undo
+		rm.transaction.Unpin(r.Block())
+	case *SetInt64LogRecord:
+		err := rm.transaction.SetInt64(r.Block(), r.Offset(), r.OldValue(), false)
+		if err != nil {
+			return err
+		}
+
+		clrLSN := rm.logManager.GetNextLatestLSN()
+		prevLSN := rm.transaction.prevTxLSN
+		undoNextLSN := r.PrevLSN()
+
+		err = WriteCLRInt64LogRecord(rm.logManager, rm.txNum, clrLSN, prevLSN, undoNextLSN,
+			r.Block(), r.Offset(), r.OldValue())
+		if err != nil {
+			return err
+		}
+		rm.transaction.prevTxLSN = clrLSN
+
+		err = rm.transaction.ForceUpdatePageLSN(r.Block(), clrLSN)
+		if err != nil {
+			return err
+		}
+
 		rm.transaction.Unpin(r.Block())
 	}
 

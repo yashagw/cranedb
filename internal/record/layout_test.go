@@ -20,14 +20,14 @@ func TestLayout(t *testing.T) {
 	assert.Equal(t, schema, layout.schema)
 
 	// Check slot size calculation
-	// 4 bytes (empty/inuse flag) + 4 bytes (id) + 1 bytes (active) + 20 bytes (name) + 4 (name string len) = 33 bytes
-	expectedSlotSize := 4 + 4 + 1 + 20 + 4
+	// 20 bytes (MVCC header: 4 flag + 8 xmin + 8 xmax) + 4 bytes (id) + 1 byte (active) + 20 bytes (name) + 4 (name string len) = 49 bytes
+	expectedSlotSize := MVCCHeaderSize + 4 + 1 + 20 + 4
 	assert.Equal(t, expectedSlotSize, layout.GetSlotSize())
 
-	// Check field offsets
-	assert.Equal(t, 4, layout.GetOffset("id"))     // After empty/inuse flag
-	assert.Equal(t, 8, layout.GetOffset("active")) // After id (4 bytes)
-	assert.Equal(t, 9, layout.GetOffset("name"))   // After active (1 bytes)
+	// Check field offsets (start after MVCC header at offset 20)
+	assert.Equal(t, 20, layout.GetOffset("id"))     // After MVCC header
+	assert.Equal(t, 24, layout.GetOffset("active")) // After id (4 bytes)
+	assert.Equal(t, 25, layout.GetOffset("name"))   // After active (1 byte)
 
 	// Check offset for non-existent field
 	assert.Equal(t, 0, layout.GetOffset("nonexistent"))

@@ -104,6 +104,36 @@ func (t *TableManager) CreateTable(tableName string, schema *record.Schema, tx *
 	return nil
 }
 
+// GetAllTableNames returns all user table names from the table catalog.
+func (t *TableManager) GetAllTableNames(tx *transaction.Transaction) ([]string, error) {
+	tcat, err := table.NewTableScan(tx, t.tableCatelog, TableCatalogName)
+	if err != nil {
+		return nil, err
+	}
+	defer tcat.Close()
+
+	var names []string
+	for {
+		hasNext, err := tcat.Next()
+		if err != nil {
+			return names, err
+		}
+		if !hasNext {
+			break
+		}
+		name, err := tcat.GetString("table_name")
+		if err != nil {
+			return names, err
+		}
+		// Skip catalog tables themselves
+		if name == TableCatalogName || name == FieldCatalogName {
+			continue
+		}
+		names = append(names, name)
+	}
+	return names, nil
+}
+
 // GetLayout retrieves the layout for a given table name by scanning the catalogs
 func (t *TableManager) GetLayout(tableName string, tx *transaction.Transaction) (*record.Layout, error) {
 	// First, find the slot size from table catalog

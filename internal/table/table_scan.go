@@ -15,6 +15,8 @@ type TableScan struct {
 	fileName          string
 	currentRecordPage *record.RecordPage
 	currentSlot       int
+	snapshot          *transaction.Snapshot
+	commitLog         *transaction.CommitLog
 }
 
 // NewTableScan creates a new table scanner for the given table
@@ -25,6 +27,8 @@ func NewTableScan(transaction *transaction.Transaction, layout *record.Layout, t
 		transaction: transaction,
 		layout:      layout,
 		fileName:    fileName,
+		snapshot:    transaction.GetSnapshot(),
+		commitLog:   transaction.GetCommitLog(),
 	}
 
 	if numBlocks, err := transaction.Size(fileName); err != nil {
@@ -61,8 +65,44 @@ func (ts *TableScan) BeforeFirst() error {
 	return ts.MoveToBlock(0)
 }
 
-// Next moves to the next record and returns true if successful
+// Next moves to the next visible record and returns true if successful.
 func (ts *TableScan) Next() (bool, error) {
+	for {
+		nextSlot, err := ts.currentRecordPage.NextUsedSlot(ts.currentSlot)
+		if err != nil {
+			return false, err
+		}
+		ts.currentSlot = nextSlot
+		for ts.currentSlot == -1 {
+			if atLastBlock, err := ts.AtLastBlock(); err != nil {
+				return false, err
+			} else if atLastBlock {
+				return false, nil
+			}
+			err := ts.MoveToBlock(ts.currentRecordPage.Block().Number() + 1)
+			if err != nil {
+				return false, err
+			}
+			nextSlot, err = ts.currentRecordPage.NextUsedSlot(ts.currentSlot)
+			if err != nil {
+				return false, err
+			}
+			ts.currentSlot = nextSlot
+		}
+
+		visible, err := ts.isCurrentSlotVisible()
+		if err != nil {
+			return false, err
+		}
+		if visible {
+			return true, nil
+		}
+	}
+}
+
+// NextRaw moves to the next used slot without visibility filtering.
+// Used by vacuum to iterate over all physical records.
+func (ts *TableScan) NextRaw() (bool, error) {
 	nextSlot, err := ts.currentRecordPage.NextUsedSlot(ts.currentSlot)
 	if err != nil {
 		return false, err
@@ -87,9 +127,25 @@ func (ts *TableScan) Next() (bool, error) {
 	return true, nil
 }
 
+func (ts *TableScan) isCurrentSlotVisible() (bool, error) {
+	if ts.snapshot == nil || ts.commitLog == nil {
+		return true, nil
+	}
+	xmin, err := ts.currentRecordPage.GetXmin(ts.currentSlot)
+	if err != nil {
+		return false, err
+	}
+	xmax, err := ts.currentRecordPage.GetXmax(ts.currentSlot)
+	if err != nil {
+		return false, err
+	}
+	return transaction.IsVersionVisible(xmin, xmax, ts.snapshot, ts.commitLog, ts.transaction.TxNum()), nil
+}
+
 // Insert inserts a new record somewhere in the scan and moves the scan to the new record.
 // If there is no room in the current block, it moves to the next block.
 // If there are no more blocks, it creates a new block.
+// Sets xmin to the current transaction ID and xmax to 0.
 func (ts *TableScan) Insert() error {
 	// Try to insert in the current block
 	newSlot, err := ts.currentRecordPage.InsertSlot(ts.currentSlot)
@@ -135,12 +191,59 @@ func (ts *TableScan) Insert() error {
 		}
 	}
 
+	// Set MVCC fields on the newly inserted slot
+	err = ts.currentRecordPage.SetXmin(ts.currentSlot, ts.transaction.TxNum())
+	if err != nil {
+		return err
+	}
+	err = ts.currentRecordPage.SetXmax(ts.currentSlot, 0)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
-// Delete removes the current record
+// Delete logically deletes the current record by setting xmax to the current transaction ID.
 func (ts *TableScan) Delete() error {
-	return ts.currentRecordPage.Delete(ts.currentSlot)
+	xmax, err := ts.currentRecordPage.GetXmax(ts.currentSlot)
+	if err != nil {
+		return err
+	}
+	if ts.commitLog != nil {
+		if err := transaction.CheckWriteConflict(xmax, ts.transaction.TxNum(), ts.commitLog); err != nil {
+			return err
+		}
+	}
+	return ts.currentRecordPage.SetXmax(ts.currentSlot, ts.transaction.TxNum())
+}
+
+// ReclaimSlot physically reclaims a dead slot by marking it empty and zeroing MVCC fields.
+func (ts *TableScan) ReclaimSlot() error {
+	err := ts.currentRecordPage.Delete(ts.currentSlot) // sets flag = empty
+	if err != nil {
+		return err
+	}
+	err = ts.currentRecordPage.SetXmin(ts.currentSlot, 0)
+	if err != nil {
+		return err
+	}
+	return ts.currentRecordPage.SetXmax(ts.currentSlot, 0)
+}
+
+// IsCurrentSlotVisible checks if the current slot is visible to this transaction.
+func (ts *TableScan) IsCurrentSlotVisible() (bool, error) {
+	return ts.isCurrentSlotVisible()
+}
+
+// GetXmin returns the xmin of the current slot.
+func (ts *TableScan) GetXmin() (int64, error) {
+	return ts.currentRecordPage.GetXmin(ts.currentSlot)
+}
+
+// GetXmax returns the xmax of the current slot.
+func (ts *TableScan) GetXmax() (int64, error) {
+	return ts.currentRecordPage.GetXmax(ts.currentSlot)
 }
 
 // MoveToBlock moves the scanner to the specified block

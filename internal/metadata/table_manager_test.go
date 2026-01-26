@@ -245,3 +245,88 @@ func TestTableManager_BasicOperations(t *testing.T) {
 
 	tx8.Commit()
 }
+
+func TestTableManager_GetAllTableNames(t *testing.T) {
+	dbDir := "testdata_getall"
+	blockSize := 400
+
+	fm, err := file.NewManager(dbDir, blockSize)
+	require.NoError(t, err)
+	defer fm.Close()
+	defer os.RemoveAll(dbDir)
+
+	lm, err := log.NewManager(fm, "testlog")
+	require.NoError(t, err)
+	defer lm.Close()
+
+	dirtyPageTable := buffer.NewDirtyPageTable()
+
+	bm, err := buffer.NewManager(fm, lm, dirtyPageTable, 10)
+	require.NoError(t, err)
+
+	lockTable := transaction.NewLockTable()
+	transactionTable := transaction.NewTransactionTable()
+	transactionManager := transaction.NewTransactionManager(fm, lm, bm, lockTable, dirtyPageTable, transactionTable)
+
+	// Test 1: Empty database - should return empty slice (only catalog tables exist)
+	tx1 := transactionManager.BeginTransaction()
+	tm := NewTableManager(true, tx1)
+	require.NotNil(t, tm)
+
+	names, err := tm.GetAllTableNames(tx1)
+	require.NoError(t, err, "Should not return error for empty database")
+	assert.Empty(t, names, "Should return empty slice when no user tables exist")
+	tx1.Commit()
+
+	// Test 2: Single user table - should return that table name
+	tx2 := transactionManager.BeginTransaction()
+	schema1 := record.NewSchema()
+	schema1.AddIntField("id")
+	schema1.AddStringField("name", 50)
+	err = tm.CreateTable("users", schema1, tx2)
+	require.NoError(t, err, "Should create table successfully")
+
+	names, err = tm.GetAllTableNames(tx2)
+	require.NoError(t, err, "Should not return error")
+	assert.Len(t, names, 1, "Should return exactly one table name")
+	assert.Contains(t, names, "users", "Should contain 'users' table")
+	assert.NotContains(t, names, TableCatalogName, "Should not contain catalog table")
+	assert.NotContains(t, names, FieldCatalogName, "Should not contain catalog table")
+	tx2.Commit()
+
+	// Test 3: Multiple user tables - should return all user table names
+	tx3 := transactionManager.BeginTransaction()
+
+	schema2 := record.NewSchema()
+	schema2.AddStringField("product_id", 20)
+	schema2.AddIntField("price")
+	err = tm.CreateTable("products", schema2, tx3)
+	require.NoError(t, err, "Should create second table successfully")
+
+	schema3 := record.NewSchema()
+	schema3.AddStringField("order_id", 20)
+	schema3.AddIntField("total")
+	err = tm.CreateTable("orders", schema3, tx3)
+	require.NoError(t, err, "Should create third table successfully")
+
+	names, err = tm.GetAllTableNames(tx3)
+	require.NoError(t, err, "Should not return error")
+	assert.Len(t, names, 3, "Should return exactly three table names")
+	assert.Contains(t, names, "users", "Should contain 'users' table")
+	assert.Contains(t, names, "products", "Should contain 'products' table")
+	assert.Contains(t, names, "orders", "Should contain 'orders' table")
+	assert.NotContains(t, names, TableCatalogName, "Should not contain catalog table")
+	assert.NotContains(t, names, FieldCatalogName, "Should not contain catalog table")
+	tx3.Commit()
+
+	// Test 4: Verify catalog tables are excluded even if they appear in catalog
+	tx4 := transactionManager.BeginTransaction()
+	names, err = tm.GetAllTableNames(tx4)
+	require.NoError(t, err, "Should not return error")
+	// Verify catalog tables are not in the result
+	for _, name := range names {
+		assert.NotEqual(t, TableCatalogName, name, "Should not include table catalog in results")
+		assert.NotEqual(t, FieldCatalogName, name, "Should not include field catalog in results")
+	}
+	tx4.Commit()
+}

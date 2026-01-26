@@ -23,22 +23,6 @@ func NewConcurrencyManager(lockTable *LockTable) *ConcurrencyManager {
 }
 
 func (cm *ConcurrencyManager) sLock(block *file.BlockID) error {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	key := file.MakeBlockKey(block)
-
-	// We already have a lock on this block, nothing to do
-	if _, exists := cm.locks[key]; exists {
-		return nil
-	}
-
-	err := cm.lockTable.sLock(block)
-	if err != nil {
-		return err
-	}
-
-	cm.locks[key] = "S"
 	return nil
 }
 
@@ -48,29 +32,11 @@ func (cm *ConcurrencyManager) xLock(block *file.BlockID) error {
 
 	key := file.MakeBlockKey(block)
 
-	if lockType, exists := cm.locks[key]; exists {
-		// We already have an exclusive lock, nothing to do
-		if lockType == "X" {
-			return nil
-		}
-
-		// We have a shared lock
-		// Release the shared lock first, then acquire exclusive lock
-		err := cm.lockTable.unlock(block)
-		if err != nil {
-			return err
-		}
-
-		err = cm.lockTable.xLock(block)
-		if err != nil {
-			return err
-		}
-
-		cm.locks[key] = "X"
+	// Already have exclusive lock
+	if lockType, exists := cm.locks[key]; exists && lockType == "X" {
 		return nil
 	}
 
-	// We don't have any lock, acquire exclusive lock from lock table
 	err := cm.lockTable.xLock(block)
 	if err != nil {
 		return err

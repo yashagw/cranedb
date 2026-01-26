@@ -782,11 +782,10 @@ func TestExplainPlan(t *testing.T) {
 		expected := `ProjectPlan(fields: [name, dept_name])
     └─ SelectPlan(predicate: student_dept_id = dept_id and category = Category1 and dept_name = Dept1)
     └─     └─ ProductPlan
-    └─     └─     ├─ IndexSelectPlan(category='Category1')
-    └─     └─     ├─ │   └─ TablePlan(students)
-    └─     └─     └─ MaterializePlan
-    └─     └─     └─     └─ SelectPlan(predicate: dept_name = Dept1)
-    └─     └─     └─     └─     └─ TablePlan(departments)`
+    └─     └─     ├─ SelectPlan(predicate: dept_name = Dept1)
+    └─     └─     ├─ │   └─ TablePlan(departments)
+    └─     └─     └─ IndexSelectPlan(category='Category1')
+    └─     └─     └─     └─ TablePlan(students)`
 		assert.Equal(t, expected, planTree)
 	})
 
