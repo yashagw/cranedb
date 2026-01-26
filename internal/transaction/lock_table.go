@@ -16,51 +16,15 @@ const (
 )
 
 type LockTable struct {
-	locks   map[file.BlockID]int
+	locks   map[file.BlockID]struct{} // tracks blocks with exclusive locks
 	mu      sync.Mutex
 	waiters map[file.BlockID]chan struct{} // Block-specific notification channels
 }
 
 func NewLockTable() *LockTable {
 	return &LockTable{
-		locks:   make(map[file.BlockID]int),
+		locks:   make(map[file.BlockID]struct{}),
 		waiters: make(map[file.BlockID]chan struct{}),
-	}
-}
-
-func (lt *LockTable) sLock(block *file.BlockID) error {
-	key := file.MakeBlockKey(block)
-	deadline := time.Now().Add(MAX_WAITING_TIME)
-
-	for {
-		lt.mu.Lock()
-		// Check if there's an exclusive lock
-		if lt.locks[key] != -1 {
-			// No exclusive lock, we can acquire shared lock
-			lt.locks[key]++
-			lt.mu.Unlock()
-			return nil
-		}
-
-		// There's an exclusive lock, need to wait
-		if lt.waiters[key] == nil {
-			lt.waiters[key] = make(chan struct{}, 1)
-		}
-		waiter := lt.waiters[key]
-		lt.mu.Unlock()
-
-		timeout := time.Until(deadline)
-		if timeout <= 0 {
-			return ErrLockAbort
-		}
-		timer := time.NewTimer(timeout)
-
-		select {
-		case <-waiter:
-			timer.Stop()
-		case <-timer.C:
-			return ErrLockAbort
-		}
 	}
 }
 
@@ -70,10 +34,10 @@ func (lt *LockTable) xLock(block *file.BlockID) error {
 
 	for {
 		lt.mu.Lock()
-		// Check if there are any locks (shared or exclusive locks)
-		if lt.locks[key] == 0 {
-			// No locks, we can acquire exclusive lock
-			lt.locks[key] = -1
+		// Check if there's already an exclusive lock
+		if _, exists := lt.locks[key]; !exists {
+			// No lock, we can acquire exclusive lock
+			lt.locks[key] = struct{}{}
 			lt.mu.Unlock()
 			return nil
 		}
@@ -104,23 +68,11 @@ func (lt *LockTable) unlock(block *file.BlockID) error {
 	defer lt.mu.Unlock()
 
 	key := file.MakeBlockKey(block)
-	val, exists := lt.locks[key]
-
-	if !exists {
+	if _, exists := lt.locks[key]; !exists {
 		return ErrLockDoNotExist
 	}
 
-	if val == -1 {
-		delete(lt.locks, key)
-	} else if val > 0 {
-		lt.locks[key]--
-		if lt.locks[key] == 0 {
-			delete(lt.locks, key)
-		} else {
-		}
-	} else {
-		return ErrLockDoNotExist
-	}
+	delete(lt.locks, key)
 
 	// Notify waiting goroutines for this specific block
 	if waiter, exists := lt.waiters[key]; exists {
@@ -139,14 +91,6 @@ func (lt *LockTable) HasXLock(block *file.BlockID) bool {
 	defer lt.mu.Unlock()
 
 	key := file.MakeBlockKey(block)
-	return lt.locks[key] == -1
-}
-
-// HasSLock returns true if the block has one or more shared locks
-func (lt *LockTable) HasSLock(block *file.BlockID) bool {
-	lt.mu.Lock()
-	defer lt.mu.Unlock()
-
-	key := file.MakeBlockKey(block)
-	return lt.locks[key] > 0
+	_, exists := lt.locks[key]
+	return exists
 }

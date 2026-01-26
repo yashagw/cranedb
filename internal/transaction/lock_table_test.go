@@ -14,24 +14,12 @@ func TestLockTable_ConcurrentLocking(t *testing.T) {
 	lt := NewLockTable()
 	block := file.NewBlockID("testfile", 1)
 
-	// Test 1: Multiple shared locks can be acquired simultaneously
-	var wg sync.WaitGroup
-	const numSharedLocks = 5
+	// Test 1: Acquire exclusive lock
+	err := lt.xLock(block)
+	require.NoError(t, err)
+	assert.True(t, lt.HasXLock(block))
 
-	for i := 0; i < numSharedLocks; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			err := lt.sLock(block)
-			require.NoError(t, err)
-		}()
-	}
-	wg.Wait()
-
-	assert.True(t, lt.HasSLock(block))
-	assert.False(t, lt.HasXLock(block))
-
-	// Test 2: Exclusive lock must wait for all shared locks to release
+	// Test 2: Another exclusive lock must wait
 	exclusiveDone := make(chan error, 1)
 	go func() {
 		exclusiveDone <- lt.xLock(block)
@@ -43,49 +31,54 @@ func TestLockTable_ConcurrentLocking(t *testing.T) {
 	// Exclusive lock should still be waiting
 	select {
 	case <-exclusiveDone:
-		t.Fatal("Exclusive lock acquired while shared locks still held")
+		t.Fatal("Exclusive lock acquired while another exclusive lock still held")
 	default:
 		// Expected: still waiting
 	}
 
-	// Release all shared locks
-	for i := 0; i < numSharedLocks; i++ {
-		err := lt.unlock(block)
-		require.NoError(t, err)
-	}
+	// Release the first exclusive lock
+	err = lt.unlock(block)
+	require.NoError(t, err)
+	assert.False(t, lt.HasXLock(block))
 
-	// Now exclusive lock should be acquired
-	err := <-exclusiveDone
+	// Now the waiting exclusive lock should be acquired
+	err = <-exclusiveDone
 	require.NoError(t, err)
 	assert.True(t, lt.HasXLock(block))
-	assert.False(t, lt.HasSLock(block))
 
-	// Test 3: Shared lock must wait for exclusive lock
-	sharedDone := make(chan error, 1)
-	go func() {
-		sharedDone <- lt.sLock(block)
-	}()
+	// Release the lock before Test 3
+	err = lt.unlock(block)
+	require.NoError(t, err)
+	assert.False(t, lt.HasXLock(block))
 
-	time.Sleep(100 * time.Millisecond)
+	// Test 3: Multiple concurrent exclusive lock attempts - only one at a time
+	const numConcurrent = 3
+	var wg sync.WaitGroup
+	acquired := make([]bool, numConcurrent)
 
-	// Shared lock should be waiting
-	select {
-	case <-sharedDone:
-		t.Fatal("Shared lock acquired while exclusive lock still held")
-	default:
-		// Expected: still waiting
+	for i := 0; i < numConcurrent; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			err := lt.xLock(block)
+			if err == nil {
+				acquired[idx] = true
+				// Hold the lock briefly, then release
+				time.Sleep(50 * time.Millisecond)
+				lt.unlock(block)
+			}
+		}(i)
 	}
 
-	// Release exclusive lock
-	err = lt.unlock(block)
-	require.NoError(t, err)
+	wg.Wait()
 
-	// Now shared lock should be acquired
-	err = <-sharedDone
-	require.NoError(t, err)
-	assert.True(t, lt.HasSLock(block))
-
-	// Clean up
-	err = lt.unlock(block)
-	require.NoError(t, err)
+	// All should eventually succeed (they acquire and release sequentially)
+	successCount := 0
+	for _, acq := range acquired {
+		if acq {
+			successCount++
+		}
+	}
+	assert.Equal(t, numConcurrent, successCount, "All exclusive locks should eventually be acquired")
+	assert.False(t, lt.HasXLock(block), "No lock should remain after all releases")
 }
