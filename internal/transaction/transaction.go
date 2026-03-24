@@ -331,6 +331,16 @@ func (t *Transaction) BlockSize() int {
 	return t.fileManager.BlockSize()
 }
 
+// ReleaseNoCommit releases all locks and unpins all buffers without
+// writing a commit record to the WAL. Used by the replication WALReceiver
+// to clean up replay transactions that applied changes with log=false.
+func (t *Transaction) ReleaseNoCommit() error {
+	err := t.concurrencyManager.release()
+	t.bufferList.UnpinAll()
+	t.transactionManager.EndTransaction(t.txNum, TransactionStatusCommitted)
+	return err
+}
+
 // TxNum returns the transaction number.
 func (t *Transaction) TxNum() int64 {
 	return t.txNum

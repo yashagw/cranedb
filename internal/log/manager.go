@@ -27,11 +27,18 @@ func (lm *Manager) GetNextLatestLSN() int64 {
 	return lm.latestLSN
 }
 
-// getLSNFromRecord extracts the LSN from a log record byte array.
+// LatestLSN returns the current latest LSN in a thread-safe manner.
+func (lm *Manager) LatestLSN() int64 {
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
+	return lm.latestLSN
+}
+
+// GetLSNFromRecord extracts the LSN from a log record byte array.
 // Different record types store LSN at different offsets:
 // - CheckpointLogRecord (op=0): [op(4)] [lsn(8)] - LSN at offset 4
 // - Other records (op>0): [op(4)] [txNum(8)] [lsn(8)] [prevLSN(8)] - LSN at offset 12
-func getLSNFromRecord(recordBytes []byte) (int64, error) {
+func GetLSNFromRecord(recordBytes []byte) (int64, error) {
 	if len(recordBytes) < 4 {
 		return 0, errors.New("record too short to contain operation type")
 	}
@@ -97,13 +104,13 @@ func NewManager(fm *file.Manager, logFilename string) (*Manager, error) {
 
 		// Scan through all log records to find the maximum LSN
 		// TODO: Maybe only scan last 5/4 records
-		iter := NewLogIterator(fm, currentBlk)
+		iter := NewBackwardIterator(fm, currentBlk)
 		for iter.HasNext() {
 			recordBytes := iter.Next()
 			if recordBytes == nil {
 				break
 			}
-			lsn, err := getLSNFromRecord(recordBytes)
+			lsn, err := GetLSNFromRecord(recordBytes)
 			if err != nil {
 				// Skip records that can't be parsed, but continue scanning
 				continue
@@ -132,6 +139,13 @@ func (lm *Manager) Close() error {
 	return lm.flush()
 }
 
+// ForceFlush unconditionally writes the current log page to disk.
+func (lm *Manager) ForceFlush() error {
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
+	return lm.flush()
+}
+
 // Flush writes the current log page to disk if there are any unsaved changes.
 func (lm *Manager) Flush(lsn int64) error {
 	lm.mu.Lock()
@@ -143,9 +157,9 @@ func (lm *Manager) Flush(lsn int64) error {
 	return nil
 }
 
-// Iterator returns an iterator that can be used to iterate over the log records
+// BackwardIterator returns an iterator that can be used to iterate over the log records
 // from most recent to oldest.
-func (lm *Manager) Iterator() (*LogIterator, error) {
+func (lm *Manager) BackwardIterator() (*BackwardIterator, error) {
 	lm.mu.Lock()
 	defer lm.mu.Unlock()
 
@@ -153,7 +167,7 @@ func (lm *Manager) Iterator() (*LogIterator, error) {
 	if err != nil {
 		return nil, errors.New("not able to flush log page to disk: " + err.Error())
 	}
-	return NewLogIterator(lm.fileManager, lm.currentBlk), nil
+	return NewBackwardIterator(lm.fileManager, lm.currentBlk), nil
 }
 
 // flush is an internal method that writes the current log page to disk.

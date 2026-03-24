@@ -126,7 +126,7 @@ func TestIterator(t *testing.T) {
 		lm.Append(record, lsn)
 	}
 
-	iter, err := lm.Iterator()
+	iter, err := lm.BackwardIterator()
 	assert.NoError(t, err)
 
 	for i := 12; i >= 0; i-- {

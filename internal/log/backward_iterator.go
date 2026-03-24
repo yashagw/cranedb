@@ -2,12 +2,12 @@ package log
 
 import "github.com/yashagw/cranedb/internal/file"
 
-// LogIterator provides a way to iterate over log records.
+// BackwardIterator provides a way to iterate over log records.
 // ITERATION STRATEGY:
 // - Start at the current block's boundary (newest record in that block)
 // - Read records moving toward blockSize (newest to oldest within block)
 // - When block is exhausted, move to previous block and repeat
-type LogIterator struct {
+type BackwardIterator struct {
 	fm         *file.Manager
 	blk        *file.BlockID
 	page       *file.Page
@@ -15,9 +15,9 @@ type LogIterator struct {
 	boundary   int
 }
 
-// NewLogIterator creates a new iterator for the log file, starting at the given block.
-func NewLogIterator(fm *file.Manager, blk *file.BlockID) *LogIterator {
-	it := &LogIterator{
+// NewBackwardIterator creates a new iterator for the log file, starting at the given block.
+func NewBackwardIterator(fm *file.Manager, blk *file.BlockID) *BackwardIterator {
+	it := &BackwardIterator{
 		fm:   fm,
 		blk:  blk,
 		page: file.NewPage(fm.BlockSize()),
@@ -27,12 +27,12 @@ func NewLogIterator(fm *file.Manager, blk *file.BlockID) *LogIterator {
 }
 
 // HasNext returns true if there are more log records to read.
-func (it *LogIterator) HasNext() bool {
+func (it *BackwardIterator) HasNext() bool {
 	return it.currentpos < it.fm.BlockSize() || it.blk.Number() > 0
 }
 
 // Next returns the next log record.
-func (it *LogIterator) Next() []byte {
+func (it *BackwardIterator) Next() []byte {
 	// If we've read all records in current block, move to previous block
 	if it.currentpos >= it.fm.BlockSize() {
 		if it.blk.Number() == 0 {
@@ -49,7 +49,7 @@ func (it *LogIterator) Next() []byte {
 }
 
 // moveToBlock moves the iterator to the specified block and reads its contents.
-func (it *LogIterator) moveToBlock(blk *file.BlockID) {
+func (it *BackwardIterator) moveToBlock(blk *file.BlockID) {
 	it.fm.Read(blk, it.page)
 	it.boundary = it.page.GetIntRaw(0)
 	// Start at the boundary (newest record)

@@ -48,7 +48,7 @@ func main() {
 	defer lm.Close()
 
 	// Get iterator
-	iter, err := lm.Iterator()
+	iter, err := lm.BackwardIterator()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to create log iterator: %v\n", err)
 		os.Exit(1)

@@ -70,7 +70,7 @@ func (rm *RecoveryManager) Rollback() error {
 	//    CurrentLSN -> Record.PrevLSN -> ... -> StartRecord.
 
 	// Build a map of log records for this transaction
-	lmIterator, err := rm.logManager.Iterator()
+	lmIterator, err := rm.logManager.BackwardIterator()
 	if err != nil {
 		return err
 	}
@@ -227,7 +227,7 @@ func (rm *RecoveryManager) DBRecovery() error {
 
 	// Step 2: Analysis pass - rebuild Transaction Table and Dirty Page Table
 	// Scan from checkpoint to end of log, updating tables based on log records
-	lmIterator, err := rm.logManager.Iterator()
+	lmIterator, err := rm.logManager.BackwardIterator()
 	if err != nil {
 		return err
 	}
@@ -348,7 +348,7 @@ func (rm *RecoveryManager) DBRecovery() error {
 
 	// Perform redo pass: redo all log records from minRecLSN forward
 	// Skip redo if PageLSN >= record LSN (ARIES optimization)
-	lmIterator, err = rm.logManager.Iterator()
+	lmIterator, err = rm.logManager.BackwardIterator()
 	if err != nil {
 		return err
 	}
@@ -382,23 +382,10 @@ func (rm *RecoveryManager) DBRecovery() error {
 	// Process records in forward order (reverse the list since iterator goes backward)
 	for i := len(records) - 1; i >= 0; i-- {
 		record := records[i]
-		redone, err := record.Redo(rm.transaction)
-		if err != nil {
-			return err
-		}
-		if redone {
-			// Unpin the buffer after redo
-			switch r := record.(type) {
-			case *SetIntLogRecord:
-				rm.transaction.Unpin(r.Block())
-			case *SetStringLogRecord:
-				rm.transaction.Unpin(r.Block())
-			case *SetBoolLogRecord:
-				rm.transaction.Unpin(r.Block())
-			case *SetInt64LogRecord:
-				rm.transaction.Unpin(r.Block())
-			case *CLRLogRecord:
-				rm.transaction.Unpin(r.Block())
+		dmr, ok := record.(DataModificationRecord)
+		if ok {
+			if err := RedoAndTrack(dmr, rm.transaction, nil); err != nil {
+				return err
 			}
 		}
 	}
@@ -417,7 +404,7 @@ func (rm *RecoveryManager) DBRecovery() error {
 
 	// Build a map of all log records for efficient lookup by LSN
 	allLogRecords := make(map[int64]LogRecord)
-	lmIterator, err = rm.logManager.Iterator()
+	lmIterator, err = rm.logManager.BackwardIterator()
 	if err != nil {
 		return err
 	}
@@ -449,7 +436,7 @@ func (rm *RecoveryManager) DBRecovery() error {
 // TransactionTable and DirtyPageTable from it.
 // Returns the checkpoint LSN, or -1 if no checkpoint found.
 func (rm *RecoveryManager) findAndRestoreCheckpoint() (int64, error) {
-	lmIterator, err := rm.logManager.Iterator()
+	lmIterator, err := rm.logManager.BackwardIterator()
 	if err != nil {
 		return -1, err
 	}

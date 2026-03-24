@@ -21,6 +21,7 @@ import (
 	"github.com/yashagw/cranedb/internal/parse/parserdata"
 	"github.com/yashagw/cranedb/internal/plan"
 	"github.com/yashagw/cranedb/internal/record"
+	"github.com/yashagw/cranedb/internal/replication"
 	"github.com/yashagw/cranedb/internal/session"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
@@ -30,6 +31,9 @@ const (
 	DefaultDBDir      = "./cranedb_data"
 	DefaultBlockSize  = 4096
 	DefaultBufferSize = 40
+	DefaultReplPort   = "5433"
+	DefaultRole       = "standalone"
+	LogFilename       = "cranedb.log"
 )
 
 type Server struct {
@@ -42,6 +46,7 @@ type Server struct {
 	transactionManager *transaction.TransactionManager
 	metadataManager    *metadata.Manager
 	planner            *plan.Planner
+	readOnly           bool
 }
 
 type QueryResponse struct {
@@ -210,6 +215,16 @@ func (s *Server) executeQuery(sql string, sess *session.Session) QueryResponse {
 
 	// Check if it's a SET command first
 	trimmedSQL := strings.TrimSpace(strings.ToLower(sql))
+
+	// Reject write operations on read-only followers
+	if s.readOnly && !strings.HasPrefix(trimmedSQL, "select") &&
+		!strings.HasPrefix(trimmedSQL, "explain") && !strings.HasPrefix(trimmedSQL, "set ") {
+		return QueryResponse{
+			Type:  "error",
+			Error: "cannot execute write operations on a read-only follower",
+		}
+	}
+
 	if strings.HasPrefix(trimmedSQL, "set ") {
 		parser := parse.NewParserFromString(sql)
 		setData, err := parser.UpdateCmd()
@@ -533,6 +548,35 @@ func (s *Server) runVacuum() {
 	commitLog.Cleanup(oldestActiveTx)
 }
 
+// startReplicationListener starts a TCP listener on the given port that accepts
+// replication connections. Each connection gets its own WALSender goroutine.
+func (s *Server) startReplicationListener(port string) {
+	listener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		slog.Error("Failed to start replication listener", "port", port, "err", err)
+		os.Exit(1)
+	}
+
+	slog.Info("Replication listener started", "port", port)
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			slog.Error("Error accepting replication connection", "err", err)
+			continue
+		}
+
+		slog.Info("New replication connection", "remoteAddr", conn.RemoteAddr().String())
+		ws := replication.NewWALSender(s.fileManager, s.logManager, LogFilename, conn)
+		go func() {
+			defer conn.Close()
+			if err := ws.Run(); err != nil {
+				slog.Error("WAL sender error", "remoteAddr", conn.RemoteAddr().String(), "err", err)
+			}
+		}()
+	}
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -544,6 +588,21 @@ func main() {
 		dbDir = DefaultDBDir
 	}
 
+	role := os.Getenv("ROLE")
+	if role == "" {
+		role = DefaultRole
+	}
+
+	replPort := os.Getenv("REPL_PORT")
+	if replPort == "" {
+		replPort = DefaultReplPort
+	}
+
+	primaryAddr := os.Getenv("PRIMARY_ADDR")
+	if primaryAddr == "" {
+		primaryAddr = "localhost:" + DefaultReplPort
+	}
+
 	server, err := NewServer(dbDir)
 	if err != nil {
 		slog.Error("Failed to initialize server", "err", err)
@@ -553,30 +612,53 @@ func main() {
 	// Start background buffer flush every 30 seconds
 	server.bufferManager.StartBackgroundFlush(30 * time.Second)
 
-	// Start periodic fuzzy checkpoint every 1 minute
-	go func() {
-		ticker := time.NewTicker(1 * time.Minute)
-		defer ticker.Stop()
-		for {
-			<-ticker.C
-			err := server.transactionManager.PerformCheckpoint()
-			if err != nil {
-				slog.Error("Error saving checkpoint", "err", err)
-			} else {
-				slog.Info("Checkpoint saved")
+	// start fuzzy checkpoint and vacumm and replication listener in background
+	if role == "primary" {
+		// Start periodic fuzzy checkpoint every 1 minute
+		go func() {
+			ticker := time.NewTicker(1 * time.Minute)
+			defer ticker.Stop()
+			for {
+				<-ticker.C
+				err := server.transactionManager.PerformCheckpoint()
+				if err != nil {
+					slog.Error("Error saving checkpoint", "err", err)
+				} else {
+					slog.Info("Checkpoint saved")
+				}
 			}
-		}
-	}()
+		}()
 
-	// Start background vacuum every 5 minutes
-	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
-		defer ticker.Stop()
-		for {
-			<-ticker.C
-			server.runVacuum()
-		}
-	}()
+		// Start background vacuum every 5 minutes
+		go func() {
+			ticker := time.NewTicker(5 * time.Minute)
+			defer ticker.Stop()
+			for {
+				<-ticker.C
+				server.runVacuum()
+			}
+		}()
+
+		go server.startReplicationListener(replPort)
+	}
+
+	// Start WAL receiver if running as follower
+	if role == "follower" {
+		server.readOnly = true
+		wr := replication.NewWALReceiver(
+			primaryAddr,
+			server.fileManager,
+			server.logManager,
+			server.bufferManager,
+			server.dirtyPageTable,
+			server.transactionManager,
+		)
+		go func() {
+			if err := wr.Run(); err != nil {
+				slog.Error("WAL receiver error", "err", err)
+			}
+		}()
+	}
 
 	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
@@ -584,7 +666,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	slog.Info("CraneDB server started", "port", port, "dir", dbDir)
+	slog.Info("CraneDB server started", "port", port, "dir", dbDir, "role", role)
 
 	for {
 		conn, err := listener.Accept()

@@ -33,7 +33,7 @@ func TestSetIntLogRecord_EncodeDecode(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Get the last log record
-	iterator, err := logManager.Iterator()
+	iterator, err := logManager.BackwardIterator()
 	assert.NoError(t, err)
 	var lastRecord []byte
 	for iterator.HasNext() {
@@ -84,7 +84,7 @@ func TestSetStringLogRecord_EncodeDecode(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Get the last log record
-	iterator, err := logManager.Iterator()
+	iterator, err := logManager.BackwardIterator()
 	assert.NoError(t, err)
 	var lastRecord []byte
 	for iterator.HasNext() {
@@ -127,7 +127,7 @@ func TestStartLogRecord_EncodeDecode(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Get the last log record
-	iterator, err := logManager.Iterator()
+	iterator, err := logManager.BackwardIterator()
 	assert.NoError(t, err)
 	var lastRecord []byte
 	for iterator.HasNext() {
@@ -165,7 +165,7 @@ func TestCommitLogRecord_EncodeDecode(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Get the last log record
-	iterator, err := logManager.Iterator()
+	iterator, err := logManager.BackwardIterator()
 	assert.NoError(t, err)
 	var lastRecord []byte
 	for iterator.HasNext() {
@@ -203,7 +203,7 @@ func TestRollbackLogRecord_EncodeDecode(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Get the last log record
-	iterator, err := logManager.Iterator()
+	iterator, err := logManager.BackwardIterator()
 	assert.NoError(t, err)
 	var lastRecord []byte
 	for iterator.HasNext() {
@@ -261,7 +261,7 @@ func TestCheckpointLogRecord_EncodeDecode(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Get the last log record
-	iterator, err := logManager.Iterator()
+	iterator, err := logManager.BackwardIterator()
 	assert.NoError(t, err)
 	var lastRecord []byte
 	for iterator.HasNext() {
@@ -327,7 +327,7 @@ func TestSetBoolLogRecord_EncodeDecode(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Get the last log record
-	iterator, err := logManager.Iterator()
+	iterator, err := logManager.BackwardIterator()
 	assert.NoError(t, err)
 	var lastRecord []byte
 	for iterator.HasNext() {
@@ -381,7 +381,7 @@ func TestCLRLogRecord_EncodeDecode(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Get the last log record
-		iterator, err := logManager.Iterator()
+		iterator, err := logManager.BackwardIterator()
 		assert.NoError(t, err)
 		var lastRecord []byte
 		for iterator.HasNext() {
@@ -435,7 +435,7 @@ func TestCLRLogRecord_EncodeDecode(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Get the last log record
-		iterator, err := logManager.Iterator()
+		iterator, err := logManager.BackwardIterator()
 		assert.NoError(t, err)
 		var lastRecord []byte
 		for iterator.HasNext() {
@@ -489,7 +489,7 @@ func TestCLRLogRecord_EncodeDecode(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Get the last log record
-		iterator, err := logManager.Iterator()
+		iterator, err := logManager.BackwardIterator()
 		assert.NoError(t, err)
 		var lastRecord []byte
 		for iterator.HasNext() {
@@ -535,7 +535,7 @@ func TestCorruptedLogRecord_DetectedByCRC32(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Get the log record bytes
-	iterator, err := logManager.Iterator()
+	iterator, err := logManager.BackwardIterator()
 	assert.NoError(t, err)
 	var lastRecord []byte
 	for iterator.HasNext() {

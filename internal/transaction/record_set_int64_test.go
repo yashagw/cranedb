@@ -27,7 +27,7 @@ func TestSetInt64LogRecord_WriteAndParse(t *testing.T) {
 	require.NoError(t, err)
 
 	// Read it back via log iterator
-	iter, err := logManager.Iterator()
+	iter, err := logManager.BackwardIterator()
 	require.NoError(t, err)
 	require.True(t, iter.HasNext())
 

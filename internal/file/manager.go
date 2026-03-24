@@ -160,6 +160,24 @@ func (fm *Manager) GetTotalBlocks(filename string) (int, error) {
 	return int(fi.Size() / int64(fm.blockSize)), nil
 }
 
+// EnsureBlockExists extends the file so that the given block number exists.
+// If the file already has enough blocks, this is a no-op.
+func (fm *Manager) EnsureBlockExists(blk *BlockID) error {
+	totalBlks, err := fm.GetTotalBlocks(blk.Filename())
+	if err != nil {
+		totalBlks = 0
+	}
+
+	for totalBlks <= blk.Number() {
+		if _, err := fm.Append(blk.Filename()); err != nil {
+			return fmt.Errorf("append block to %s: %w", blk.Filename(), err)
+		}
+		totalBlks++
+	}
+
+	return nil
+}
+
 // getFile returns the file with the specified filename, creating it if it does not exist
 func (fm *Manager) getFile(filename string) (*os.File, error) {
 	f, ok := fm.openedFiles[filename]
