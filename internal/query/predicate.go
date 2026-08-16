@@ -125,6 +125,22 @@ func (p *Predicate) IsSatisfied(s scan.Scan) (bool, error) {
 	}
 }
 
+// IsConjunctive returns true if the predicate is a pure AND of terms (no OR nodes).
+func (p *Predicate) IsConjunctive() bool {
+	if p == nil || p.IsEmpty() {
+		return true
+	}
+
+	switch p.op {
+	case boolOpLeaf:
+		return true
+	case boolOpAnd:
+		return p.left.IsConjunctive() && p.right.IsConjunctive()
+	default:
+		return false
+	}
+}
+
 // SelectSubPred returns a new predicate containing only the terms whose fields exist in the given schema.
 // Returns nil if no terms apply to the schema.
 func (p *Predicate) SelectSubPred(sch *record.Schema) *Predicate {

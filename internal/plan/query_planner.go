@@ -7,6 +7,7 @@ import (
 	"github.com/yashagw/cranedb/internal/parse/parserdata"
 	"github.com/yashagw/cranedb/internal/query"
 	"github.com/yashagw/cranedb/internal/query/aggregations"
+	"github.com/yashagw/cranedb/internal/record"
 	"github.com/yashagw/cranedb/internal/session"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
@@ -229,8 +230,9 @@ func (p *BasicQueryPlanner) optimizeJoinOrder(tablePlans []Plan, predicate *quer
 		return tablePlans[i].BlocksAccessed() < tablePlans[j].BlocksAccessed()
 	})
 
-	// Check if materialization is disabled via session variable
+	// Check if optimizations are disabled via session variables
 	noMaterialize := sess != nil && sess.GetBoolVariable("no_materialize")
+	noHashJoin := sess != nil && sess.GetBoolVariable("no_hash_join")
 
 	// Build join tree starting with most selective table
 	result := tablePlans[0]
@@ -249,15 +251,49 @@ func (p *BasicQueryPlanner) optimizeJoinOrder(tablePlans []Plan, predicate *quer
 			p2 = NewProductPlan(tablePlans[i], materialized)
 		}
 
-		// Pick better option
+		// Pick the cheaper product option as the baseline.
+		var best Plan
 		if p1.BlocksAccessed() < p2.BlocksAccessed() {
-			result = p1
+			best = p1
 		} else {
-			result = p2
+			best = p2
 		}
+
+		// Prefer a hash join when the two sides are connected by an equi-join
+		// term and it estimates cheaper.
+		if !noHashJoin && predicate.IsConjunctive() {
+			if f1, f2, ok := p.findEquiJoinFields(predicate, result.Schema(), tablePlans[i].Schema()); ok {
+				hashJoin := NewHashJoinPlan(result, tablePlans[i], f1, f2)
+				if hashJoin.BlocksAccessed() < best.BlocksAccessed() {
+					best = hashJoin
+				}
+			}
+		}
+
+		result = best
 	}
 
 	return result
+}
+
+// findEquiJoinFields returns a pair of fields (f1 in sch1, f2 in sch2) joined by
+// an equi-join term in the predicate, or ok=false if none exists.
+func (p *BasicQueryPlanner) findEquiJoinFields(predicate *query.Predicate, sch1, sch2 *record.Schema) (string, string, bool) {
+	if predicate == nil {
+		return "", "", false
+	}
+
+	joinPred := predicate.JoinSubPred(sch1, sch2)
+	if joinPred == nil {
+		return "", "", false
+	}
+
+	for _, f := range sch1.Fields() {
+		if other := joinPred.EquatesWithField(f); other != nil && sch2.HasField(*other) {
+			return f, *other, true
+		}
+	}
+	return "", "", false
 }
 
 // shouldMaterializeForJoin determines if materializing the inner plan in a join

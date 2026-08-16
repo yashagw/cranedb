@@ -11,6 +11,7 @@ import (
 	"github.com/yashagw/cranedb/internal/query"
 	"github.com/yashagw/cranedb/internal/record"
 	"github.com/yashagw/cranedb/internal/scan"
+	"github.com/yashagw/cranedb/internal/session"
 	"github.com/yashagw/cranedb/internal/table"
 	"github.com/yashagw/cranedb/internal/transaction"
 )
@@ -670,7 +671,7 @@ func TestExplainPlan(t *testing.T) {
 
 		expected := `ProjectPlan(fields: [name, dept_name])
     └─ SelectPlan(predicate: student_dept_id = dept_id)
-    └─     └─ ProductPlan
+    └─     └─ HashJoinPlan(cond: dept_id = student_dept_id)
     └─     └─     ├─ TablePlan(departments)
     └─     └─     └─ TablePlan(students)`
 		assert.Equal(t, expected, planTree)
@@ -1334,4 +1335,153 @@ func TestBasicQueryPlanner_ComparisonOperators(t *testing.T) {
 			}
 		})
 	})
+}
+
+// setupJoinTables creates students(id, name) and enrollments(student_id, course)
+// with a fixed dataset for join tests, returning the metadata manager and tx.
+func setupJoinTables(t *testing.T) (*transaction.Transaction, *metadata.Manager, func()) {
+	_, tx, md, cleanup := setupTestDB(t)
+
+	s1 := record.NewSchema()
+	s1.AddIntField("id")
+	s1.AddStringField("name", 20)
+	createTableWithData(t, "students", s1, md, tx, func(ts *table.TableScan) {
+		rows := []struct {
+			id   int
+			name string
+		}{{1, "Alice"}, {2, "Bob"}, {3, "Charlie"}, {4, "Diana"}}
+		require.NoError(t, ts.BeforeFirst())
+		for _, r := range rows {
+			require.NoError(t, ts.Insert())
+			require.NoError(t, ts.SetInt("id", r.id))
+			require.NoError(t, ts.SetString("name", r.name))
+		}
+	})
+
+	s2 := record.NewSchema()
+	s2.AddIntField("student_id")
+	s2.AddStringField("course", 20)
+	createTableWithData(t, "enrollments", s2, md, tx, func(ts *table.TableScan) {
+		rows := []struct {
+			studentID int
+			course    string
+		}{{1, "Math"}, {2, "Physics"}, {2, "Chemistry"}, {3, "History"}}
+		require.NoError(t, ts.BeforeFirst())
+		for _, r := range rows {
+			require.NoError(t, ts.Insert())
+			require.NoError(t, ts.SetInt("student_id", r.studentID))
+			require.NoError(t, ts.SetString("course", r.course))
+		}
+	})
+
+	return tx, md, cleanup
+}
+
+// runJoinQuery executes SELECT name, course FROM students, enrollments WHERE <pred>
+// under the given session and returns the (name, course) rows.
+func runJoinQuery(t *testing.T, md *metadata.Manager, tx *transaction.Transaction, pred *query.Predicate, sess *session.Session) [][2]string {
+	planner := NewBasicQueryPlanner(md)
+	plan, err := planner.CreatePlan(parserdata.NewQueryData(
+		[]string{"name", "course"}, []string{"students", "enrollments"}, pred,
+	), tx, sess)
+	require.NoError(t, err)
+
+	s, err := plan.Open()
+	require.NoError(t, err)
+	defer s.Close()
+	require.NoError(t, s.BeforeFirst())
+
+	var rows [][2]string
+	for {
+		hasNext, err := s.Next()
+		require.NoError(t, err)
+		if !hasNext {
+			break
+		}
+		name, err := s.GetString("name")
+		require.NoError(t, err)
+		course, err := s.GetString("course")
+		require.NoError(t, err)
+		rows = append(rows, [2]string{name, course})
+	}
+	return rows
+}
+
+// TestBasicQueryPlanner_HashJoinMatchesProduct verifies the hash join produces the
+// same rows as the product+select path (forced via no_hash_join).
+func TestBasicQueryPlanner_HashJoinMatchesProduct(t *testing.T) {
+	tx, md, cleanup := setupJoinTables(t)
+	defer cleanup()
+
+	// Equi-join on id = student_id (pure conjunction, so hash join is eligible).
+	pred := query.NewPredicate(*query.NewTerm(
+		*query.NewFieldNameExpression("id"),
+		*query.NewFieldNameExpression("student_id"),
+		query.OpEQ,
+	))
+
+	// Default session: hash join is chosen.
+	hashRows := runJoinQuery(t, md, tx, pred, nil)
+
+	// Confirm the planner actually picked a hash join.
+	explainPlanner := NewBasicQueryPlanner(md)
+	plan, err := explainPlanner.CreatePlan(parserdata.NewQueryData(
+		[]string{"name", "course"}, []string{"students", "enrollments"}, pred,
+	), tx, nil)
+	require.NoError(t, err)
+	assert.Contains(t, plan.Explain("", true), "HashJoinPlan", "hash join should be chosen for an equi-join")
+
+	// no_hash_join session: falls back to product + select.
+	sess := session.NewSession()
+	sess.SetVariable("no_hash_join", true)
+	productRows := runJoinQuery(t, md, tx, pred, sess)
+
+	planProduct, err := explainPlanner.CreatePlan(parserdata.NewQueryData(
+		[]string{"name", "course"}, []string{"students", "enrollments"}, pred,
+	), tx, sess)
+	require.NoError(t, err)
+	assert.NotContains(t, planProduct.Explain("", true), "HashJoinPlan", "no_hash_join should disable hash join")
+
+	assert.ElementsMatch(t, productRows, hashRows, "hash join and product must yield identical rows")
+	// Sanity: Bob(2) enrolled twice, so 4 total join rows.
+	assert.Len(t, hashRows, 4)
+}
+
+// TestBasicQueryPlanner_ORPredicateFallsBackToProduct pins the IsConjunctive guard:
+// a predicate containing OR must not use a hash join (JoinSubPred is lossy for OR).
+func TestBasicQueryPlanner_ORPredicateFallsBackToProduct(t *testing.T) {
+	tx, md, cleanup := setupJoinTables(t)
+	defer cleanup()
+
+	// id = student_id OR name = 'Diana'
+	joinTerm := query.NewPredicate(*query.NewTerm(
+		*query.NewFieldNameExpression("id"),
+		*query.NewFieldNameExpression("student_id"),
+		query.OpEQ,
+	))
+	nameTerm := query.NewPredicate(*query.NewTerm(
+		*query.NewFieldNameExpression("name"),
+		*query.NewConstantExpression(*query.NewStringConstant("Diana")),
+		query.OpEQ,
+	))
+	pred := query.Or(joinTerm, nameTerm)
+
+	planner := NewBasicQueryPlanner(md)
+	plan, err := planner.CreatePlan(parserdata.NewQueryData(
+		[]string{"name", "course"}, []string{"students", "enrollments"}, pred,
+	), tx, nil)
+	require.NoError(t, err)
+
+	explain := plan.Explain("", true)
+	assert.Contains(t, explain, "ProductPlan", "OR predicate must fall back to product")
+	assert.NotContains(t, explain, "HashJoinPlan", "OR predicate must not use hash join")
+
+	// The query must still execute and, since hash join is never attempted for an
+	// OR predicate, the default and no_hash_join sessions must agree exactly.
+	defaultRows := runJoinQuery(t, md, tx, pred, nil)
+	sess := session.NewSession()
+	sess.SetVariable("no_hash_join", true)
+	noHashRows := runJoinQuery(t, md, tx, pred, sess)
+	assert.ElementsMatch(t, defaultRows, noHashRows)
+	assert.NotEmpty(t, defaultRows)
 }

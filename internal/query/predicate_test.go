@@ -156,3 +156,34 @@ func TestPredicateEquatesWithField(t *testing.T) {
 	result5 := pred3.EquatesWithField("age")
 	assert.Nil(t, result5)
 }
+
+func TestPredicateIsConjunctive(t *testing.T) {
+	term1 := NewTerm(*NewFieldNameExpression("age"), *NewConstantExpression(*NewIntConstant(25)), OpEQ)
+	term2 := NewTerm(*NewFieldNameExpression("name"), *NewConstantExpression(*NewStringConstant("John")), OpEQ)
+	term3 := NewTerm(*NewFieldNameExpression("id"), *NewFieldNameExpression("user_id"), OpEQ)
+
+	// Nil and empty predicates are conjunctive
+	var nilPred *Predicate
+	assert.True(t, nilPred.IsConjunctive())
+	assert.True(t, (&Predicate{}).IsConjunctive())
+
+	// Single leaf term is conjunctive
+	leaf := NewPredicate(*term1)
+	assert.True(t, leaf.IsConjunctive())
+
+	// AND of terms is conjunctive
+	andPred := And(NewPredicate(*term1), NewPredicate(*term2))
+	assert.True(t, andPred.IsConjunctive())
+
+	// Nested AND is conjunctive
+	nestedAnd := And(andPred, NewPredicate(*term3))
+	assert.True(t, nestedAnd.IsConjunctive())
+
+	// OR is not conjunctive
+	orPred := Or(NewPredicate(*term1), NewPredicate(*term2))
+	assert.False(t, orPred.IsConjunctive())
+
+	// AND containing an OR is not conjunctive
+	andOfOr := And(NewPredicate(*term3), orPred)
+	assert.False(t, andOfOr.IsConjunctive())
+}
